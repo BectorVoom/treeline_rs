@@ -107,6 +107,39 @@ fn dimension_mismatch_returns_typed_err_not_panic() {
 }
 
 #[test]
+fn negative_num_target_returns_typed_err_not_abort() {
+    // A negative num_target would become `vec![1; usize::MAX]` (capacity
+    // overflow abort) after the i32→usize cast. It must instead surface a typed
+    // InvalidScalar error (WR-02, ERR-01).
+    let json = read_fixture().replace("\"num_target\": \"1\"", "\"num_target\": \"-1\"");
+    assert!(json.contains("\"num_target\": \"-1\""));
+
+    match load_xgboost_json(&json) {
+        Err(XgbError::InvalidScalar { field, value }) => {
+            assert_eq!(field, "num_target");
+            assert_eq!(value, -1);
+        }
+        Err(other) => panic!("expected InvalidScalar, got {other:?}"),
+        Ok(_) => panic!("expected InvalidScalar error, got Ok(model)"),
+    }
+}
+
+#[test]
+fn negative_num_feature_returns_typed_err_not_abort() {
+    let json = read_fixture().replace("\"num_feature\": \"2\"", "\"num_feature\": \"-3\"");
+    assert!(json.contains("\"num_feature\": \"-3\""));
+
+    match load_xgboost_json(&json) {
+        Err(XgbError::InvalidScalar { field, value }) => {
+            assert_eq!(field, "num_feature");
+            assert_eq!(value, -3);
+        }
+        Err(other) => panic!("expected InvalidScalar, got {other:?}"),
+        Ok(_) => panic!("expected InvalidScalar error, got Ok(model)"),
+    }
+}
+
+#[test]
 fn malformed_json_returns_typed_err_not_panic() {
     match load_xgboost_json("{ this is not valid json") {
         Err(XgbError::Json(_)) => {}

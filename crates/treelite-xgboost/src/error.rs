@@ -31,6 +31,19 @@ pub enum XgbError {
         source: Box<dyn std::error::Error + Send + Sync>,
     },
 
+    /// A model scalar that must be non-negative (e.g. `num_target`,
+    /// `num_feature`, `num_class`) parsed to a negative value. Casting such a
+    /// value to `usize` would yield a huge size (e.g. `vec![1; num_target as
+    /// usize]` aborts with capacity overflow), so it becomes a typed `Err` here
+    /// rather than an abort/panic (WR-02, ERR-01).
+    #[error("model scalar {field:?} must be non-negative, got {value}")]
+    InvalidScalar {
+        /// The field whose value was negative (e.g. `"num_target"`).
+        field: &'static str,
+        /// The offending parsed value.
+        value: i32,
+    },
+
     /// A per-tree parallel array's length disagreed with `tree_param.num_nodes`.
     /// Mirrors `delegated_handler.cc:411-432`: return an error instead of
     /// indexing out of bounds (ERR-01, ASVS V5 input validation).

@@ -107,6 +107,19 @@ where
     })
 }
 
+/// Reject a model scalar that must be non-negative.
+///
+/// `num_target`/`num_feature`/`num_class` are later cast to `usize` (e.g.
+/// `vec![1; num_target as usize]`); a negative value casts to a huge size and
+/// aborts the process. Surface a typed [`XgbError::InvalidScalar`] instead
+/// (WR-02, ERR-01).
+fn require_non_negative(field: &'static str, value: i32) -> Result<i32, XgbError> {
+    if value < 0 {
+        return Err(XgbError::InvalidScalar { field, value });
+    }
+    Ok(value)
+}
+
 /// Validate that a per-tree parallel array's length matches `num_nodes`.
 ///
 /// Mirrors `delegated_handler.cc:411-432`: on mismatch return a typed
@@ -205,9 +218,12 @@ pub fn load_xgboost_json(json: &str) -> Result<Model, XgbError> {
     let parsed: XgbModelJson = serde_json::from_str(json)?;
 
     let lp = &parsed.learner.learner_model_param;
-    let num_feature: i32 = parse_scalar("num_feature", &lp.num_feature)?;
-    let num_class_param: i32 = parse_scalar("num_class", &lp.num_class)?;
-    let num_target: i32 = parse_scalar("num_target", &lp.num_target)?;
+    let num_feature: i32 =
+        require_non_negative("num_feature", parse_scalar("num_feature", &lp.num_feature)?)?;
+    let num_class_param: i32 =
+        require_non_negative("num_class", parse_scalar("num_class", &lp.num_class)?)?;
+    let num_target: i32 =
+        require_non_negative("num_target", parse_scalar("num_target", &lp.num_target)?)?;
     let base_score: f64 = parse_scalar("base_score", &lp.base_score)?;
 
     let objective = &parsed.learner.objective.name;
