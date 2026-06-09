@@ -8,11 +8,15 @@
 pub mod enums;
 pub mod error;
 pub mod model;
+pub mod serialize;
 pub mod tree;
 pub mod tree_buf;
 
 pub use enums::{DType, Operator, TaskType, TreeNodeType};
 pub use error::CoreError;
 pub use model::{Model, ModelPreset, ModelVariant};
+pub use serialize::{
+    Frame, SerializeError, deserialize, serialize_to_buffer, serialize_to_pybuffer,
+};
 pub use tree::Tree;
 pub use tree_buf::TreeBuf;

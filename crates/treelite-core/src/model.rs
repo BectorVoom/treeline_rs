@@ -201,6 +201,40 @@ impl Model {
     pub(crate) fn leaf_output_type(&self) -> DType {
         self.leaf_output_type_
     }
+
+    // --- by-reference accessors for the zero-copy PyBuffer frame walk ---
+    // The recomputed header scalars must live somewhere for `'a` so a borrowed
+    // frame can point at them (RESEARCH Pattern 5). `stage_serialization_fields`
+    // populates these private fields; the pybuffer backend borrows them here.
+
+    /// Borrow the staged major version as a 4-byte LE-native `i32` (Pattern 5).
+    pub(crate) fn major_ver_ref(&self) -> &i32 {
+        &self.major_ver_
+    }
+    /// Borrow the staged minor version.
+    pub(crate) fn minor_ver_ref(&self) -> &i32 {
+        &self.minor_ver_
+    }
+    /// Borrow the staged patch version.
+    pub(crate) fn patch_ver_ref(&self) -> &i32 {
+        &self.patch_ver_
+    }
+    /// Borrow the staged tree count as a native `u64`.
+    pub(crate) fn num_tree_ref(&self) -> &u64 {
+        &self.num_tree_
+    }
+    /// Borrow the staged model opt-field count (always `0`).
+    pub(crate) fn num_opt_field_per_model_ref(&self) -> &i32 {
+        &self.num_opt_field_per_model_
+    }
+    /// Borrow the staged threshold type tag (1-byte repr) as a `u8` view source.
+    pub(crate) fn threshold_type_ref(&self) -> &DType {
+        &self.threshold_type_
+    }
+    /// Borrow the staged leaf-output type tag (1-byte repr).
+    pub(crate) fn leaf_output_type_ref(&self) -> &DType {
+        &self.leaf_output_type_
+    }
 }
 
 #[cfg(test)]
