@@ -66,7 +66,21 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. A model round-trips through the v5 binary format (serialize → deserialize → identical model) and serializes to the v5 zero-copy PyBuffer representation.
   4. `DumpAsJSON` emits a model as JSON and field accessors expose model/tree fields for inspection.
 
-**Plans**: TBD
+**Plans**: 5 plans
+Plans:
+**Wave 1**
+
+- [ ] 02-01-PLAN.md — Core Model/Tree private bookkeeping fields + frozen D-02 golden v5 blob capture (Wave 1)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 02-02-PLAN.md — treelite-builder crate: fluent ModelBuilder (BLD-01) + ConcatenateModelObjects (BLD-02) + BulkConstructTree (BLD-03) (Wave 2)
+- [ ] 02-03-PLAN.md — Core serialize module: v5 binary round-trip + golden byte-compare (SER-01) + bounds-checked deserialize (D-03) + zero-copy PyBuffer frames (SER-02) (Wave 2)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 02-04-PLAN.md — DumpAsJSON (SER-03) + Model/Tree field accessors (SER-04) (Wave 3)
+- [ ] 02-05-PLAN.md — Rewire XGBoost loader through ModelBuilder (D-11) + 1e-5 regression gate (Wave 3)
 
 ### Phase 3: Full XGBoost Loaders
 
@@ -182,7 +196,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. End-to-End Spine | 4/4 | Complete    | 2026-06-09 |
-| 2. Builder & Serialization | 0/TBD | Not started | - |
+| 2. Builder & Serialization | 0/5 | Planned | - |
 | 3. Full XGBoost Loaders | 0/TBD | Not started | - |
 | 4. LightGBM & scikit-learn Loaders | 0/TBD | Not started | - |
 | 5. Full Scalar GTIL & Equivalence Harness | 0/TBD | Not started | - |
