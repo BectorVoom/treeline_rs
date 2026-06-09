@@ -15,6 +15,8 @@ pub mod bulk;
 pub mod concat;
 pub mod error;
 
+pub use bulk::bulk_construct_tree;
+pub use concat::concatenate;
 pub use error::BuilderError;
 
 use std::collections::BTreeMap;
@@ -88,8 +90,6 @@ struct NodeStaging {
     sum_hess_present: bool,
     gain: f64,
     gain_present: bool,
-    // true once the node was given a leaf OR test detail (state guard backstop)
-    detail_set: bool,
     is_leaf: bool,
 }
 
@@ -110,7 +110,6 @@ impl NodeStaging {
             sum_hess_present: false,
             gain: 0.0,
             gain_present: false,
-            detail_set: false,
             is_leaf: false,
         }
     }
@@ -243,7 +242,6 @@ impl ModelBuilder {
         node.raw_left = left_child_key;
         node.raw_right = right_child_key;
         node.is_leaf = false;
-        node.detail_set = true;
 
         self.state = BuilderState::NodeComplete;
         Ok(())
@@ -274,7 +272,6 @@ impl ModelBuilder {
         node.raw_left = left_child_key;
         node.raw_right = right_child_key;
         node.is_leaf = false;
-        node.detail_set = true;
 
         self.state = BuilderState::NodeComplete;
         Ok(())
@@ -300,7 +297,6 @@ impl ModelBuilder {
         node.leaf_value = value;
         node.cmp = Operator::kNone;
         node.is_leaf = true;
-        node.detail_set = true;
 
         self.state = BuilderState::NodeComplete;
         Ok(())
@@ -327,7 +323,6 @@ impl ModelBuilder {
         node.raw_right = -1;
         node.cmp = Operator::kNone;
         node.is_leaf = true;
-        node.detail_set = true;
 
         self.state = BuilderState::NodeComplete;
         Ok(())
