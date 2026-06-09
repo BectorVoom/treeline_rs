@@ -1,10 +1,12 @@
-//! GTIL reference inference engine (Wave 3 — stub for Wave 1).
+//! GTIL reference inference engine — scalar, single-threaded predict.
 //!
-//! This crate runs reference prediction over a `treelite_core::Model`.
-//! It is wired into the workspace in Wave 1 so `cargo build --workspace`
-//! succeeds; the predict engine itself is implemented in a later wave.
+//! Runs reference prediction over a [`treelite_core::Model`], porting the
+//! upstream GTIL traversal and assembly order VERBATIM
+//! (`treelite-mainline/src/gtil/predict.cc`). Per D-08, predict is a plain
+//! function — there is NO `Predictor`/backend trait in Phase 1 (deferred to
+//! Phase 6).
 
-/// Placeholder marker proving the crate compiles and links `treelite-core`.
-pub fn crate_name() -> &'static str {
-    "treelite-gtil"
-}
+pub mod error;
+pub mod postprocessor;
+
+pub use error::GtilError;
