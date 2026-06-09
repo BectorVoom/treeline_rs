@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-06-10T06:30:00.000Z"
+last_updated: "2026-06-09T21:38:06.431Z"
 last_activity: 2026-06-10 -- Completed Phase 01 Plan 01 (workspace + treelite-core foundation)
 progress:
   total_phases: 9
   completed_phases: 0
   total_plans: 4
-  completed_plans: 1
-  percent: 3
+  completed_plans: 2
+  percent: 0
 ---
 
 # Project State
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 01 (end-to-end-spine) — EXECUTING
-Plan: 2 of 4
-Status: Executing Phase 01 (Plan 01 complete)
+Plan: 3 of 4
+Status: Ready to execute
 Last activity: 2026-06-10 -- Completed Phase 01 Plan 01 (workspace + treelite-core foundation)
 
 Progress: [░░░░░░░░░░] 3%
@@ -52,6 +52,7 @@ Progress: [░░░░░░░░░░] 3%
 - Trend: —
 
 *Updated after each plan completion*
+| Phase 01 P02 | 4min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -67,6 +68,9 @@ Recent decisions affecting current work:
 - [01-01]: Inherent `from_str` (not `std::str::FromStr`) mirrors upstream `FromString` fallible-parse API; `clippy::should_implement_trait` suppressed.
 - [01-01]: `TreeBuf<T>` is a two-mode enum `Owned(Vec<T>)`/`Borrowed{ptr,len}` with `T: Copy` POD bound; `bytemuck` deferred to Phase 9.
 - [01-01]: Confirmed `num_class`/`leaf_vector_shape`/`target_id`/`class_id` are `Vec<i32>` (array-typed per tree.h:543-547), not scalars as ROADMAP wording implied.
+- [Phase ?]: [01-02]: load_xgboost_json builds the F32 variant unconditionally — XGBoost-JSON only ever yields <f32,f32>.
+- [Phase ?]: [01-02]: base_score margin transform stays in f64 throughout (sigmoid -ln(1/p-1)); objective.rs has zero f32 tokens.
+- [Phase ?]: [01-02]: Per-tree parallel arrays validated against tree_param.num_nodes before building -> DimensionMismatch, never OOB (ERR-01).
 
 ### Pending Todos
 
@@ -88,6 +92,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T06:30:00.000Z
+Last session: 2026-06-09T21:37:48.339Z
 Stopped at: Completed 01-01-PLAN.md
 Resume file: None
