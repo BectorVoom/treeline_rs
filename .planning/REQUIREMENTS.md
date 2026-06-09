@@ -131,17 +131,73 @@ Explicitly excluded. Documented to prevent scope creep.
 
 ## Traceability
 
-Which phases cover which requirements. Populated during roadmap creation.
+Which phases cover which requirements.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (populated by roadmapper) | — | Pending |
+| FND-01 | Phase 1 | Pending |
+| FND-02 | Phase 1 | Pending |
+| ENUM-01 | Phase 1 | Pending |
+| CORE-01 | Phase 1 | Pending |
+| CORE-02 | Phase 1 | Pending |
+| CORE-03 | Phase 1 | Pending |
+| CORE-04 | Phase 1 | Pending |
+| ERR-01 | Phase 1 | Pending |
+| ERR-02 | Phase 1 | Pending |
+| BLD-01 | Phase 2 | Pending |
+| BLD-02 | Phase 2 | Pending |
+| BLD-03 | Phase 2 | Pending |
+| SER-01 | Phase 2 | Pending |
+| SER-02 | Phase 2 | Pending |
+| SER-03 | Phase 2 | Pending |
+| SER-04 | Phase 2 | Pending |
+| XGB-01 | Phase 3 | Pending |
+| XGB-02 | Phase 3 | Pending |
+| XGB-03 | Phase 3 | Pending |
+| XGB-04 | Phase 3 | Pending |
+| XGB-05 | Phase 3 | Pending |
+| LGB-01 | Phase 4 | Pending |
+| LGB-02 | Phase 4 | Pending |
+| LGB-03 | Phase 4 | Pending |
+| SKL-01 | Phase 4 | Pending |
+| SKL-02 | Phase 4 | Pending |
+| SKL-03 | Phase 4 | Pending |
+| SKL-04 | Phase 4 | Pending |
+| GTIL-01 | Phase 5 | Pending |
+| GTIL-02 | Phase 5 | Pending |
+| GTIL-03 | Phase 5 | Pending |
+| GTIL-04 | Phase 5 | Pending |
+| GTIL-05 | Phase 5 | Pending |
+| GTIL-06 | Phase 5 | Pending |
+| GTIL-07 | Phase 5 | Pending |
+| GTIL-08 | Phase 5 | Pending |
+| EQV-01 | Phase 5 | Pending |
+| EQV-02 | Phase 5 | Pending |
+| EQV-03 | Phase 5 | Pending |
+| EQV-04 | Phase 5 | Pending |
+| GPU-01 | Phase 6 | Pending |
+| GPU-02 | Phase 6 | Pending |
+| GPU-05 | Phase 6 | Pending |
+| GPU-03 | Phase 7 | Pending |
+| GPU-04 | Phase 7 | Pending |
+| PY-01 | Phase 8 | Pending |
+| PY-02 | Phase 8 | Pending |
+| PY-03 | Phase 8 | Pending |
+| PY-04 | Phase 8 | Pending |
+| PY-05 | Phase 8 | Pending |
+| PY-06 | Phase 8 | Pending |
+| MEM-04 | Phase 8 | Pending |
+| MEM-01 | Phase 9 | Pending |
+| MEM-02 | Phase 9 | Pending |
+| MEM-03 | Phase 9 | Pending |
 
 **Coverage:**
 - v1 requirements: 45 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 45 ⚠️
+- Mapped to phases: 45 ✓
+- Unmapped: 0
+
+**Note:** Phase 1 (the end-to-end MVP spine) additionally exercises a *minimal subset* of XGB-01 (single XGBoost-JSON model), GTIL-01 (scalar dense predict), and EQV-01/EQV-02 (harness skeleton + one golden) to prove the load→predict→verify pipeline. The full requirements are owned and completed in their dedicated phases (XGB in Phase 3, GTIL/EQV in Phase 5) to keep each requirement mapped to exactly one owning phase.
 
 ---
 *Requirements defined: 2026-06-09*
-*Last updated: 2026-06-09 after initial definition*
+*Last updated: 2026-06-09 after roadmap creation (traceability populated, 45/45 mapped)*

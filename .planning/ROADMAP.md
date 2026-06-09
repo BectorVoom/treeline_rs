@@ -1,0 +1,152 @@
+# Roadmap: treelite-rs
+
+## Overview
+
+treelite-rs is a strict numerical port of Treelite 4.7.0 (C++) to a Rust Cargo workspace, where the single non-negotiable invariant is that predictions match upstream within **1e-5**. The journey is structured as vertical MVP slices laid along the dependency spine the research mandated: enums → core model → builder/serialize → loaders → scalar GTIL + equivalence harness → cubecl CPU kernels → GPU backend → PyO3 → memory hardening. Phase 1 stands up the *thinnest possible end-to-end pipeline* (workspace + enums + minimal core + a minimal XGBoost-JSON load + a scalar identity/sigmoid predict + an equivalence harness asserting 1e-5 against a committed golden) so the core value is proven and de-risked on day one. Every subsequent phase **widens one layer of that proven spine** — more formats, the full GTIL surface, full serialization, then GPU acceleration, then the Python binding — and each widening phase ends in a runnable, equivalence-tested state. The dependency DAG of the upstream C++ leaves no room to reorder: a slice cannot use a crate that does not yet exist.
+
+## Phases
+
+**Phase Numbering:**
+- Integer phases (1, 2, 3): Planned milestone work
+- Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
+
+Decimal phases appear between their surrounding integers in numeric order.
+
+- [ ] **Phase 1: End-to-End Spine** - Workspace + enums + minimal core + minimal XGBoost-JSON load → scalar predict → 1e-5 golden verify
+- [ ] **Phase 2: Builder & Serialization** - Validated `ModelBuilder` + bulk path + v5 binary/PyBuffer/JSON round-trip and field accessors
+- [ ] **Phase 3: Full XGBoost Loaders** - JSON + UBJSON + legacy binary with auto-detect and version-gated base_score margin transform
+- [ ] **Phase 4: LightGBM & scikit-learn Loaders** - LightGBM text + RF/ET/GBM/IsolationForest + HistGradientBoosting
+- [ ] **Phase 5: Full Scalar GTIL & Equivalence Harness** - All 4 predict kinds, 10 postprocessors, sparse CSR, categoricals, output shaping, seeded golden harness at 1e-5
+- [ ] **Phase 6: cubecl GTIL Kernels (CPU Backend)** - Traversal + postprocessor kernels; CPU backend default, validated to 1e-5 with zero-copy SoA upload
+- [ ] **Phase 7: GPU Backend & Equivalence Report** - Runtime-selectable GPU backend (CUDA/wgpu) with a documented per-model-class deviation report
+- [ ] **Phase 8: PyO3 Python Binding** - load/predict/serialize/dump from Python with zero-copy numpy I/O and abi3 wheel
+- [ ] **Phase 9: Memory-Efficiency Hardening** - bytemuck zero-copy recast, smallvec/compact_str, custom global allocator
+
+## Phase Details
+
+### Phase 1: End-to-End Spine
+**Goal**: Prove the core value early — a model can be loaded, predicted, and verified within 1e-5 against a committed C++ golden — by standing up the thinnest end-to-end slice through the whole pipeline.
+**Mode:** mvp
+**Depends on**: Nothing (first phase)
+**Requirements**: FND-01, FND-02, ENUM-01, CORE-01, CORE-02, CORE-03, CORE-04, ERR-01, ERR-02
+**Success Criteria** (what must be TRUE):
+  1. `cargo build` and `cargo test` succeed across all workspace member crates under edition 2024 / resolver "3", with every third-party crate pinned to a current stable version in a single `[workspace.dependencies]` table (no pre-release on the critical path).
+  2. `TaskType`, `TreeNodeType`, `Operator`, and `DType` round-trip to/from their upstream string values, asserted against values read from `treelite-mainline`.
+  3. A `Model` exists as a two-variant enum over `<f32,f32>`/`<f64,f64>` presets, holding a `Tree<T>` whose ~20 node fields are stored as parallel SoA `TreeBuf<T>` columns in both Owned and Borrowed modes, carrying full header metadata (num_feature, task_type, num_class, leaf_vector_shape, target/class ids, postprocessor, sigmoid_alpha, ratio_c, base_scores, average_tree_output, attributes).
+  4. A minimal walking skeleton loads one simple XGBoost-JSON model into that `Model`, runs a scalar single-threaded predict with identity/sigmoid postprocessing only, and the equivalence-harness skeleton asserts the output is within 1e-5 of a committed golden vector (with a frozen toolchain/libm manifest).
+  5. Library crates surface typed `thiserror` errors at their boundaries; the harness/binaries use `anyhow` for context.
+**Plans**: TBD
+
+### Phase 2: Builder & Serialization
+**Goal**: Widen the construction and persistence layers along the spine — a fluent validated `ModelBuilder` (plus concatenate and a bulk fast path) and full v5 serialization — so loaders have a construction target and models round-trip.
+**Mode:** mvp
+**Depends on**: Phase 1
+**Requirements**: BLD-01, BLD-02, BLD-03, SER-01, SER-02, SER-03, SER-04
+**Success Criteria** (what must be TRUE):
+  1. A fluent `ModelBuilder` constructs a model node-by-node and rejects orphaned/ill-formed topologies with a typed error; the skeleton XGBoost-JSON loader from Phase 1 is rewired to build through it and still verifies within 1e-5.
+  2. `ConcatenateModelObjects` merges multiple built models into one, and a `BulkConstructTree` fast path builds trees from pre-validated bulk input (bypass behavior documented to match upstream).
+  3. A model round-trips through the v5 binary format (serialize → deserialize → identical model) and serializes to the v5 zero-copy PyBuffer representation.
+  4. `DumpAsJSON` emits a model as JSON and field accessors expose model/tree fields for inspection.
+**Plans**: TBD
+
+### Phase 3: Full XGBoost Loaders
+**Goal**: Widen the loader layer to the full XGBoost surface — all three formats with auto-detection and the version-gated base_score margin transform — proven across formats against the richest fixture set.
+**Mode:** mvp
+**Depends on**: Phase 2
+**Requirements**: XGB-01, XGB-02, XGB-03, XGB-04, XGB-05
+**Success Criteria** (what must be TRUE):
+  1. Loading `treelite-mainline/tests/examples/` XGBoost models in JSON, UBJSON, and legacy-binary form each produces a `Model`; the same logical model loaded from all three formats predicts within 1e-5 of the shared golden.
+  2. The loader auto-detects which XGBoost format a file is, with the UBJSON path sharing the JSON numeric state machine for parity (NaN/Inf literals accepted as upstream does) and legacy binary read via explicit little-endian decoders (no native-endian struct transmute).
+  3. XGBoost objective maps to the correct postprocessor, and the version-gated (`major_version >= 1`) base_score probability→margin transform is applied (scalar and vector base_score forms handled), with no constant offset on predictions.
+**Plans**: TBD
+**Research flag:** Needs research-phase — SAX/streaming serde_json; UBJSON type-tag decoding; NaN/Inf extension; base_score version gate.
+
+### Phase 4: LightGBM & scikit-learn Loaders
+**Goal**: Widen loaders to LightGBM text format and the full scikit-learn estimator set (including the most complex path, HistGradientBoosting), so every supported source framework loads into the proven spine.
+**Mode:** mvp
+**Depends on**: Phase 3
+**Requirements**: LGB-01, LGB-02, LGB-03, SKL-01, SKL-02, SKL-03, SKL-04
+**Success Criteria** (what must be TRUE):
+  1. A LightGBM text-format model loads and predicts within 1e-5 of its golden, with categorical splits decoded from their bitset and per-field precision (leaf_value/threshold = f64, split_gain = f32) matching upstream.
+  2. LightGBM objective maps to the correct postprocessor with parsed `sigmoid_alpha`, `class_id[i] = i % num_class` round-robin, and `average_output` honored.
+  3. `RandomForest`/`ExtraTrees`, `GradientBoosting`, and `IsolationForest` (classifier + regressor where applicable) import from sklearn array dumps via the bulk path and predict within 1e-5 of their goldens.
+  4. `HistGradientBoosting` (classifier + regressor) imports — including the bulk tree-construction path — and predicts within 1e-5 of its golden.
+**Plans**: TBD
+**Research flag:** Needs research-phase — HistGradientBoosting is confirmed in v1 scope (packed node structs, `_bin_mapper`, version-gated `_preprocessor`).
+
+### Phase 5: Full Scalar GTIL & Equivalence Harness
+**Goal**: Widen the inference spine to the complete scalar GTIL reference — all predict kinds, all postprocessors, sparse input, categoricals, output shaping — and the full seeded equivalence harness that is the 1e-5 measurement instrument for everything after.
+**Mode:** mvp
+**Depends on**: Phase 4
+**Requirements**: GTIL-01, GTIL-02, GTIL-03, GTIL-04, GTIL-05, GTIL-06, GTIL-07, GTIL-08, EQV-01, EQV-02, EQV-03, EQV-04
+**Success Criteria** (what must be TRUE):
+  1. Prediction works over a dense row-major matrix and over a sparse CSR matrix (absent entries materialized as NaN, not 0), with dense↔sparse parity asserted on identical logical data.
+  2. All four predict kinds (`default`, `raw`, `leaf_id`, `score_per_tree`) and all ten postprocessors are ported verbatim (mixed-precision softmax/exp2/log1p preserved), with NaN-only missing-value routing and the categorical float-representability guard + child polarity matching upstream.
+  3. Output shaping is correct — `GetOutputShape` per kind, leaf-vector broadcast, tree averaging, f64 base-score addition — and per-row tree summation is serial in `tree_id` order (parallelism only across rows).
+  4. The harness generates random seeded dense + sparse CSR inputs, compares against C++-captured golden vectors (committed with a toolchain/libm manifest) across model types, both presets, and all predict kinds, asserting within 1e-5 and reporting the max observed deviation.
+**Plans**: TBD
+**Research flag:** Needs research-phase — leaf-vector broadcast (4 cases); mixed-precision softmax details; cubecl control-flow constraints spike before kernel authoring.
+
+### Phase 6: cubecl GTIL Kernels (CPU Backend)
+**Goal**: Reimplement the GTIL hot path (traversal + postprocessors) as cubecl kernels with the CPU backend as the deterministic default, validated to 1e-5 against the green scalar reference — the project's compute spine widened onto cubecl.
+**Mode:** mvp
+**Depends on**: Phase 5
+**Requirements**: GPU-01, GPU-02, GPU-05
+**Success Criteria** (what must be TRUE):
+  1. Tree traversal and the postprocessor set run as `#[cube(launch)]` kernels generic over `R: Runtime`, with one unit per row looping over trees serially (no `atomicAdd`/reduce over the tree axis, no `continue`).
+  2. The cubecl CPU backend is the default and the full equivalence harness passes within 1e-5 on it in CI, with output bit-identical across two runs of the same input (determinism check).
+  3. SoA model buffers upload host→device via `TreeBuf::as_bytes()` + `client.create_from_slice` with per-column ragged-SoA concatenation across the forest (no per-tree handle explosion), and a plain-Rust fallback exists for any unimplemented cubecl op.
+**Plans**: TBD
+**Research flag:** Needs research-phase — data-dependent branching kernel shape; ragged-SoA concatenation design; kernel spike before full port.
+
+### Phase 7: GPU Backend & Equivalence Report
+**Goal**: Layer at least one runtime-selectable GPU backend onto the green CPU equivalence and document its numerical behavior — proving GPU acceleration in v1 without making it a correctness prerequisite.
+**Mode:** mvp
+**Depends on**: Phase 6
+**Requirements**: GPU-03, GPU-04
+**Success Criteria** (what must be TRUE):
+  1. At least one GPU backend (CUDA or wgpu) is selectable at runtime via Cargo feature + `Backend` enum and produces predictions for the harness model set.
+  2. A committed GPU equivalence report documents the observed max deviation per model class against an accepted tolerance, noting where f64 postprocessor fallback is needed to stay in budget.
+  3. CPU remains the default backend and small inputs do not pay GPU transfer/launch overhead (documented crossover heuristic).
+**Plans**: TBD
+**Research flag:** Needs research-phase — GPU transcendental/FMA divergence profiling; cubecl FMA contraction behavior.
+
+### Phase 8: PyO3 Python Binding
+**Goal**: Expose the proven Rust pipeline to Python as the sole external binding — load, predict, serialize, dump, and sklearn marshalling — with zero-copy numpy I/O and an abi3 wheel.
+**Mode:** mvp
+**Depends on**: Phase 7
+**Requirements**: PY-01, PY-02, PY-03, PY-04, PY-05, PY-06, MEM-04
+**Success Criteria** (what must be TRUE):
+  1. From Python, a user can load XGBoost / LightGBM / scikit-learn models, predict over numpy arrays with zero-copy buffer I/O, and serialize/deserialize/JSON-dump a model — with results matching the Rust path within 1e-5.
+  2. A `sklearn.import_model` entry point marshals fitted estimators, and borrowed buffers from the Python buffer protocol are consumed zero-copy.
+  3. Library `thiserror` errors translate into Python exceptions (no panic crosses the FFI boundary), and the binding builds and imports as an abi3 wheel via maturin.
+**Plans**: TBD
+**Research flag:** Needs research-phase — PyO3 0.28 buffer-protocol; numpy zero-copy return; GIL/threading pattern.
+
+### Phase 9: Memory-Efficiency Hardening
+**Goal**: Apply the memory-efficiency techniques across the proven, equivalence-tested workspace without regressing the 1e-5 contract — closing out the last v1 requirements.
+**Mode:** mvp
+**Depends on**: Phase 8
+**Requirements**: MEM-01, MEM-02, MEM-03
+**Success Criteria** (what must be TRUE):
+  1. SoA columns use `bytemuck` `Pod` zero-copy recasting where layout allows, with the full equivalence harness still green within 1e-5 after the change.
+  2. `smallvec` and `compact_str` back small collections and metadata strings, verified by existing tests still passing.
+  3. A custom global allocator (jemalloc) is wired into benchmarks/binaries and validated to import/run on Linux (and not enabled in a way that breaks the abi3 wheel).
+**Plans**: TBD
+
+## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 1. End-to-End Spine | 0/TBD | Not started | - |
+| 2. Builder & Serialization | 0/TBD | Not started | - |
+| 3. Full XGBoost Loaders | 0/TBD | Not started | - |
+| 4. LightGBM & scikit-learn Loaders | 0/TBD | Not started | - |
+| 5. Full Scalar GTIL & Equivalence Harness | 0/TBD | Not started | - |
+| 6. cubecl GTIL Kernels (CPU Backend) | 0/TBD | Not started | - |
+| 7. GPU Backend & Equivalence Report | 0/TBD | Not started | - |
+| 8. PyO3 Python Binding | 0/TBD | Not started | - |
+| 9. Memory-Efficiency Hardening | 0/TBD | Not started | - |
