@@ -1,0 +1,14 @@
+{
+  "treelite": "4.7.0",
+  "xgboost": "3.2.0",
+  "os": "Linux-6.17.0-35-generic-x86_64-with-glibc2.39",
+  "arch": "x86_64",
+  "libc": [
+    "glibc",
+    "2.39"
+  ],
+  "python": "3.13.13",
+  "sha256": "991ec6e25f11e25a06c52ebcd5c6a675918d1b8f256c11323520ed13a20ed7bc",
+  "nbytes": 951,
+  "source_fixture": "binary_logistic.model.json"
+}
