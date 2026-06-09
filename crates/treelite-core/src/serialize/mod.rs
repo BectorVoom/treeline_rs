@@ -17,10 +17,12 @@
 
 pub mod binary;
 pub mod error;
+pub mod json;
 pub mod pybuffer;
 
 pub use binary::{BufferBackend, serialize_to_buffer};
 pub use error::SerializeError;
+pub use json::{dump_as_json, dump_as_json_string};
 pub use pybuffer::{Frame, serialize_to_pybuffer};
 
 use crate::enums::{DType, Operator, TaskType, TreeNodeType};

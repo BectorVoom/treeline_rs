@@ -164,6 +164,72 @@ impl<T: Copy> Tree<T> {
     pub fn has_leaf_vector(&self, nid: usize) -> bool {
         self.leaf_vector_begin[nid] != self.leaf_vector_end[nid]
     }
+
+    /// Node kind of `nid` (`node_type_[nid]`, tree.h:197).
+    pub fn node_type(&self, nid: usize) -> TreeNodeType {
+        self.node_type[nid]
+    }
+
+    /// Missing-value direction of `nid`: `true` ⇒ go to the left child
+    /// (`default_left_[nid]`, tree.h:218).
+    pub fn default_left(&self, nid: usize) -> bool {
+        self.default_left[nid]
+    }
+
+    /// Categorical-split polarity of `nid`: whether the category list selects the
+    /// right child (`category_list_right_child_[nid]`, tree.h:225).
+    pub fn category_list_right_child(&self, nid: usize) -> bool {
+        self.category_list_right_child[nid]
+    }
+
+    /// The leaf vector of `nid` as a slice into the CSR `leaf_vector` column
+    /// (`[leaf_vector_begin[nid], leaf_vector_end[nid])`, tree.h:240).
+    pub fn leaf_vector(&self, nid: usize) -> &[T] {
+        let begin = self.leaf_vector_begin[nid] as usize;
+        let end = self.leaf_vector_end[nid] as usize;
+        &self.leaf_vector.as_slice()[begin..end]
+    }
+
+    /// The category list of `nid` as a slice into the CSR `category_list` column
+    /// (`[category_list_begin[nid], category_list_end[nid])`, tree.h:248).
+    pub fn category_list(&self, nid: usize) -> &[u32] {
+        let begin = self.category_list_begin[nid] as usize;
+        let end = self.category_list_end[nid] as usize;
+        &self.category_list.as_slice()[begin..end]
+    }
+
+    /// Whether `nid` carries a data count:
+    /// `!data_count_present.is_empty() && data_count_present[nid]` (tree.h:282).
+    pub fn has_data_count(&self, nid: usize) -> bool {
+        !self.data_count_present.is_empty() && self.data_count_present[nid]
+    }
+
+    /// Per-node data count of `nid` (`data_count_[nid]`, tree.h:289).
+    pub fn data_count(&self, nid: usize) -> u64 {
+        self.data_count[nid]
+    }
+
+    /// Whether `nid` carries a hessian sum:
+    /// `!sum_hess_present.is_empty() && sum_hess_present[nid]` (tree.h:297).
+    pub fn has_sum_hess(&self, nid: usize) -> bool {
+        !self.sum_hess_present.is_empty() && self.sum_hess_present[nid]
+    }
+
+    /// Per-node hessian sum of `nid` (`sum_hess_[nid]`, tree.h:304).
+    pub fn sum_hess(&self, nid: usize) -> f64 {
+        self.sum_hess[nid]
+    }
+
+    /// Whether `nid` carries a split gain:
+    /// `!gain_present.is_empty() && gain_present[nid]` (tree.h:311).
+    pub fn has_gain(&self, nid: usize) -> bool {
+        !self.gain_present.is_empty() && self.gain_present[nid]
+    }
+
+    /// Per-node split gain of `nid` (`gain_[nid]`, tree.h:318).
+    pub fn gain(&self, nid: usize) -> f64 {
+        self.gain[nid]
+    }
 }
 
 impl<T: Copy> Default for Tree<T> {
