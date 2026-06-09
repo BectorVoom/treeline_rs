@@ -137,6 +137,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "treelite-builder"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+ "treelite-core",
+]
+
+[[package]]
 name = "treelite-core"
 version = "0.1.0"
 dependencies = [

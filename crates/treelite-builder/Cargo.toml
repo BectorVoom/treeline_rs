@@ -1,0 +1,9 @@
+[package]
+name = "treelite-builder"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+treelite-core = { path = "../treelite-core" }
+thiserror = { workspace = true }
