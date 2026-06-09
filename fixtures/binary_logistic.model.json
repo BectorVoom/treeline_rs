@@ -1,0 +1,71 @@
+{
+  "learner": {
+    "learner_model_param": {
+      "num_feature": "2",
+      "num_class": "0",
+      "num_target": "1",
+      "base_score": "2.5E-1"
+    },
+    "gradient_booster": {
+      "name": "gbtree",
+      "model": {
+        "trees": [
+          {
+            "id": 0,
+            "tree_param": {
+              "num_nodes": "3",
+              "size_leaf_vector": "0"
+            },
+            "left_children": [1, -1, -1],
+            "right_children": [2, -1, -1],
+            "parents": [2147483647, 0, 0],
+            "split_indices": [0, 0, 0],
+            "split_type": [0, 0, 0],
+            "split_conditions": [0.5, -0.75, 1.25],
+            "default_left": [1, 0, 0],
+            "loss_changes": [10.0, 0.0, 0.0],
+            "sum_hessian": [6.0, 3.0, 3.0],
+            "base_weights": [0.0, -0.75, 1.25],
+            "leaf_child_counts": [0, 0, 0],
+            "categories": [],
+            "categories_nodes": [],
+            "categories_segments": [],
+            "categories_sizes": []
+          },
+          {
+            "id": 1,
+            "tree_param": {
+              "num_nodes": "3",
+              "size_leaf_vector": "0"
+            },
+            "left_children": [1, -1, -1],
+            "right_children": [2, -1, -1],
+            "parents": [2147483647, 0, 0],
+            "split_indices": [1, 0, 0],
+            "split_type": [0, 0, 0],
+            "split_conditions": [1.5, 0.5, -0.25],
+            "default_left": [1, 0, 0],
+            "loss_changes": [8.0, 0.0, 0.0],
+            "sum_hessian": [6.0, 3.0, 3.0],
+            "base_weights": [0.0, 0.5, -0.25],
+            "leaf_child_counts": [0, 0, 0],
+            "categories": [],
+            "categories_nodes": [],
+            "categories_segments": [],
+            "categories_sizes": []
+          }
+        ],
+        "tree_info": [0, 0],
+        "gbtree_model_param": {
+          "num_trees": "2",
+          "num_parallel_tree": "1"
+        }
+      }
+    },
+    "objective": {
+      "name": "binary:logistic"
+    },
+    "attributes": {}
+  },
+  "version": [4, 7, 0]
+}
