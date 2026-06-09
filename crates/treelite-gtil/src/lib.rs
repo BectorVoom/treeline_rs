@@ -193,11 +193,10 @@ pub fn predict(model: &Model, data: &[f32], num_row: usize) -> Result<Vec<f32>, 
     // Validate the input buffer up front: `predict_preset` slices
     // `data[r * num_feature..(r + 1) * num_feature]` per row, which would panic
     // on a malformed model whose `num_feature` exceeds the data actually
-    // supplied (WR-01 / T-03-01). Use checked multiply so the product can never
-    // wrap into a too-small `required`.
-    let required = num_row
-        .checked_mul(num_feature)
-        .unwrap_or(usize::MAX);
+    // supplied (WR-01 / T-03-01). Saturate the product so an overflow can never
+    // wrap into a too-small `required` (it pins to usize::MAX, rejecting the
+    // input as intended).
+    let required = num_row.saturating_mul(num_feature);
     if data.len() < required {
         return Err(GtilError::InvalidInputShape {
             num_row,
