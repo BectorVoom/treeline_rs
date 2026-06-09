@@ -24,12 +24,12 @@ A from-scratch Rust rewrite of [Treelite](https://github.com/dmlc/treelite) — 
 - [ ] Cargo workspace with modular crates, one responsibility each (core model, enums, loaders, builder, GTIL, serialization, Python binding)
 - [ ] Import XGBoost models: JSON, UBJSON, and legacy binary formats
 - [ ] Import LightGBM text-format models
-- [ ] Import scikit-learn estimators (including the bulk tree-construction path)
+- [ ] Import scikit-learn estimators — RandomForest, ExtraTrees, GradientBoosting, IsolationForest, AND HistGradientBoosting (incl. the bulk tree-construction path)
 - [ ] In-memory struct-of-arrays `Model` / `Tree` representation parameterized over float32/float64
 - [ ] Programmatic `ModelBuilder` API with topology/orphan validation
 - [ ] GTIL inference: dense + sparse CSR input, the 4 predict kinds, full postprocessor set (sigmoid, softmax, etc.)
 - [ ] GTIL inference hot path (tree traversal + postprocessors) implemented as `cubecl` kernels
-- [ ] cubecl CPU backend by default; GPU backends (CUDA/ROCm/wgpu) opt-in at runtime
+- [ ] cubecl CPU backend by default; at least one GPU backend (CUDA or wgpu) working and runtime-selectable in v1, with a GPU equivalence report
 - [ ] Serialization: binary + JSON round-trip for the current (v5) format generation
 - [ ] PyO3 Python binding exposing load → predict → serialize directly over the Rust core
 - [ ] Equivalence harness: random seeded input matrices → golden output vectors captured from C++ Treelite → assert Rust within 1e-5
@@ -77,6 +77,8 @@ A from-scratch Rust rewrite of [Treelite](https://github.com/dmlc/treelite) — 
 | No C-API; PyO3 is the only binding | Explicit user constraint | — Pending |
 | Name crates `treelite-rs` (repo stays `treeline_rs`) | Signal a faithful port of the real upstream project (treelite) | — Pending |
 | `thiserror` (libs) + `anyhow` (bins/tests) | Typed recoverable errors at API boundaries; ergonomic context at the top level | — Pending |
+| HistGradientBoosting included in v1 sklearn scope | User chose full sklearn parity over deferring the most complex loader | — Pending |
+| At least one GPU backend validated in v1 (not deferred to v1.x) | User wants GPU acceleration proven in v1, not just CPU cubecl | — Pending |
 
 ## Evolution
 
