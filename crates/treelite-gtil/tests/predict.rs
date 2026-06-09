@@ -129,6 +129,36 @@ fn out_of_bounds_feature_index_is_typed_error() {
 }
 
 #[test]
+fn out_of_bounds_child_node_id_is_typed_error() {
+    // node 0 routes left to node 99, which does not exist in a 3-node tree.
+    // Traversal must return NodeIndexOutOfBounds, not panic (CR-01 / T-03-01).
+    let mut t = split_tree(0, 0.5, 1.0, -1.0);
+    t.cleft = TreeBuf::from_owned(vec![99, -1, -1]);
+    let m = model_of(vec![t], "identity", 0.0);
+    // feature[0] = 0.0 < 0.5 → follow cleft[0] == 99 (out of range).
+    let data = [0.0_f32, 0.0];
+    let err = predict(&m, &data, 1).unwrap_err();
+    match err {
+        GtilError::NodeIndexOutOfBounds { node } => assert_eq!(node, 99),
+        other => panic!("expected NodeIndexOutOfBounds, got {other:?}"),
+    }
+}
+
+#[test]
+fn negative_child_node_id_other_than_leaf_sentinel_is_typed_error() {
+    // node 0 routes RIGHT to node -2 (only -1 is the leaf sentinel). The `-2`
+    // must become a typed error rather than `(-2 as usize) == usize::MAX`
+    // indexing out of bounds (CR-01 / T-03-01).
+    let mut t = split_tree(0, 0.5, 1.0, -1.0);
+    t.cright = TreeBuf::from_owned(vec![-2, -1, -1]);
+    let m = model_of(vec![t], "identity", 0.0);
+    // feature[0] = 1.0 >= 0.5 → follow cright[0] == -2.
+    let data = [1.0_f32, 0.0];
+    let err = predict(&m, &data, 1).unwrap_err();
+    assert!(matches!(err, GtilError::NodeIndexOutOfBounds { .. }));
+}
+
+#[test]
 fn unsupported_postprocessor_is_typed_error() {
     let m = model_of(vec![split_tree(0, 0.5, 1.0, -1.0)], "softmax", 0.0);
     let data = [0.0_f32, 0.0];

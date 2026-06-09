@@ -86,6 +86,11 @@ fn evaluate_tree<T: PredictScalar + PartialOrd>(
     tree: &Tree<T>,
     row: &[f32],
 ) -> Result<usize, GtilError> {
+    // Upper bound on valid node ids; `num_nodes` is the loader-produced count
+    // (`tree.h:158`). A child id outside `[0, num_nodes)` is a malformed
+    // `cleft`/`cright` and must become a typed error, not an OOB slice panic
+    // (T-03-01: a malformed `Model` must never index out of bounds).
+    let num_nodes = tree.num_nodes.max(0) as usize;
     let mut nid: usize = 0;
     while !tree.is_leaf(nid) {
         let fi = tree.split_index(nid);
@@ -97,18 +102,26 @@ fn evaluate_tree<T: PredictScalar + PartialOrd>(
             });
         }
         let fvalue = row[fi as usize];
-        if fvalue.is_nan() {
+        let next: i32 = if fvalue.is_nan() {
             // Missing value → default direction (predict.cc:159).
-            nid = tree.default_child(nid) as usize;
+            tree.default_child(nid)
         } else {
-            nid = next_node(
+            next_node(
                 T::from_f32(fvalue),
                 tree.threshold(nid),
                 tree.comparison_op(nid),
                 tree.left_child(nid),
                 tree.right_child(nid),
-            ) as usize;
+            )
+        };
+        // Validate the child id before re-entering the loop. `is_leaf` only
+        // treats `-1` as the leaf sentinel, so any other negative id (e.g. `-2`)
+        // or any id `>= num_nodes` would otherwise index `cleft[nid]` out of
+        // bounds and panic. Return the declared typed error instead (CR-01).
+        if next < 0 || (next as usize) >= num_nodes {
+            return Err(GtilError::NodeIndexOutOfBounds { node: next as usize });
         }
+        nid = next as usize;
     }
     Ok(nid)
 }
