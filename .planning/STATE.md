@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 2 context gathered
-last_updated: "2026-06-09T23:17:20.809Z"
-last_activity: 2026-06-09 -- Phase 02 planning complete
+stopped_at: 02-01 complete — golden v5 blob frozen, bookkeeping fields landed
+last_updated: "2026-06-10T00:00:00.000Z"
+last_activity: 2026-06-10 -- Plan 02-01 completed (Tasks 1+3 committed; D-02 golden v5 blob frozen)
 progress:
   total_phases: 9
   completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
-  percent: 11
+  total_plans: 9
+  completed_plans: 5
+  percent: 14
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-09)
 
 **Core value:** Predictions match upstream Treelite within 1e-5.
-**Current focus:** Phase 01 — end-to-end-spine
+**Current focus:** Phase 02 — builder-serialization
 
 ## Current Position
 
-Phase: 2
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-06-09 -- Phase 02 planning complete
+Phase: 02 (builder-serialization) — EXECUTING
+Plan: 2 of 5
+Status: Plan 02-01 COMPLETE — bookkeeping fields landed (2e8d32c); D-02 golden v5 blob frozen + committed (75bdd25); next: 02-02 (Wave 2)
+Last activity: 2026-06-10 -- 02-01 complete; golden blob first 12 bytes confirmed (4,7,0)
 
-Progress: [░░░░░░░░░░] 3%
+Progress: [█░░░░░░░░░] 14%
 
 ## Performance Metrics
 
@@ -55,6 +55,7 @@ Progress: [░░░░░░░░░░] 3%
 | Phase 01 P02 | 4min | 2 tasks | 5 files |
 | Phase 01 P03 | 4min | 2 tasks | 5 files |
 | Phase 01 P04 | 3min | 2 tasks | 4 files |
+| Phase 02 P01 | 10min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -75,6 +76,8 @@ Recent decisions affecting current work:
 - [Phase ?]: [01-02]: Per-tree parallel arrays validated against tree_param.num_nodes before building -> DimensionMismatch, never OOB (ERR-01).
 - [Phase ?]: Harness: NaN in golden.json normalized to JSON null on read (serde_json rejects bare NaN); NanF32 maps null->f32::NAN — committed golden.json never edited
 - [Phase ?]: Spine test passes with max |delta| = 0e0 — Rust pipeline bitwise-exact vs upstream Treelite 4.7.0 on binary:logistic fixture
+- [02-01]: v5 header version constants are (4,7,0) NOT (5,x,x) — empirically confirmed by golden_v5.bin first 12 bytes (RESEARCH Pitfall 1 / Assumption A1 settled).
+- [02-01]: Model owns 7 private v5 bookkeeping scalars staged at serialize time via stage_serialization_fields; pub(crate) accessors are the Pattern 5 borrow source for the in-crate serializer.
 
 ### Pending Todos
 
@@ -96,6 +99,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-09T22:52:12.582Z
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-builder-serialization/02-CONTEXT.md
+Last session: 2026-06-10
+Stopped at: 02-01 complete — next plan is 02-02 (Wave 2)
+Resume file: .planning/phases/02-builder-serialization/02-02-PLAN.md

@@ -70,7 +70,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 **Wave 1**
 
-- [ ] 02-01-PLAN.md — Core Model/Tree private bookkeeping fields + frozen D-02 golden v5 blob capture (Wave 1)
+- [x] 02-01-PLAN.md — Core Model/Tree private bookkeeping fields + frozen D-02 golden v5 blob capture (Wave 1) ✅
 
 **Wave 2** *(blocked on Wave 1)*
 
@@ -196,7 +196,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. End-to-End Spine | 4/4 | Complete    | 2026-06-09 |
-| 2. Builder & Serialization | 0/5 | Planned | - |
+| 2. Builder & Serialization | 1/5 | In progress | - |
 | 3. Full XGBoost Loaders | 0/TBD | Not started | - |
 | 4. LightGBM & scikit-learn Loaders | 0/TBD | Not started | - |
 | 5. Full Scalar GTIL & Equivalence Harness | 0/TBD | Not started | - |
