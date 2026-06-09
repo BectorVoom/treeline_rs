@@ -25,9 +25,9 @@ Requirements for the initial release. Each maps to a roadmap phase. All are hypo
 
 ### Model Builder
 
-- [ ] **BLD-01**: A fluent `ModelBuilder` constructs a model node-by-node with orphan/topology validation
-- [ ] **BLD-02**: `ConcatenateModelObjects` merges multiple models into one
-- [ ] **BLD-03**: A `BulkConstructTree` fast path builds trees from pre-validated bulk input
+- [x] **BLD-01**: A fluent `ModelBuilder` constructs a model node-by-node with orphan/topology validation
+- [x] **BLD-02**: `ConcatenateModelObjects` merges multiple models into one
+- [x] **BLD-03**: A `BulkConstructTree` fast path builds trees from pre-validated bulk input
 
 ### XGBoost Loader
 
@@ -144,9 +144,9 @@ Which phases cover which requirements.
 | CORE-04 | Phase 1 | Complete |
 | ERR-01 | Phase 1 | Complete |
 | ERR-02 | Phase 1 | Complete |
-| BLD-01 | Phase 2 | Pending |
-| BLD-02 | Phase 2 | Pending |
-| BLD-03 | Phase 2 | Pending |
+| BLD-01 | Phase 2 | Complete (02-02) |
+| BLD-02 | Phase 2 | Complete (02-02) |
+| BLD-03 | Phase 2 | Complete (02-02) |
 | SER-01 | Phase 2 | Pending |
 | SER-02 | Phase 2 | Pending |
 | SER-03 | Phase 2 | Pending |

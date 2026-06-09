@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: 02-01 complete — golden v5 blob frozen, bookkeeping fields landed
+stopped_at: 02-02 complete — treelite-builder crate landed (ModelBuilder + concat + bulk)
 last_updated: "2026-06-10T00:00:00.000Z"
-last_activity: 2026-06-10 -- Plan 02-01 completed (Tasks 1+3 committed; D-02 golden v5 blob frozen)
+last_activity: 2026-06-10 -- Plan 02-02 completed (Tasks 1+2 committed; BLD-01/02/03 green, 17 tests)
 progress:
   total_phases: 9
   completed_phases: 1
   total_plans: 9
-  completed_plans: 5
-  percent: 14
+  completed_plans: 6
+  percent: 17
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 02 (builder-serialization) — EXECUTING
-Plan: 2 of 5
-Status: Plan 02-01 COMPLETE — bookkeeping fields landed (2e8d32c); D-02 golden v5 blob frozen + committed (75bdd25); next: 02-02 (Wave 2)
-Last activity: 2026-06-10 -- 02-01 complete; golden blob first 12 bytes confirmed (4,7,0)
+Plan: 3 of 5
+Status: Plan 02-02 COMPLETE — treelite-builder crate landed (a16bccc, ef8285a); BLD-01/02/03 green; next: 02-03 (Wave 2)
+Last activity: 2026-06-10 -- 02-02 complete; ModelBuilder + concat + bulk, 17 tests, workspace green
 
-Progress: [█░░░░░░░░░] 14%
+Progress: [██░░░░░░░░] 17%
 
 ## Performance Metrics
 
@@ -56,6 +56,7 @@ Progress: [█░░░░░░░░░] 14%
 | Phase 01 P03 | 4min | 2 tasks | 5 files |
 | Phase 01 P04 | 3min | 2 tasks | 4 files |
 | Phase 02 P01 | 10min | 3 tasks | 5 files |
+| Phase 02 P02 | 7min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -78,6 +79,9 @@ Recent decisions affecting current work:
 - [Phase ?]: Spine test passes with max |delta| = 0e0 — Rust pipeline bitwise-exact vs upstream Treelite 4.7.0 on binary:logistic fixture
 - [02-01]: v5 header version constants are (4,7,0) NOT (5,x,x) — empirically confirmed by golden_v5.bin first 12 bytes (RESEARCH Pitfall 1 / Assumption A1 settled).
 - [02-01]: Model owns 7 private v5 bookkeeping scalars staged at serialize time via stage_serialization_fields; pub(crate) accessors are the Pattern 5 borrow source for the in-crate serializer.
+- [02-02]: treelite-builder ModelBuilder builds only the <f32,f32> preset in Phase 2; bulk_construct_tree yields Tree<f64> (sklearn doubles). node_id_map is a BTreeMap to mirror upstream std::map for deterministic orphan-error keying.
+- [02-02]: leaf-vs-test mutual exclusivity is enforced structurally by the state machine (second detail call → WrongState), not a dedicated runtime conflict check. Orphan check always-on; D-08 validation toggle NOT ported.
+- [02-02]: concatenate adds NO postprocessor/base_scores cross-input equality checks — upstream model_concat.cc lacks them (BLD-02 fidelity).
 
 ### Pending Todos
 
@@ -100,5 +104,5 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-06-10
-Stopped at: 02-01 complete — next plan is 02-02 (Wave 2)
-Resume file: .planning/phases/02-builder-serialization/02-02-PLAN.md
+Stopped at: 02-02 complete — next plan is 02-03 (Wave 2)
+Resume file: .planning/phases/02-builder-serialization/02-03-PLAN.md

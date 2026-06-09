@@ -74,7 +74,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 02-02-PLAN.md — treelite-builder crate: fluent ModelBuilder (BLD-01) + ConcatenateModelObjects (BLD-02) + BulkConstructTree (BLD-03) (Wave 2)
+- [x] 02-02-PLAN.md — treelite-builder crate: fluent ModelBuilder (BLD-01) + ConcatenateModelObjects (BLD-02) + BulkConstructTree (BLD-03) (Wave 2) ✅
 - [ ] 02-03-PLAN.md — Core serialize module: v5 binary round-trip + golden byte-compare (SER-01) + bounds-checked deserialize (D-03) + zero-copy PyBuffer frames (SER-02) (Wave 2)
 
 **Wave 3** *(blocked on Wave 2)*
