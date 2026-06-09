@@ -1,0 +1,20 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/treelite-core",
+    "crates/treelite-xgboost",
+    "crates/treelite-gtil",
+    "crates/treelite-harness",
+]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+thiserror = "2.0.18"
+anyhow = "1.0.102"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+approx = "0.5.1"

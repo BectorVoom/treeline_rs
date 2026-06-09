@@ -1,0 +1,13 @@
+[package]
+name = "treelite-harness"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+treelite-core = { path = "../treelite-core" }
+treelite-xgboost = { path = "../treelite-xgboost" }
+treelite-gtil = { path = "../treelite-gtil" }
+anyhow = { workspace = true }
+approx = { workspace = true }
+serde_json = { workspace = true }
