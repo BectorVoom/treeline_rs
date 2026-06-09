@@ -42,7 +42,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 4 plansPlans:
 **Wave 1**
 
-- [ ] 01-01-PLAN.md — Workspace scaffold + four enums + Tree/TreeBuf SoA core + Model header + committed fixture & frozen golden (Wave 1)
+- [x] 01-01-PLAN.md — Workspace scaffold + four enums + Tree/TreeBuf SoA core + Model header + committed fixture & frozen golden (Wave 1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -181,7 +181,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. End-to-End Spine | 0/4 | Planned | - |
+| 1. End-to-End Spine | 1/4 | In Progress | - |
 | 2. Builder & Serialization | 0/TBD | Not started | - |
 | 3. Full XGBoost Loaders | 0/TBD | Not started | - |
 | 4. LightGBM & scikit-learn Loaders | 0/TBD | Not started | - |

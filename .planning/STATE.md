@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 1 context gathered
-last_updated: "2026-06-09T20:47:37.784Z"
-last_activity: 2026-06-09 — Roadmap created (9 phases, MVP slices along the research-mandated dependency spine)
+stopped_at: Completed 01-01-PLAN.md
+last_updated: "2026-06-10T06:30:00.000Z"
+last_activity: 2026-06-10 -- Completed Phase 01 Plan 01 (workspace + treelite-core foundation)
 progress:
   total_phases: 9
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_plans: 4
+  completed_plans: 1
+  percent: 3
 ---
 
 # Project State
@@ -21,30 +21,30 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-09)
 
 **Core value:** Predictions match upstream Treelite within 1e-5.
-**Current focus:** Phase 1 — End-to-End Spine
+**Current focus:** Phase 01 — end-to-end-spine
 
 ## Current Position
 
-Phase: 1 of 9 (End-to-End Spine)
-Plan: 0 of TBD in current phase
-Status: Ready to execute
-Last activity: 2026-06-09 — Roadmap created (9 phases, MVP slices along the research-mandated dependency spine)
+Phase: 01 (end-to-end-spine) — EXECUTING
+Plan: 2 of 4
+Status: Executing Phase 01 (Plan 01 complete)
+Last activity: 2026-06-10 -- Completed Phase 01 Plan 01 (workspace + treelite-core foundation)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [░░░░░░░░░░] 3%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 0
-- Average duration: — min
-- Total execution time: 0.0 hours
+- Total plans completed: 1
+- Average duration: ~5 min
+- Total execution time: 0.1 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 01 | 1 | ~5 min | ~5 min |
 
 **Recent Trend:**
 
@@ -63,6 +63,10 @@ Recent decisions affecting current work:
 - [Roadmap]: Vertical MVP slices laid along the upstream dependency DAG — Phase 1 is the thinnest load→predict→verify spine; later phases widen one layer each, ending runnable + 1e-5-tested.
 - [Roadmap]: HistGradientBoosting confirmed in v1 scope (Phase 4) — the most complex sklearn loader path.
 - [Roadmap]: CPU cubecl backend validated to 1e-5 (Phase 6) before any GPU backend is attempted (Phase 7).
+- [01-01]: Enum variant names mirror upstream `kXxx` verbatim; `non_camel_case_types` suppressed at module level for porting fidelity.
+- [01-01]: Inherent `from_str` (not `std::str::FromStr`) mirrors upstream `FromString` fallible-parse API; `clippy::should_implement_trait` suppressed.
+- [01-01]: `TreeBuf<T>` is a two-mode enum `Owned(Vec<T>)`/`Borrowed{ptr,len}` with `T: Copy` POD bound; `bytemuck` deferred to Phase 9.
+- [01-01]: Confirmed `num_class`/`leaf_vector_shape`/`target_id`/`class_id` are `Vec<i32>` (array-typed per tree.h:543-547), not scalars as ROADMAP wording implied.
 
 ### Pending Todos
 
@@ -84,6 +88,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-09T12:20:15.019Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-end-to-end-spine/01-CONTEXT.md
+Last session: 2026-06-10T06:30:00.000Z
+Stopped at: Completed 01-01-PLAN.md
+Resume file: None

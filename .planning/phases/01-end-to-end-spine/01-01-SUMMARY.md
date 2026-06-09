@@ -112,3 +112,7 @@ The three downstream crates (`treelite-xgboost`, `treelite-gtil`, `treelite-harn
 - `cargo clippy --workspace --all-targets` — clean.
 - `grep -v '^[[:space:]]*//' crates/treelite-core/src/tree.rs | grep -c 'struct Node'` → `0` (no Node struct).
 - `fixtures/golden.json` present with `{input, output, manifest}`; all outputs in (0,1) (D-06/D-07).
+
+## Self-Check: PASSED
+
+All declared created files exist on disk and all four task commits (`f65acf1`, `1f1f365`, `83afa44`, `28bf03a`) are present in git history.

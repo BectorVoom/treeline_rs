@@ -9,19 +9,19 @@ Requirements for the initial release. Each maps to a roadmap phase. All are hypo
 
 ### Foundations
 
-- [ ] **FND-01**: Cargo workspace (edition 2024, resolver "3") builds all member crates from a single pinned `[workspace.dependencies]` table
-- [ ] **FND-02**: All third-party crates pinned to current latest-stable versions, with no pre-release crate on the critical path
+- [x] **FND-01**: Cargo workspace (edition 2024, resolver "3") builds all member crates from a single pinned `[workspace.dependencies]` table
+- [x] **FND-02**: All third-party crates pinned to current latest-stable versions, with no pre-release crate on the critical path
 
 ### Vocabulary / Enums
 
-- [ ] **ENUM-01**: `TaskType`, `TreeNodeType`, `Operator`, and `DType` enums exist with string conversions matching upstream values
+- [x] **ENUM-01**: `TaskType`, `TreeNodeType`, `Operator`, and `DType` enums exist with string conversions matching upstream values
 
 ### Core Model
 
-- [ ] **CORE-01**: A `Model` is represented as a two-variant enum over `<f32,f32>` and `<f64,f64>` presets (no mixed types)
-- [ ] **CORE-02**: A `Tree<T>` stores all upstream node fields as parallel struct-of-arrays columns
-- [ ] **CORE-03**: Tree column storage (`TreeBuf<T>`) supports both owned and zero-copy borrowed (foreign-buffer) modes
-- [ ] **CORE-04**: A model carries full header metadata (`num_feature`, `task_type`, `num_class`, `leaf_vector_shape`, `target_id`/`class_id`, `postprocessor`, `sigmoid_alpha`, `ratio_c`, `base_scores`, `average_tree_output`, attributes)
+- [x] **CORE-01**: A `Model` is represented as a two-variant enum over `<f32,f32>` and `<f64,f64>` presets (no mixed types)
+- [x] **CORE-02**: A `Tree<T>` stores all upstream node fields as parallel struct-of-arrays columns
+- [x] **CORE-03**: Tree column storage (`TreeBuf<T>`) supports both owned and zero-copy borrowed (foreign-buffer) modes
+- [x] **CORE-04**: A model carries full header metadata (`num_feature`, `task_type`, `num_class`, `leaf_vector_shape`, `target_id`/`class_id`, `postprocessor`, `sigmoid_alpha`, `ratio_c`, `base_scores`, `average_tree_output`, attributes)
 
 ### Model Builder
 
@@ -101,7 +101,7 @@ Requirements for the initial release. Each maps to a roadmap phase. All are hypo
 
 ### Error Handling
 
-- [ ] **ERR-01**: Library crates expose typed `thiserror` errors at their API boundaries
+- [x] **ERR-01**: Library crates expose typed `thiserror` errors at their API boundaries
 - [ ] **ERR-02**: Binaries and tests use `anyhow` for error context
 
 ## v2 Requirements
@@ -135,14 +135,14 @@ Which phases cover which requirements.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FND-01 | Phase 1 | Pending |
-| FND-02 | Phase 1 | Pending |
-| ENUM-01 | Phase 1 | Pending |
-| CORE-01 | Phase 1 | Pending |
-| CORE-02 | Phase 1 | Pending |
-| CORE-03 | Phase 1 | Pending |
-| CORE-04 | Phase 1 | Pending |
-| ERR-01 | Phase 1 | Pending |
+| FND-01 | Phase 1 | Complete |
+| FND-02 | Phase 1 | Complete |
+| ENUM-01 | Phase 1 | Complete |
+| CORE-01 | Phase 1 | Complete |
+| CORE-02 | Phase 1 | Complete |
+| CORE-03 | Phase 1 | Complete |
+| CORE-04 | Phase 1 | Complete |
+| ERR-01 | Phase 1 | Complete |
 | ERR-02 | Phase 1 | Pending |
 | BLD-01 | Phase 2 | Pending |
 | BLD-02 | Phase 2 | Pending |
