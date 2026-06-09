@@ -10,7 +10,12 @@
 //! Variant names deliberately mirror the upstream C++ `kXxx` enumerators
 //! verbatim (porting fidelity), so the `non_camel_case_types` lint is
 //! suppressed for this module.
+//!
+//! The inherent `from_str` methods intentionally mirror the upstream
+//! `FromString` API (a fallible parser returning the crate's typed error),
+//! so the `clippy::should_implement_trait` lint is suppressed.
 #![allow(non_camel_case_types)]
+#![allow(clippy::should_implement_trait)]
 
 use crate::error::CoreError;
 
