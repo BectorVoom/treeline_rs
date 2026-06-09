@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: 02-02 complete — treelite-builder crate landed (ModelBuilder + concat + bulk)
+status: completed
+stopped_at: 02-03 complete — next plan is 02-04 (Wave 2)
 last_updated: "2026-06-10T00:00:00.000Z"
-last_activity: 2026-06-10 -- Plan 02-02 completed (Tasks 1+2 committed; BLD-01/02/03 green, 17 tests)
+last_activity: 2026-06-10 -- 02-03 complete; v5 serializer/deserializer + zero-copy PyBuffer frames, golden byte-fidelity (951 B), workspace green
 progress:
   total_phases: 9
   completed_phases: 1
   total_plans: 9
-  completed_plans: 6
-  percent: 17
+  completed_plans: 7
+  percent: 11
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 02 (builder-serialization) — EXECUTING
-Plan: 3 of 5
-Status: Plan 02-02 COMPLETE — treelite-builder crate landed (a16bccc, ef8285a); BLD-01/02/03 green; next: 02-03 (Wave 2)
-Last activity: 2026-06-10 -- 02-02 complete; ModelBuilder + concat + bulk, 17 tests, workspace green
+Plan: 4 of 5
+Status: Plan 02-03 COMPLETE — v5 serializer/deserializer + zero-copy PyBuffer frames landed (9d68397, a7575df); SER-01/SER-02 green; golden round-trip byte-exact (951 B); next: 02-04 (Wave 2)
+Last activity: 2026-06-10 -- 02-03 complete; serialize_to_buffer/deserialize/serialize_to_pybuffer, 7 new tests, workspace green
 
-Progress: [██░░░░░░░░] 17%
+Progress: [████░░░░░░] 44%
 
 ## Performance Metrics
 
@@ -57,6 +57,7 @@ Progress: [██░░░░░░░░] 17%
 | Phase 01 P04 | 3min | 2 tasks | 4 files |
 | Phase 02 P01 | 10min | 3 tasks | 5 files |
 | Phase 02 P02 | 7min | 2 tasks | 9 files |
+| Phase 02 P03 | 75min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,7 @@ Recent decisions affecting current work:
 - [02-02]: treelite-builder ModelBuilder builds only the <f32,f32> preset in Phase 2; bulk_construct_tree yields Tree<f64> (sklearn doubles). node_id_map is a BTreeMap to mirror upstream std::map for deterministic orphan-error keying.
 - [02-02]: leaf-vs-test mutual exclusivity is enforced structurally by the state machine (second detail call → WrongState), not a dedicated runtime conflict check. Orphan check always-on; D-08 validation toggle NOT ported.
 - [02-02]: concatenate adds NO postprocessor/base_scores cross-input equality checks — upstream model_concat.cc lacks them (BLD-02 fidelity).
+- [Phase ?]: 02-03: golden byte-fidelity proven via serialize(deserialize(golden_v5.bin))==blob, making the serializer gate loader-independent; XGBoost loader fidelity gap deferred (DEF-02-01)
 
 ### Pending Todos
 
@@ -103,6 +105,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10
+Last session: 2026-06-09T23:54:33.882Z
 Stopped at: 02-02 complete — next plan is 02-03 (Wave 2)
 Resume file: .planning/phases/02-builder-serialization/02-03-PLAN.md

@@ -71,8 +71,8 @@ Requirements for the initial release. Each maps to a roadmap phase. All are hypo
 
 ### Serialization
 
-- [ ] **SER-01**: A model round-trips through the v5 binary format (serialize + deserialize)
-- [ ] **SER-02**: A model serializes to the v5 PyBuffer (zero-copy) representation
+- [x] **SER-01**: A model round-trips through the v5 binary format (serialize + deserialize)
+- [x] **SER-02**: A model serializes to the v5 PyBuffer (zero-copy) representation
 - [ ] **SER-03**: A model dumps to JSON (`DumpAsJSON`)
 - [ ] **SER-04**: Field accessors expose model/tree fields for inspection
 
@@ -147,8 +147,8 @@ Which phases cover which requirements.
 | BLD-01 | Phase 2 | Complete (02-02) |
 | BLD-02 | Phase 2 | Complete (02-02) |
 | BLD-03 | Phase 2 | Complete (02-02) |
-| SER-01 | Phase 2 | Pending |
-| SER-02 | Phase 2 | Pending |
+| SER-01 | Phase 2 | Complete |
+| SER-02 | Phase 2 | Complete |
 | SER-03 | Phase 2 | Pending |
 | SER-04 | Phase 2 | Pending |
 | XGB-01 | Phase 3 | Pending |

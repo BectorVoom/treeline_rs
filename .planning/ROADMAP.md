@@ -75,7 +75,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1)*
 
 - [x] 02-02-PLAN.md — treelite-builder crate: fluent ModelBuilder (BLD-01) + ConcatenateModelObjects (BLD-02) + BulkConstructTree (BLD-03) (Wave 2) ✅
-- [ ] 02-03-PLAN.md — Core serialize module: v5 binary round-trip + golden byte-compare (SER-01) + bounds-checked deserialize (D-03) + zero-copy PyBuffer frames (SER-02) (Wave 2)
+- [x] 02-03-PLAN.md — Core serialize module: v5 binary round-trip + golden byte-compare (SER-01) + bounds-checked deserialize (D-03) + zero-copy PyBuffer frames (SER-02) (Wave 2)
 
 **Wave 3** *(blocked on Wave 2)*
 
@@ -196,7 +196,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. End-to-End Spine | 4/4 | Complete    | 2026-06-09 |
-| 2. Builder & Serialization | 1/5 | In progress | - |
+| 2. Builder & Serialization | 3/5 | In Progress|  |
 | 3. Full XGBoost Loaders | 0/TBD | Not started | - |
 | 4. LightGBM & scikit-learn Loaders | 0/TBD | Not started | - |
 | 5. Full Scalar GTIL & Equivalence Harness | 0/TBD | Not started | - |
