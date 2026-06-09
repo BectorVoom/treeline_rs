@@ -70,8 +70,14 @@ pub struct Tree<T: Copy> {
     pub has_categorical_split: bool,
     /// Number of nodes in this tree (tree.h:158).
     pub num_nodes: i32,
-    // num_opt_field_per_tree_/_per_node_ (tree.h:131-132) are serialization
-    // bookkeeping — deferred to Phase 2.
+
+    // --- serialization bookkeeping (tree.h:131-132) ---
+    /// Optional-field count in the per-tree extension slot (tree.h:131);
+    /// always serialized as `0` (RESEARCH § Per-tree #24).
+    pub num_opt_field_per_tree: i32,
+    /// Optional-field count in the per-node extension slot (tree.h:132);
+    /// always serialized as `0` (RESEARCH § Per-tree #25).
+    pub num_opt_field_per_node: i32,
 }
 
 impl<T: Copy> Tree<T> {
@@ -101,6 +107,8 @@ impl<T: Copy> Tree<T> {
             gain_present: TreeBuf::empty(),
             has_categorical_split: false,
             num_nodes: 0,
+            num_opt_field_per_tree: 0,
+            num_opt_field_per_node: 0,
         }
     }
 

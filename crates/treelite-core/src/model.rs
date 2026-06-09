@@ -13,7 +13,7 @@
 //! XGBoost-JSON only ever produces the `F32` variant. Move-only by intent
 //! (mirrors the upstream deleted copy ctor).
 
-use crate::enums::TaskType;
+use crate::enums::{DType, TaskType};
 use crate::tree::Tree;
 
 /// A typed container for a vector of trees (`ModelPreset<T,T>` upstream).
@@ -82,9 +82,27 @@ pub struct Model {
     pub base_scores: Vec<f64>,
     /// Free-form attributes JSON blob (tree.h:553); may be empty.
     pub attributes: String,
-    // private serialization bookkeeping (tree.h:556-567) — deferred to Phase 2:
-    // num_tree_, num_opt_field_per_model_, major/minor/patch_ver_,
-    // threshold_type_, leaf_output_type_.
+
+    // --- private serialization bookkeeping (tree.h:556-567) ---
+    // These are NOT loaded from any source; they are recomputed at serialize
+    // time by `stage_serialization_fields` and then borrowed by the header
+    // frame walk (Pattern 5: a recomputed scalar needs a `'a`-lived home so a
+    // zero-copy borrowed frame can point at it). Module-private; the in-crate
+    // serializer reads them via the `pub(crate)` accessors below.
+    /// Number of trees in the variant (tree.h:558) — recomputed at serialize time.
+    num_tree_: u64,
+    /// Optional-field count in the model extension slot (tree.h:560) — always `0`.
+    num_opt_field_per_model_: i32,
+    /// Major version of the producing Treelite (tree.h:562) — staged to `4`.
+    major_ver_: i32,
+    /// Minor version of the producing Treelite (tree.h:563) — staged to `7`.
+    minor_ver_: i32,
+    /// Patch version of the producing Treelite (tree.h:564) — staged to `0`.
+    patch_ver_: i32,
+    /// Threshold numeric type tag (tree.h:566) — derived from the variant.
+    threshold_type_: DType,
+    /// Leaf-output numeric type tag (tree.h:567) — derived from the variant.
+    leaf_output_type_: DType,
 }
 
 impl Model {
@@ -106,6 +124,124 @@ impl Model {
             ratio_c: 1.0,
             base_scores: Vec::new(),
             attributes: String::new(),
+            // Inert defaults; overwritten by `stage_serialization_fields` at
+            // serialize time. Type tags start `kInvalid` exactly like upstream
+            // (`tree.h:566-567`, `TypeInfo::kInvalid`).
+            num_tree_: 0,
+            num_opt_field_per_model_: 0,
+            major_ver_: 0,
+            minor_ver_: 0,
+            patch_ver_: 0,
+            threshold_type_: DType::kInvalid,
+            leaf_output_type_: DType::kInvalid,
         }
+    }
+
+    /// Recompute and stage the private v5 header bookkeeping scalars, mirroring
+    /// upstream `SerializeHeader` (`serializer.cc:93-106`; RESEARCH § "Header
+    /// field walk"). Must be called at serialize time before the header frame
+    /// walk borrows these fields.
+    ///
+    /// The version triple is the *producing Treelite version* `4.7.0` — NOT
+    /// `5.x.x` (RESEARCH Pitfall 1 / Summary finding 1): "v5" names the wire
+    /// generation, but the 4.7.0 wheel stamps `major_ver=4`. The type tags are
+    /// derived from the active variant (`F32`→`kFloat32`, `F64`→`kFloat64`),
+    /// `num_tree_` is the variant's tree count, and the model opt-field count is
+    /// always `0` (the extension slot is never written).
+    pub fn stage_serialization_fields(&mut self) {
+        self.major_ver_ = 4;
+        self.minor_ver_ = 7;
+        self.patch_ver_ = 0;
+        self.num_opt_field_per_model_ = 0;
+        let (num_tree, dtype) = match &self.variant {
+            ModelVariant::F32(p) => (p.num_trees(), DType::kFloat32),
+            ModelVariant::F64(p) => (p.num_trees(), DType::kFloat64),
+        };
+        self.num_tree_ = num_tree as u64;
+        self.threshold_type_ = dtype;
+        self.leaf_output_type_ = dtype;
+    }
+}
+
+// --- read accessors for the in-crate serializer (Pattern 5 borrow source) ---
+// These mirror upstream's read-only privates (`major_ver`/`num_tree`/… reject
+// `Set`): read-only by design, `pub(crate)` so only the serialize module sees
+// them. Staged values are valid only after `stage_serialization_fields`.
+//
+// `allow(dead_code)`: their consumer is the in-crate serialize module added in a
+// later Phase 2 plan (D-10); they are the `'a`-lived borrow source for the header
+// frame walk and intentionally exist ahead of that consumer.
+#[allow(dead_code)]
+impl Model {
+    /// Staged major version (tree.h:562).
+    pub(crate) fn major_ver(&self) -> i32 {
+        self.major_ver_
+    }
+    /// Staged minor version (tree.h:563).
+    pub(crate) fn minor_ver(&self) -> i32 {
+        self.minor_ver_
+    }
+    /// Staged patch version (tree.h:564).
+    pub(crate) fn patch_ver(&self) -> i32 {
+        self.patch_ver_
+    }
+    /// Staged tree count (tree.h:558).
+    pub(crate) fn num_tree(&self) -> u64 {
+        self.num_tree_
+    }
+    /// Staged model opt-field count (tree.h:560) — always `0`.
+    pub(crate) fn num_opt_field_per_model(&self) -> i32 {
+        self.num_opt_field_per_model_
+    }
+    /// Staged threshold type tag (tree.h:566).
+    pub(crate) fn threshold_type(&self) -> DType {
+        self.threshold_type_
+    }
+    /// Staged leaf-output type tag (tree.h:567).
+    pub(crate) fn leaf_output_type(&self) -> DType {
+        self.leaf_output_type_
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tree::Tree;
+
+    #[test]
+    fn stage_serialization_fields_sets_version_triple_num_tree_and_type_tags() {
+        // An F32 model with N empty trees.
+        const N: usize = 3;
+        let trees: Vec<Tree<f32>> = (0..N).map(|_| Tree::new()).collect();
+        let mut model = Model::new(ModelVariant::F32(ModelPreset::new(trees)));
+
+        // Before staging, the privates are inert (kInvalid type tags, 0 versions).
+        assert_eq!(model.threshold_type(), DType::kInvalid);
+
+        model.stage_serialization_fields();
+
+        // Version triple is 4.7.0 (the producing Treelite version), NOT 5.x.x
+        // (RESEARCH Pitfall 1).
+        assert_eq!(
+            (model.major_ver(), model.minor_ver(), model.patch_ver()),
+            (4, 7, 0)
+        );
+        // num_tree_ reflects the variant's tree count.
+        assert_eq!(model.num_tree(), N as u64);
+        // F32 variant ⇒ both type tags are kFloat32.
+        assert_eq!(model.threshold_type(), DType::kFloat32);
+        assert_eq!(model.leaf_output_type(), DType::kFloat32);
+        // The model extension slot is always 0.
+        assert_eq!(model.num_opt_field_per_model(), 0);
+    }
+
+    #[test]
+    fn stage_serialization_fields_f64_variant_uses_float64_tags() {
+        let trees: Vec<Tree<f64>> = vec![Tree::new()];
+        let mut model = Model::new(ModelVariant::F64(ModelPreset::new(trees)));
+        model.stage_serialization_fields();
+        assert_eq!(model.threshold_type(), DType::kFloat64);
+        assert_eq!(model.leaf_output_type(), DType::kFloat64);
+        assert_eq!(model.num_tree(), 1);
     }
 }
