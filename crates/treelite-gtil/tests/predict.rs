@@ -129,6 +129,41 @@ fn out_of_bounds_feature_index_is_typed_error() {
 }
 
 #[test]
+fn input_buffer_too_small_is_typed_error() {
+    // model.num_feature == 2 (set by model_of), so 2 rows need 4 elements; only
+    // 3 are supplied. predict must return InvalidInputShape, not panic on the
+    // row slice (WR-01 / T-03-01).
+    let m = model_of(vec![split_tree(0, 0.5, 1.0, -1.0)], "identity", 0.0);
+    let data = [0.0_f32, 0.0, 0.0]; // 3 elements, need 4
+    let err = predict(&m, &data, 2).unwrap_err();
+    match err {
+        GtilError::InvalidInputShape {
+            num_row,
+            num_feature,
+            required,
+            got,
+        } => {
+            assert_eq!(num_row, 2);
+            assert_eq!(num_feature, 2);
+            assert_eq!(required, 4);
+            assert_eq!(got, 3);
+        }
+        other => panic!("expected InvalidInputShape, got {other:?}"),
+    }
+}
+
+#[test]
+fn negative_num_feature_is_typed_error() {
+    // A malformed model with num_feature < 0 must not abort via a usize cast
+    // (WR-02 gtil-side guard); predict returns InvalidInputShape.
+    let mut m = model_of(vec![split_tree(0, 0.5, 1.0, -1.0)], "identity", 0.0);
+    m.num_feature = -1;
+    let data = [0.0_f32, 0.0];
+    let err = predict(&m, &data, 1).unwrap_err();
+    assert!(matches!(err, GtilError::InvalidInputShape { .. }));
+}
+
+#[test]
 fn out_of_bounds_child_node_id_is_typed_error() {
     // node 0 routes left to node 99, which does not exist in a 3-node tree.
     // Traversal must return NodeIndexOutOfBounds, not panic (CR-01 / T-03-01).

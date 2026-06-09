@@ -32,6 +32,26 @@ pub enum GtilError {
         node: usize,
     },
 
+    /// The `data` buffer is too small for the declared `num_row × num_feature`
+    /// shape (or the product overflows `usize`). Upstream would slice the row
+    /// matrix unchecked; here it is a typed error so a malformed `num_feature`
+    /// (WR-01) never reaches an out-of-bounds slice and panics (T-03-01).
+    #[error(
+        "input buffer too small for shape: num_row = {num_row}, num_feature = {num_feature} \
+         requires {required} elements, got {got}"
+    )]
+    InvalidInputShape {
+        /// Declared number of rows.
+        num_row: usize,
+        /// Declared number of features per row (from `model.num_feature`).
+        num_feature: usize,
+        /// Number of elements the shape requires (`num_row * num_feature`),
+        /// or `usize::MAX` if that product overflowed.
+        required: usize,
+        /// Number of elements actually present in `data`.
+        got: usize,
+    },
+
     /// The model's `postprocessor` name is not supported in Phase 1
     /// (only `identity` and `sigmoid`). Upstream silently maps unknown names;
     /// here it is a typed error (T-03-02).

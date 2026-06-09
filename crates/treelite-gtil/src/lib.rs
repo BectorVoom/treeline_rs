@@ -176,7 +176,37 @@ fn predict_preset<T: PredictScalar + PartialOrd>(
 /// - [`GtilError::UnsupportedPostprocessor`] for any postprocessor name other
 ///   than `identity`/`sigmoid` (T-03-02).
 pub fn predict(model: &Model, data: &[f32], num_row: usize) -> Result<Vec<f32>, GtilError> {
+    // `model.num_feature` is loader-produced/untrusted. A negative value casts
+    // to a huge `usize` and overflows the row-slice math; treat it as a (0-sized,
+    // impossible) shape so the buffer-length check below rejects it instead of
+    // panicking (WR-02 gtil-side guard).
+    if model.num_feature < 0 {
+        return Err(GtilError::InvalidInputShape {
+            num_row,
+            num_feature: 0,
+            required: usize::MAX,
+            got: data.len(),
+        });
+    }
     let num_feature = model.num_feature as usize;
+
+    // Validate the input buffer up front: `predict_preset` slices
+    // `data[r * num_feature..(r + 1) * num_feature]` per row, which would panic
+    // on a malformed model whose `num_feature` exceeds the data actually
+    // supplied (WR-01 / T-03-01). Use checked multiply so the product can never
+    // wrap into a too-small `required`.
+    let required = num_row
+        .checked_mul(num_feature)
+        .unwrap_or(usize::MAX);
+    if data.len() < required {
+        return Err(GtilError::InvalidInputShape {
+            num_row,
+            num_feature,
+            required,
+            got: data.len(),
+        });
+    }
+
     // base_scores[0] is the single binary:logistic margin (num_target=1,
     // num_class=[1]); default to 0.0 if absent (zero-tree edge case).
     let base_score = model.base_scores.first().copied().unwrap_or(0.0);
