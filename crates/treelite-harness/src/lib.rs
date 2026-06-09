@@ -131,7 +131,13 @@ pub fn load_golden(path: &str) -> anyhow::Result<Golden> {
 /// never contain a bare `NaN` value, so this is safe for the committed artifact.
 fn normalize_nan_tokens(raw: &str) -> String {
     let bytes = raw.as_bytes();
-    let mut out = String::with_capacity(raw.len());
+    // Build a raw `Vec<u8>` and copy non-`NaN` bytes verbatim, so multi-byte
+    // UTF-8 (any byte >= 0x80) round-trips unchanged. The previous
+    // `bytes[i] as char` reinterpreted a single byte as the scalar
+    // U+0080..U+00FF and re-encoded it as TWO UTF-8 bytes, corrupting any
+    // non-ASCII content (WR-03). Since `raw` is valid UTF-8 and we only ever
+    // splice in the ASCII literal "null", the result is always valid UTF-8.
+    let mut out: Vec<u8> = Vec::with_capacity(raw.len());
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'N'
@@ -139,17 +145,19 @@ fn normalize_nan_tokens(raw: &str) -> String {
             && !preceded_by_ident(bytes, i)
             && !followed_by_ident(bytes, i + 3)
         {
-            out.push_str("null");
+            out.extend_from_slice(b"null");
             i += 3;
         } else {
-            // Push this char (handles multi-byte UTF-8 correctly via char_indices
-            // boundaries: bytes here are ASCII for valid JSON token starts; any
-            // non-ASCII lives inside strings and is copied byte-faithfully below).
-            out.push(bytes[i] as char);
+            // Copy the raw byte verbatim — byte-faithful for ASCII and for the
+            // continuation/lead bytes of multi-byte UTF-8 sequences alike.
+            out.push(bytes[i]);
             i += 1;
         }
     }
-    out
+    // SAFETY-of-correctness: `raw` is valid UTF-8 and we only removed whole
+    // "NaN" ASCII runs / inserted ASCII "null", preserving UTF-8 validity, so
+    // this never errors. Fall back to a lossless rebuild if it somehow does.
+    String::from_utf8(out).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
 }
 
 fn is_ident_byte(b: u8) -> bool {
@@ -251,5 +259,36 @@ pub fn check_manifest(manifest: &Manifest) {
              a 1e-5 deviation here may be an environment divergence (D-07).",
             manifest.arch, running_arch
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_nan_tokens;
+
+    #[test]
+    fn non_ascii_bytes_are_preserved_byte_for_byte() {
+        // A manifest-style string with non-ASCII content (>= 0x80 bytes): an
+        // accented char, an em dash, and a CJK char. The previous
+        // `bytes[i] as char` path mangled every such byte; the fixed version
+        // must leave them byte-identical (WR-03).
+        let input = r#"{"os": "Café — 日本", "x": NaN}"#;
+        let out = normalize_nan_tokens(input);
+        // The bare NaN token is normalized to null...
+        assert_eq!(out, r#"{"os": "Café — 日本", "x": null}"#);
+        // ...and every non-ASCII byte survives unchanged (no expansion/corruption).
+        let expected_non_nan = r#"{"os": "Café — 日本", "x": "#;
+        assert_eq!(
+            out.as_bytes()[..expected_non_nan.len()],
+            expected_non_nan.as_bytes()[..],
+        );
+    }
+
+    #[test]
+    fn standalone_nan_replaced_but_identifier_substrings_untouched() {
+        // Standalone NaN → null; "NaNny" (NaN as a substring of a larger
+        // identifier) is left alone.
+        let out = normalize_nan_tokens(r#"[NaN, "NaNny"]"#);
+        assert_eq!(out, r#"[null, "NaNny"]"#);
     }
 }
