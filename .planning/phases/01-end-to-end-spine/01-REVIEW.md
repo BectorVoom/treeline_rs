@@ -67,7 +67,12 @@ BLOCKER because it directly contradicts the stated security mitigation.
 
 ## Critical Issues
 
-### CR-01: Traversal never bounds-checks child node ids — malformed `cleft`/`cright` panics (contract violation)
+### [RESOLVED] CR-01: Traversal never bounds-checks child node ids — malformed `cleft`/`cright` panics (contract violation)
+
+> Resolved in commit c016ffc: `evaluate_tree` now validates each child id against
+> `[0, num_nodes)` and returns `GtilError::NodeIndexOutOfBounds` for out-of-range
+> or invalid-negative ids; regression tests added (child id 99 and -2). Resolves IN-02.
+
 
 **File:** `crates/treelite-gtil/src/lib.rs:85-114`
 **Issue:**
@@ -118,7 +123,12 @@ added and assert `GtilError::NodeIndexOutOfBounds`.
 
 ## Warnings
 
-### WR-01: `predict` slices the input row with a model-supplied `num_feature` before validating it — panics on malformed model
+### [RESOLVED] WR-01: `predict` slices the input row with a model-supplied `num_feature` before validating it — panics on malformed model
+
+> Resolved in commits 03c63ec / 560902d: added `GtilError::InvalidInputShape` and a
+> `data.len() >= num_row.saturating_mul(num_feature)` check (plus a negative-`num_feature`
+> guard) before dispatch; regression tests added.
+
 
 **File:** `crates/treelite-gtil/src/lib.rs:138-139`, `:165-166`
 **Issue:**
@@ -142,7 +152,12 @@ if data.len() < needed {
 
 (Requires adding an `InvalidInputShape` variant to `GtilError`.)
 
-### WR-02: Negative model scalars cast to `usize` cause OOM-abort instead of a typed error
+### [RESOLVED] WR-02: Negative model scalars cast to `usize` cause OOM-abort instead of a typed error
+
+> Resolved in commits 86f4b28 (loader) / 03c63ec (gtil): added `XgbError::InvalidScalar`
+> and a `require_non_negative` guard on `num_feature`/`num_class`/`num_target` in the
+> loader, plus the gtil-side negative-`num_feature` guard; regression tests added.
+
 
 **File:** `crates/treelite-xgboost/src/lib.rs:253`; `crates/treelite-gtil/src/lib.rs:166`
 **Issue:**
@@ -161,7 +176,12 @@ header docstring claims malformed input "becomes a returned `Err` here rather th
 if num_target < 0 { return Err(XgbError::InvalidScalar { field: "num_target", value: num_target.to_string() }); }
 ```
 
-### WR-03: `normalize_nan_tokens` corrupts any non-ASCII byte via `bytes[i] as char`
+### [RESOLVED] WR-03: `normalize_nan_tokens` corrupts any non-ASCII byte via `bytes[i] as char`
+
+> Resolved in commit 9d3a289: `normalize_nan_tokens` now builds a raw `Vec<u8>`,
+> copies non-`NaN` bytes verbatim, and `String::from_utf8`s the result, so bytes
+> >= 0x80 round-trip unchanged; unit test with accented/em-dash/CJK bytes added.
+
 
 **File:** `crates/treelite-harness/src/lib.rs:144-150`
 **Issue:**
@@ -219,7 +239,11 @@ else branch) which happens to coincide with the clamped upstream value — but t
 clamp is the clearer, port-faithful form.
 **Fix:** mirror upstream by clamping at parse: `let num_class_param = parse_scalar::<i32>(...)?.max(1);`.
 
-### IN-02: `GtilError::NodeIndexOutOfBounds` is dead until CR-01 is fixed
+### [RESOLVED] IN-02: `GtilError::NodeIndexOutOfBounds` is dead until CR-01 is fixed
+
+> Resolved via CR-01 (commit c016ffc): the variant is now constructed by
+> `evaluate_tree`'s bounds check and exercised by regression tests.
+
 
 **File:** `crates/treelite-gtil/src/error.rs:27-33`
 **Issue:**
