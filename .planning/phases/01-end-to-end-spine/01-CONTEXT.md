@@ -29,7 +29,8 @@ Stand up the **thinnest possible end-to-end pipeline** through the whole archite
 
 ### Fixture Model
 - **D-04:** The Phase 1 fixture is a **hand-crafted XGBoost-JSON literal committed to the repo** — no runtime dependency on the `xgboost` package to produce the model itself.
-- **D-05 (CONSTRAINT — critical coupling):** Because the golden is captured by loading this fixture into the **upstream Treelite Python wheel** (D-06), the hand-crafted JSON **must be valid enough for upstream Treelite/XGBoost to parse**. The fixture is NOT free-form: it must conform to the XGBoost-JSON schema (learner / gradient_booster / model / trees structure, `objective`, `base_score`, etc.) closely enough that `treelite` can load it. Use `binary:logistic` so the **sigmoid** postprocessor path is genuinely exercised; keep it minimal (1–2 shallow trees).
+- **D-05 (CONSTRAINT — critical coupling):** Because the golden is captured by loading this fixture into the **upstream Treelite Python wheel** (D-06), the hand-crafted JSON **must be valid enough for upstream Treelite/XGBoost to parse**. The fixture is NOT free-form: it must conform to the XGBoost-JSON model structure (`learner → gradient_booster → gbtree`, `objective`, `base_score`, tree arrays) closely enough that `treelite` can load it. Use `binary:logistic` so the **sigmoid** postprocessor path is genuinely exercised; keep it minimal (1–2 shallow trees).
+- **D-05a (schema authority):** The XGBoost source is now vendored at `xgboost-master/` (**v3.3.0-dev**). Note: XGBoost **removed the standalone JSON schema file in 3.2** (`xgboost-master/doc/tutorials/saving_model.rst:313`) — the model structure is unchanged. So hand-craft the fixture against the worked JSON example in `xgboost-master/doc/tutorials/saving_model.rst` (~L180–260) cross-checked with **Treelite's own XGBoost-JSON loader** (`treelite-mainline/src/model_loader/`), which defines exactly which fields Phase 1 must parse. Set the JSON `version` field to a value the upstream treelite wheel accepts; avoid NaN/Inf literals (Phase 3 concern).
 
 ### Golden Vector Capture
 - **D-06:** The first golden is **captured from the upstream Treelite Python wheel's GTIL** (`pip install treelite==<matching 4.x>`, load fixture, run `treelite.gtil.predict`), then committed and frozen. No C++ source compile; CI never regenerates it. This is the authoritative GTIL source and satisfies PROJECT's "golden frozen from upstream Treelite."
@@ -71,6 +72,11 @@ Stand up the **thinnest possible end-to-end pipeline** through the whole archite
 - `.planning/codebase/STACK.md` — confirms greenfield Rust crate, zero deps yet; upstream dependency map.
 - `.planning/codebase/CONVENTIONS.md` — naming + error-handling translation notes.
 
+### XGBoost-JSON format (fixture schema authority — `xgboost-master/`, v3.3.0-dev)
+- `xgboost-master/doc/tutorials/saving_model.rst` (~L180–260) — worked JSON model example (`learner → gradient_booster → gbtree`, `base_score`, `objective`); **the** reference for hand-crafting the D-04 fixture. Note L313: standalone JSON schema file removed in 3.2 (structure unchanged).
+- `xgboost-master/doc/dump.schema` — schema for *dumped* trees (not the full saved model); secondary reference only.
+- `treelite-mainline/src/model_loader/` (XGBoost JSON path) — the **authoritative** list of which JSON fields Phase 1's loader must consume and what the treelite wheel expects when producing the golden. When the two disagree, Treelite's loader wins (it's what generates the golden).
+
 ### Reference manuals (for later phases; noted now, not Phase 1 critical)
 - `/home/user/Documents/workspace/optimisor/manual/` — memory-efficiency playbook (Phase 9).
 - `/home/user/Documents/workspace/cubecl_manual/manual/Cubecl/INDEX.md` — kernel authoring (Phase 6+).
@@ -82,6 +88,7 @@ Stand up the **thinnest possible end-to-end pipeline** through the whole archite
 
 ### Reusable Assets
 - **Upstream C++ is the spec, not reusable code** — `treelite-mainline/` is vendored read-only and is the porting source of truth. No Rust assets exist yet (greenfield; `src/main.rs` is a `fn main()` stub to be replaced/removed by the workspace).
+- **XGBoost source vendored** at `xgboost-master/` (v3.3.0-dev) — read-only reference for the XGBoost-JSON model format used to author the D-04 fixture (see canonical refs). Not a build dependency.
 - **Vendored test corpus** `treelite-mainline/tests/examples/` — `mushroom` (XGBoost **legacy binary** — Phase 3, NOT usable for Phase 1 JSON), `deep_lightgbm`, `sparse_categorical`, `toy_categorical` (LightGBM text — Phase 4). **No XGBoost-JSON model and no golden vectors ship here** — confirmed; this is why D-04/D-06 produce both.
 
 ### Established Patterns (to preserve from upstream)
