@@ -13,7 +13,7 @@ treelite-rs is a strict numerical port of Treelite 4.7.0 (C++) to a Rust Cargo w
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: End-to-End Spine** - Workspace + enums + minimal core + minimal XGBoost-JSON load → scalar predict → 1e-5 golden verify
+- [x] **Phase 1: End-to-End Spine** - Workspace + enums + minimal core + minimal XGBoost-JSON load → scalar predict → 1e-5 golden verify (completed 2026-06-09)
 - [ ] **Phase 2: Builder & Serialization** - Validated `ModelBuilder` + bulk path + v5 binary/PyBuffer/JSON round-trip and field accessors
 - [ ] **Phase 3: Full XGBoost Loaders** - JSON + UBJSON + legacy binary with auto-detect and version-gated base_score margin transform
 - [ ] **Phase 4: LightGBM & scikit-learn Loaders** - LightGBM text + RF/ET/GBM/IsolationForest + HistGradientBoosting
@@ -51,7 +51,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 01-04-PLAN.md — Equivalence harness: load→predict→assert within 1e-5 of golden, report max deviation, manifest check (Wave 3)
+- [x] 01-04-PLAN.md — Equivalence harness: load→predict→assert within 1e-5 of golden, report max deviation, manifest check (Wave 3)
 
 ### Phase 2: Builder & Serialization
 
@@ -181,7 +181,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. End-to-End Spine | 3/4 | In Progress|  |
+| 1. End-to-End Spine | 4/4 | Complete   | 2026-06-09 |
 | 2. Builder & Serialization | 0/TBD | Not started | - |
 | 3. Full XGBoost Loaders | 0/TBD | Not started | - |
 | 4. LightGBM & scikit-learn Loaders | 0/TBD | Not started | - |

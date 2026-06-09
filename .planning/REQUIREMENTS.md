@@ -102,7 +102,7 @@ Requirements for the initial release. Each maps to a roadmap phase. All are hypo
 ### Error Handling
 
 - [x] **ERR-01**: Library crates expose typed `thiserror` errors at their API boundaries
-- [ ] **ERR-02**: Binaries and tests use `anyhow` for error context
+- [x] **ERR-02**: Binaries and tests use `anyhow` for error context
 
 ## v2 Requirements
 
@@ -143,7 +143,7 @@ Which phases cover which requirements.
 | CORE-03 | Phase 1 | Complete |
 | CORE-04 | Phase 1 | Complete |
 | ERR-01 | Phase 1 | Complete |
-| ERR-02 | Phase 1 | Pending |
+| ERR-02 | Phase 1 | Complete |
 | BLD-01 | Phase 2 | Pending |
 | BLD-02 | Phase 2 | Pending |
 | BLD-03 | Phase 2 | Pending |
@@ -192,6 +192,7 @@ Which phases cover which requirements.
 | MEM-03 | Phase 9 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 45 total
 - Mapped to phases: 45 ✓
 - Unmapped: 0
