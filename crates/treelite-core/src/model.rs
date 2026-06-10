@@ -163,42 +163,41 @@ impl Model {
     }
 }
 
-// --- read accessors for the in-crate serializer (Pattern 5 borrow source) ---
+// --- read accessors for the serializer + SER-04 inspection surface ---
 // These mirror upstream's read-only privates (`major_ver`/`num_tree`/… reject
-// `Set`): read-only by design, `pub(crate)` so only the serialize module sees
-// them. Staged values are valid only after `stage_serialization_fields`.
-//
-// `allow(dead_code)`: their consumer is the in-crate serialize module added in a
-// later Phase 2 plan (D-10); they are the `'a`-lived borrow source for the header
-// frame walk and intentionally exist ahead of that consumer.
-#[allow(dead_code)]
+// `Set` in field_accessor.cc): read-only by design. Promoted to `pub` for the
+// SER-04 field-inspection surface (re-stated/documented in `serialize/fields.rs`);
+// they carry NO setter, preserving field-accessor fidelity (T-02-J02). Staged
+// values are valid only after `stage_serialization_fields`.
 impl Model {
-    /// Staged major version (tree.h:562).
-    pub(crate) fn major_ver(&self) -> i32 {
+    /// Staged major version (tree.h:562) — READ-ONLY (field_accessor.cc:22).
+    pub fn major_ver(&self) -> i32 {
         self.major_ver_
     }
-    /// Staged minor version (tree.h:563).
-    pub(crate) fn minor_ver(&self) -> i32 {
+    /// Staged minor version (tree.h:563) — READ-ONLY (field_accessor.cc:24).
+    pub fn minor_ver(&self) -> i32 {
         self.minor_ver_
     }
-    /// Staged patch version (tree.h:564).
-    pub(crate) fn patch_ver(&self) -> i32 {
+    /// Staged patch version (tree.h:564) — READ-ONLY (field_accessor.cc:26).
+    pub fn patch_ver(&self) -> i32 {
         self.patch_ver_
     }
-    /// Staged tree count (tree.h:558).
-    pub(crate) fn num_tree(&self) -> u64 {
+    /// Staged tree count (tree.h:558) — READ-ONLY (field_accessor.cc:30).
+    pub fn num_tree(&self) -> u64 {
         self.num_tree_
     }
-    /// Staged model opt-field count (tree.h:560) — always `0`.
-    pub(crate) fn num_opt_field_per_model(&self) -> i32 {
+    /// Staged model opt-field count (tree.h:560) — always `0`, READ-ONLY
+    /// (field_accessor.cc:28).
+    pub fn num_opt_field_per_model(&self) -> i32 {
         self.num_opt_field_per_model_
     }
-    /// Staged threshold type tag (tree.h:566).
-    pub(crate) fn threshold_type(&self) -> DType {
+    /// Staged threshold type tag (tree.h:566) — READ-ONLY (field_accessor.cc:32).
+    pub fn threshold_type(&self) -> DType {
         self.threshold_type_
     }
-    /// Staged leaf-output type tag (tree.h:567).
-    pub(crate) fn leaf_output_type(&self) -> DType {
+    /// Staged leaf-output type tag (tree.h:567) — READ-ONLY
+    /// (field_accessor.cc:34).
+    pub fn leaf_output_type(&self) -> DType {
         self.leaf_output_type_
     }
 

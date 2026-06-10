@@ -17,6 +17,7 @@
 
 pub mod binary;
 pub mod error;
+pub mod fields;
 pub mod json;
 pub mod pybuffer;
 
