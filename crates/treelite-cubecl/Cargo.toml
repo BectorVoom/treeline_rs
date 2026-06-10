@@ -1,0 +1,15 @@
+[package]
+name = "treelite-cubecl"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+treelite-core = { path = "../treelite-core" }
+treelite-gtil = { path = "../treelite-gtil" }
+cubecl = { workspace = true }
+bytemuck = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }

@@ -8,6 +8,7 @@ members = [
     "crates/treelite-builder",
     "crates/treelite-lightgbm",
     "crates/treelite-sklearn",
+    "crates/treelite-cubecl",
 ]
 
 [workspace.package]
@@ -21,3 +22,5 @@ anyhow = "1.0.102"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 approx = "0.5.1"
+cubecl = { version = "0.10.0", features = ["cpu"] }
+bytemuck = { version = "1", features = ["derive"] }
