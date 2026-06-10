@@ -319,10 +319,12 @@ pub fn predict_cpu<F: PredictCpuElem>(
 
     match cfg.kind {
         PredictKind::Default | PredictKind::Raw => {
-            launch_default_raw::<F>(&client, model, data, num_row, cfg)
+            launch_default_raw::<CpuRuntime, F>(&client, model, data, num_row, cfg)
         }
-        PredictKind::LeafId => launch_leaf_id::<F>(&client, model, data, num_row),
-        PredictKind::ScorePerTree => launch_score_per_tree::<F>(&client, model, data, num_row),
+        PredictKind::LeafId => launch_leaf_id::<CpuRuntime, F>(&client, model, data, num_row),
+        PredictKind::ScorePerTree => {
+            launch_score_per_tree::<CpuRuntime, F>(&client, model, data, num_row)
+        }
     }
 }
 
@@ -345,8 +347,8 @@ where
 
 /// `Default`/`Raw` launch path: upload forest + routing/averaging columns, launch
 /// `predict_default_raw`, read back, and (for `Default`) apply the postprocessor.
-fn launch_default_raw<F: PredictCpuElem>(
-    client: &cubecl::client::ComputeClient<CpuRuntime>,
+fn launch_default_raw<R: Runtime, F: PredictCpuElem>(
+    client: &cubecl::client::ComputeClient<R>,
     model: &Model,
     data: &[F],
     num_row: usize,
@@ -387,11 +389,11 @@ fn launch_default_raw<F: PredictCpuElem>(
 
     // Dispatch over the preset width T; the kernel is generic over (F, T).
     let mut out = match &model.variant {
-        ModelVariant::F32(p) => run_default_raw::<F, f32>(
+        ModelVariant::F32(p) => run_default_raw::<R, F, f32>(
             client, p, model.num_feature, data, num_row, num_target, max_num_class, &num_class,
             &base_scores, &target_id, &class_id, &average_factor,
         )?,
-        ModelVariant::F64(p) => run_default_raw::<F, f64>(
+        ModelVariant::F64(p) => run_default_raw::<R, F, f64>(
             client, p, model.num_feature, data, num_row, num_target, max_num_class, &num_class,
             &base_scores, &target_id, &class_id, &average_factor,
         )?,
@@ -406,8 +408,8 @@ fn launch_default_raw<F: PredictCpuElem>(
 
 /// `T`-monomorphic upload + launch of `predict_default_raw`.
 #[allow(clippy::too_many_arguments)]
-fn run_default_raw<F: PredictCpuElem, T: Float + CubeElement + bytemuck::Pod + Copy>(
-    client: &cubecl::client::ComputeClient<CpuRuntime>,
+fn run_default_raw<R: Runtime, F: PredictCpuElem, T: Float + CubeElement + bytemuck::Pod + Copy>(
+    client: &cubecl::client::ComputeClient<R>,
     preset: &treelite_core::ModelPreset<T>,
     num_feature: i32,
     data: &[F],
@@ -425,7 +427,7 @@ fn run_default_raw<F: PredictCpuElem, T: Float + CubeElement + bytemuck::Pod + C
     // The default_raw broadcast leaf-vector loop reads up to
     // `num_target * max_num_class` cells from `[leaf_vector_begin, ...)`; pass
     // that span so validate_leaf_vectors rejects a span the kernel would overrun.
-    let forest = upload::upload_forest::<CpuRuntime, T>(
+    let forest = upload::upload_forest::<R, T>(
         client, preset, num_feature, num_row, data.len(), num_target, max_num_class, num_class,
         target_id, class_id,
     )?;
@@ -447,7 +449,7 @@ fn run_default_raw<F: PredictCpuElem, T: Float + CubeElement + bytemuck::Pod + C
     let cube_dim = CubeDim::new_1d(256);
     let cube_count = CubeCount::Static((num_row.div_ceil(256)).max(1) as u32, 1, 1);
 
-    kernels::default_raw::predict_default_raw::launch::<F, T, CpuRuntime>(
+    kernels::default_raw::predict_default_raw::launch::<F, T, R>(
         client,
         cube_count,
         cube_dim,
@@ -481,20 +483,24 @@ fn run_default_raw<F: PredictCpuElem, T: Float + CubeElement + bytemuck::Pod + C
 }
 
 /// `LeafId` launch path: per-`(row, tree)` leaf node id, no postprocess.
-fn launch_leaf_id<F: PredictCpuElem>(
-    client: &cubecl::client::ComputeClient<CpuRuntime>,
+fn launch_leaf_id<R: Runtime, F: PredictCpuElem>(
+    client: &cubecl::client::ComputeClient<R>,
     model: &Model,
     data: &[F],
     num_row: usize,
 ) -> Result<Vec<F>, CubeclError> {
     match &model.variant {
-        ModelVariant::F32(p) => run_leaf_id::<F, f32>(client, p, model.num_feature, data, num_row),
-        ModelVariant::F64(p) => run_leaf_id::<F, f64>(client, p, model.num_feature, data, num_row),
+        ModelVariant::F32(p) => {
+            run_leaf_id::<R, F, f32>(client, p, model.num_feature, data, num_row)
+        }
+        ModelVariant::F64(p) => {
+            run_leaf_id::<R, F, f64>(client, p, model.num_feature, data, num_row)
+        }
     }
 }
 
-fn run_leaf_id<F: PredictCpuElem, T: Float + CubeElement + bytemuck::Pod + Copy>(
-    client: &cubecl::client::ComputeClient<CpuRuntime>,
+fn run_leaf_id<R: Runtime, F: PredictCpuElem, T: Float + CubeElement + bytemuck::Pod + Copy>(
+    client: &cubecl::client::ComputeClient<R>,
     preset: &treelite_core::ModelPreset<T>,
     num_feature: i32,
     data: &[F],
@@ -502,7 +508,7 @@ fn run_leaf_id<F: PredictCpuElem, T: Float + CubeElement + bytemuck::Pod + Copy>
 ) -> Result<Vec<F>, CubeclError> {
     // LeafId reads no leaf-vector elements (it returns the leaf node id), so the
     // broadcast span is 0; the begin<=end / end<=segment_len checks still apply.
-    let forest = upload::upload_forest::<CpuRuntime, T>(
+    let forest = upload::upload_forest::<R, T>(
         client, preset, num_feature, num_row, data.len(), 0, 0, &[], &[], &[],
     )?;
     let num_tree = preset.trees.len();
@@ -515,7 +521,7 @@ fn run_leaf_id<F: PredictCpuElem, T: Float + CubeElement + bytemuck::Pod + Copy>
     let cube_dim = CubeDim::new_1d(256);
     let cube_count = CubeCount::Static((num_row.div_ceil(256)).max(1) as u32, 1, 1);
 
-    kernels::leaf_id::predict_leaf_id::launch::<F, T, CpuRuntime>(
+    kernels::leaf_id::predict_leaf_id::launch::<F, T, R>(
         client,
         cube_count,
         cube_dim,
@@ -537,8 +543,8 @@ fn run_leaf_id<F: PredictCpuElem, T: Float + CubeElement + bytemuck::Pod + Copy>
 }
 
 /// `ScorePerTree` launch path: raw per-tree leaf data, no postprocess.
-fn launch_score_per_tree<F: PredictCpuElem>(
-    client: &cubecl::client::ComputeClient<CpuRuntime>,
+fn launch_score_per_tree<R: Runtime, F: PredictCpuElem>(
+    client: &cubecl::client::ComputeClient<R>,
     model: &Model,
     data: &[F],
     num_row: usize,
@@ -550,16 +556,16 @@ fn launch_score_per_tree<F: PredictCpuElem>(
     let lvs = (a * b).max(1);
     match &model.variant {
         ModelVariant::F32(p) => {
-            run_score_per_tree::<F, f32>(client, p, model.num_feature, data, num_row, lvs)
+            run_score_per_tree::<R, F, f32>(client, p, model.num_feature, data, num_row, lvs)
         }
         ModelVariant::F64(p) => {
-            run_score_per_tree::<F, f64>(client, p, model.num_feature, data, num_row, lvs)
+            run_score_per_tree::<R, F, f64>(client, p, model.num_feature, data, num_row, lvs)
         }
     }
 }
 
-fn run_score_per_tree<F: PredictCpuElem, T: Float + CubeElement + bytemuck::Pod + Copy>(
-    client: &cubecl::client::ComputeClient<CpuRuntime>,
+fn run_score_per_tree<R: Runtime, F: PredictCpuElem, T: Float + CubeElement + bytemuck::Pod + Copy>(
+    client: &cubecl::client::ComputeClient<R>,
     preset: &treelite_core::ModelPreset<T>,
     num_feature: i32,
     data: &[F],
@@ -569,7 +575,7 @@ fn run_score_per_tree<F: PredictCpuElem, T: Float + CubeElement + bytemuck::Pod 
     // ScorePerTree reads `[leaf_vector_begin, leaf_vector_end)` per leaf (bounded
     // by the per-tree segment length, which the end<=segment_len check covers);
     // there is no (num_target, max_num_class) broadcast, so the broadcast span is 0.
-    let forest = upload::upload_forest::<CpuRuntime, T>(
+    let forest = upload::upload_forest::<R, T>(
         client, preset, num_feature, num_row, data.len(), 0, 0, &[], &[], &[],
     )?;
     let num_tree = preset.trees.len();
@@ -583,7 +589,7 @@ fn run_score_per_tree<F: PredictCpuElem, T: Float + CubeElement + bytemuck::Pod 
     let cube_dim = CubeDim::new_1d(256);
     let cube_count = CubeCount::Static((num_row.div_ceil(256)).max(1) as u32, 1, 1);
 
-    kernels::score_per_tree::predict_score_per_tree::launch::<F, T, CpuRuntime>(
+    kernels::score_per_tree::predict_score_per_tree::launch::<F, T, R>(
         client,
         cube_count,
         cube_dim,
