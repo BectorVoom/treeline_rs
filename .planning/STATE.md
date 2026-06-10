@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 6 context gathered
-last_updated: "2026-06-10T11:16:06.509Z"
-last_activity: 2026-06-10 -- Phase 06 execution started
+stopped_at: Completed 06-02-PLAN.md
+last_updated: "2026-06-10T12:00:00.000Z"
+last_activity: 2026-06-10 -- Completed 06-02-PLAN.md (cubecl descent spike)
 progress:
   total_phases: 9
   completed_phases: 5
   total_plans: 34
-  completed_plans: 30
-  percent: 56
+  completed_plans: 32
+  percent: 59
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 06 (cubecl-gtil-kernels-cpu-backend) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
-Last activity: 2026-06-10 -- Phase 06 execution started
+Last activity: 2026-06-10 -- Completed 06-02-PLAN.md (cubecl descent spike, A1-A4 retired)
 
-Progress: [████████] 100% (Phase 05 plans: 7/7 — phase verification pending)
+Progress: [███░░░░░] 40% (Phase 06 plans: 2/5)
 
 ## Performance Metrics
 
@@ -85,6 +85,7 @@ Progress: [████████] 100% (Phase 05 plans: 7/7 — phase verific
 | Phase 05 P06 | ~22min | 3 tasks | 6 files |
 | Phase 05 P07 | 28min | 2 tasks | 3 files |
 | Phase 06 P01 | 6min | 2 tasks | 12 files |
+| Phase 06 P02 | ~25min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -175,6 +176,10 @@ Recent decisions affecting current work:
 - [Phase ?]: [05-07]: CR-01 MEASURED — large-margin f64 sigmoid fixture (16 f64 cells, worst |delta| 2.9e-6) passes the 1e-5 gate against the 05-06 sigmoid_f64 engine; CR-01 fully closed (engine + harness).
 - [Phase ?]: [05-07]: WR-01 closed — sparse goldens carry the real frozen CSR triple (data/indices/indptr); runner loads it verbatim via frozen_csr, never re-deriving from NaN-presence; build_csr survives only for the D-04 parity probe.
 - [Phase ?]: [05-07]: WR-06 closed — asserts the RUST f32-vs-f64 large_margin output divergence (5.5e-8), NOT golden-vs-golden (upstream goldens bit-identical across input dtype for <f32,f32> models; tree-sum accumulated in f64). Mutation-verified the gate fails on an f32->f64 pre-cast.
+- [06-02]: A1 RESOLVED via the exp(x*ln2) IDENTITY, NOT direct exp2 (overturns the 06-01 pin). cubecl 0.10.0's Float::exp2 (typemap.rs:680) is the DynamicScalar RUNTIME path; the cube FRONTEND expandable-intrinsic set (frontend/operation/unary.rs) has Exp but NO Exp2, so F::exp2(x) fails E0599 on generic F inside #[cube]. exp2(x)==exp(x*ln(2)) in element width F matches the exponential_standard_ratio/_f64 twins within 1e-5 (f32 AND f64). The spike's whole A1 purpose (RESEARCH Pitfall 2 / D-04).
+- [06-02]: descend NaN routing uses the self-inequality fv != fv (overturns the planned/RESEARCH F::is_nan form). Float::is_nan returns Self::WithScalar<bool> (associated type, not plain bool) on generic F, so `if F::is_nan(fv)` fails E0308. fv != fv is the verbatim equivalent of evaluate_tree's fvalue.is_nan_val().
+- [06-02]: ABSOLUTE_POS is usize in cubecl 0.10.0 (cast `as u32` at the kernel top). Float-width launch scalars (base_score/ratio_c/ln2) ride as 1-element Array<F> (sidesteps the Float ScalarArg ambiguity); u32 scalars passed plain. Upload=client.create_from_slice(&[u8]) (A3); read-back=read_one_unchecked+bytemuck::cast_slice; import=cubecl::cpu::CpuRuntime (A4). A1-A4 retired.
+- [06-02]: descend<F: Float> #[cube] helper authored ONCE in kernels/traversal.rs (kernels.rs file module -> kernels/ directory); Wave 3 reuses it verbatim (D-11). Break-free while-!is_leaf, if-STATEMENT child routing (never if-expr value), default_left==1u32 (bool-as-u32, Pitfall 4), ragged-SoA base/row_off offset indexing.
 
 ### Pending Todos
 
@@ -197,6 +202,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T11:16:01.528Z
-Stopped at: Phase 6 context gathered
-Resume file: .planning/phases/06-cubecl-gtil-kernels-cpu-backend/06-CONTEXT.md
+Last session: 2026-06-10T12:00:00.000Z
+Stopped at: Completed 06-02-PLAN.md (cubecl descent spike, A1-A4 retired)
+Resume file: None

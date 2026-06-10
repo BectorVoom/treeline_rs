@@ -214,7 +214,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 — the mandatory spike)*
 
-- [ ] 06-02-PLAN.md — D-04 spike: break-free #[cube] descent + 2-tree default kernel + softmax_f64/exp2 micro-kernels vs scalar twins to 1e-5 (retires A1–A4) (Wave 2)
+- [x] 06-02-PLAN.md — D-04 spike: break-free #[cube] descent + 2-tree default kernel + softmax_f64/exp2 micro-kernels vs scalar twins to 1e-5 (retires A1–A4) (Wave 2) — DONE (2/2 tasks; kernels/traversal.rs descend<F: Float> break-free helper Wave 3 reuses; spike 3/3 green: 2-tree default f32+f64 vs predict, exp_standard_ratio f32+f64, softmax_f64 all within 1e-5 on CpuRuntime; A1 resolved via exp(x*ln2) identity NOT direct exp2 — cube frontend has Exp, no Exp2; NaN via fv!=fv NOT F::is_nan; ABSOLUTE_POS as u32; Float scalars ride as 1-element Array<F>; cargo test --workspace green)
 
 **Wave 3** *(blocked on Wave 2 — building blocks)*
 
@@ -284,7 +284,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. Full XGBoost Loaders | 4/4 | Complete    | 2026-06-10 |
 | 4. LightGBM & scikit-learn Loaders | 8/8 | Complete    | 2026-06-10 |
 | 5. Full Scalar GTIL & Equivalence Harness | 7/7 | Complete    | 2026-06-10 |
-| 6. cubecl GTIL Kernels (CPU Backend) | 1/5 | In Progress|  |
+| 6. cubecl GTIL Kernels (CPU Backend) | 2/5 | In Progress|  |
 | 7. GPU Backend & Equivalence Report | 0/TBD | Not started | - |
 | 8. PyO3 Python Binding | 0/TBD | Not started | - |
 | 9. Memory-Efficiency Hardening | 0/TBD | Not started | - |
