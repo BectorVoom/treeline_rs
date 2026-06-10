@@ -354,19 +354,28 @@ fn leaf_as_out<T: PredictScalar, O: PredictOut>(v: T) -> O {
 /// order-preserving, so comparing in `f64` yields the bit-identical routing of
 /// every `(InputT, ThresholdT)` combination. XGBoost always emits `kLT`.
 #[inline]
-fn next_node(fvalue: f64, threshold: f64, op: Operator, left: i32, right: i32) -> i32 {
+fn next_node(
+    node: usize,
+    fvalue: f64,
+    threshold: f64,
+    op: Operator,
+    left: i32,
+    right: i32,
+) -> Result<i32, GtilError> {
     let cond = match op {
         Operator::kLT => fvalue < threshold,
         Operator::kLE => fvalue <= threshold,
         Operator::kEQ => fvalue == threshold,
         Operator::kGT => fvalue > threshold,
         Operator::kGE => fvalue >= threshold,
-        // kNone is never emitted by a numerical test node; treat as no-match
-        // (mirrors the upstream default arm returning right_child after the
-        // fatal check — Phase 1 fixtures never reach here).
-        Operator::kNone => false,
+        // kNone (and any other unrecognized operator) is never emitted by a
+        // well-formed numerical test node. Upstream `NextNode` hits a fatal
+        // `TREELITE_CHECK(false)` and returns -1 (`predict.cc:120-122`); the
+        // port surfaces a typed error instead of silently routing right and
+        // producing a definite wrong prediction (WR-05, ERR-01).
+        Operator::kNone => return Err(GtilError::UnrecognizedOperator { node, op }),
     };
-    if cond { left } else { right }
+    Ok(if cond { left } else { right })
 }
 
 /// The `NextNodeCategorical` membership switch (`predict.cc:128-150`).
@@ -404,16 +413,21 @@ fn next_node_categorical<O: PredictOut>(
     }
 }
 
-/// Bounds-safe category-list slice for `nid` (T-04-12).
+/// Checked category-list slice for `nid` (T-04-12 / WR-04).
 ///
 /// The core `Tree::category_list(nid)` indexes the CSR `category_list_begin/end`
 /// columns and slices the `category_list` value buffer directly. For builder- or
 /// serializer-produced trees that is always in-bounds, but a hand-crafted /
 /// malformed `Model` (short offset columns, or begin/end past the value buffer)
-/// would panic. Read the offsets defensively and return an empty list on any
-/// out-of-range / inverted slice rather than panicking (ERR-01) — an empty
-/// category list simply makes every category a non-match.
-fn category_list_safe<T: Copy>(tree: &Tree<T>, nid: usize) -> &[u32] {
+/// would panic.
+///
+/// A LEGITIMATELY-EMPTY in-bounds list (`begin == end` AND `end <=
+/// values.len()`) returns `Ok(&[])` — every category is then a non-match, the
+/// correct behavior for a node with no categories. A MALFORMED slice (`begin >
+/// end`, `end > values.len()`, or a missing begin/end offset for an in-range
+/// node) returns `Err(GtilError::MalformedCategoryList { node })` instead of a
+/// silent `&[]` that would change the prediction (WR-04, ERR-01).
+fn category_list_safe<T: Copy>(tree: &Tree<T>, nid: usize) -> Result<&[u32], GtilError> {
     let begin = tree.category_list_begin.as_slice();
     let end = tree.category_list_end.as_slice();
     let values = tree.category_list.as_slice();
@@ -422,12 +436,14 @@ fn category_list_safe<T: Copy>(tree: &Tree<T>, nid: usize) -> &[u32] {
             let b = b as usize;
             let e = e as usize;
             if b <= e && e <= values.len() {
-                &values[b..e]
+                Ok(&values[b..e])
             } else {
-                &[]
+                Err(GtilError::MalformedCategoryList { node: nid })
             }
         }
-        _ => &[],
+        // A missing begin/end offset for an in-range node is malformed (the
+        // loader sizes both columns to num_nodes). Surface a typed error.
+        _ => Err(GtilError::MalformedCategoryList { node: nid }),
     }
 }
 
@@ -477,20 +493,23 @@ fn evaluate_tree<T: PredictScalar + PartialOrd, O: PredictOut>(
             // (2^24 for f32, 2^32-1 for f64) is applied correctly.
             next_node_categorical(
                 fvalue,
-                category_list_safe(tree, nid),
+                category_list_safe(tree, nid)?,
                 tree.category_list_right_child(nid),
                 tree.left_child(nid),
                 tree.right_child(nid),
             )
         } else {
             // Compare in f64 (order-preserving across all (O, T) combinations).
+            // `next_node` returns a typed error on an unrecognized operator
+            // (kNone on a numerical node — WR-05) instead of routing right.
             next_node(
+                nid,
                 fvalue.to_compare_f64(),
                 tree.threshold(nid).threshold_to_f64(),
                 tree.comparison_op(nid),
                 tree.left_child(nid),
                 tree.right_child(nid),
-            )
+            )?
         };
         // Validate the child id before re-entering the loop. `is_leaf` only
         // treats `-1` as the leaf sentinel, so any other negative id (e.g. `-2`)
@@ -552,19 +571,38 @@ impl OutputLayout<'_> {
     }
 }
 
-/// Bounds-safe `HasLeafVector` check (`predict.cc:248`, `tree.h:233`).
+/// Checked `HasLeafVector` test (`predict.cc:248`, `tree.h:233`; WR-04).
 ///
 /// Upstream sizes `leaf_vector_begin/end` to `num_nodes` for every tree, so the
-/// raw `Tree::has_leaf_vector(nid)` indexes safely there. To stay panic-free on
-/// a malformed model (or a hand-crafted scalar tree whose CSR offset columns are
-/// empty), treat an out-of-range/absent offset as "no leaf vector" (ERR-01) and
-/// fall through to the scalar `OutputLeafValue` path.
-fn has_leaf_vector<T: Copy>(tree: &Tree<T>, leaf: usize) -> bool {
+/// raw `Tree::has_leaf_vector(leaf)` indexes safely there.
+///
+/// An ABSENT offset (a scalar-leaf tree whose CSR offset columns are empty /
+/// shorter than `leaf`) is the LEGITIMATE scalar-leaf path → `Ok(false)`, never
+/// an error. A PRESENT-but-malformed offset (`begin > end`, or `end` past the
+/// `leaf_vector` value buffer) must surface a typed
+/// `GtilError::MalformedLeafVector { node }` instead of being silently treated
+/// as a scalar leaf and changing the prediction (WR-04, ERR-01). A present,
+/// in-bounds, non-empty range (`begin < end <= len`) is a leaf vector →
+/// `Ok(true)`; a present, in-bounds, empty range (`begin == end <= len`) is a
+/// scalar leaf → `Ok(false)`.
+fn has_leaf_vector<T: Copy>(tree: &Tree<T>, leaf: usize) -> Result<bool, GtilError> {
     let begin = tree.leaf_vector_begin.as_slice();
     let end = tree.leaf_vector_end.as_slice();
+    let values_len = tree.leaf_vector.as_slice().len();
     match (begin.get(leaf), end.get(leaf)) {
-        (Some(b), Some(e)) => b != e,
-        _ => false,
+        (Some(&b), Some(&e)) => {
+            let b = b as usize;
+            let e = e as usize;
+            if b > e || e > values_len {
+                Err(GtilError::MalformedLeafVector { node: leaf })
+            } else {
+                // b == e ⇒ scalar leaf (false); b < e ⇒ leaf vector (true).
+                Ok(b != e)
+            }
+        }
+        // Absent offset(s): legitimate scalar-leaf path (e.g. an XGBoost f32
+        // scalar tree with empty leaf-vector CSR columns).
+        _ => Ok(false),
     }
 }
 
@@ -652,7 +690,7 @@ fn predict_preset<T: PredictScalar + PartialOrd, O: PredictOut>(
             let leaf = evaluate_tree(tree, row)?;
             let target_id = shape.target_id.get(tree_id).copied().unwrap_or(-1);
             let class_id = shape.class_id.get(tree_id).copied().unwrap_or(-1);
-            if has_leaf_vector(tree, leaf) {
+            if has_leaf_vector(tree, leaf)? {
                 output_leaf_vector(&mut output, shape, tree, leaf, r, target_id, class_id)?;
             } else {
                 output_leaf_value(&mut output, shape, tree, leaf, r, target_id, class_id)?;
@@ -1138,7 +1176,7 @@ fn predict_score_by_tree_preset<T: PredictScalar + PartialOrd, O: PredictOut>(
         for (tree_id, tree) in trees.iter().enumerate() {
             let leaf = evaluate_tree(tree, row)?;
             let base = (r * num_tree + tree_id) * lvs;
-            if has_leaf_vector(tree, leaf) {
+            if has_leaf_vector(tree, leaf)? {
                 // Write each leaf-vector element at (row, tree, i)
                 // (predict.cc:367-370). Bounds-checked against lvs.
                 let leafvec = tree.leaf_vector(leaf);

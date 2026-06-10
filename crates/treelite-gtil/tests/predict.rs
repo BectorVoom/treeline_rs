@@ -298,3 +298,197 @@ fn unsupported_postprocessor_is_typed_error() {
         GtilError::UnsupportedPostprocessor("not_a_real_postprocessor".to_string())
     );
 }
+
+// ------------------------------------------------------------------------- //
+// WR-05 (Plan 05-06): kNone on a NUMERICAL test node returns a typed
+// UnrecognizedOperator, matching upstream's TREELITE_CHECK(false) fatal path,
+// instead of silently routing right (a definite wrong prediction).
+// ------------------------------------------------------------------------- //
+
+#[test]
+fn knone_operator_on_numerical_node_is_typed_error() {
+    use treelite_core::TreeNodeType;
+    // A numerical-test node whose comparison operator is kNone (never emitted by
+    // a well-formed loader). Before WR-05 this routed right silently; now it is
+    // GtilError::UnrecognizedOperator { node: 0, op: kNone }.
+    let mut t = Tree::<f32>::new();
+    t.num_nodes = 3;
+    t.cleft = TreeBuf::from_owned(vec![1, -1, -1]);
+    t.cright = TreeBuf::from_owned(vec![2, -1, -1]);
+    t.split_index = TreeBuf::from_owned(vec![0, -1, -1]);
+    t.default_left = TreeBuf::from_owned(vec![true, false, false]);
+    t.threshold = TreeBuf::from_owned(vec![0.5, 0.0, 0.0]);
+    // kNone on the NUMERICAL test node 0 (the malformed case).
+    t.cmp = TreeBuf::from_owned(vec![Operator::kNone, Operator::kNone, Operator::kNone]);
+    t.leaf_value = TreeBuf::from_owned(vec![0.0, 1.0, -1.0]);
+    t.node_type = TreeBuf::from_owned(vec![
+        TreeNodeType::kNumericalTestNode,
+        TreeNodeType::kLeafNode,
+        TreeNodeType::kLeafNode,
+    ]);
+    let m = model_of(vec![t], "identity", 0.0);
+    // A non-NaN feature value reaches the numerical-test branch → next_node(kNone).
+    let data = [0.0_f32, 0.0];
+    let err = predict(&m, &data, 1, &Config::default()).unwrap_err();
+    assert_eq!(
+        err,
+        GtilError::UnrecognizedOperator {
+            node: 0,
+            op: Operator::kNone,
+        },
+        "kNone on a numerical node must be a typed error, not a silent route-right"
+    );
+}
+
+// ------------------------------------------------------------------------- //
+// WR-04 (Plan 05-06): malformed category-list / leaf-vector CSR offsets return
+// a typed error instead of a silent &[] / scalar fallthrough that changes the
+// prediction. Legitimately-empty lists and absent (scalar-leaf) offsets keep
+// their correct non-error behavior.
+// ------------------------------------------------------------------------- //
+
+/// A categorical tree whose node-0 category-list offsets are explicitly set, so
+/// a test can inject an inverted (`begin > end`) or out-of-range (`end > len`)
+/// slice. Node 0 categorical, nodes 1/2 leaves.
+fn categorical_tree_with_offsets(
+    categories: Vec<u32>,
+    begin0: u64,
+    end0: u64,
+    left_leaf: f32,
+    right_leaf: f32,
+) -> Tree<f32> {
+    use treelite_core::TreeNodeType;
+    let mut t = Tree::<f32>::new();
+    t.num_nodes = 3;
+    t.cleft = TreeBuf::from_owned(vec![1, -1, -1]);
+    t.cright = TreeBuf::from_owned(vec![2, -1, -1]);
+    t.split_index = TreeBuf::from_owned(vec![0, -1, -1]);
+    t.default_left = TreeBuf::from_owned(vec![false, false, false]);
+    t.threshold = TreeBuf::from_owned(vec![0.0, 0.0, 0.0]);
+    t.cmp = TreeBuf::from_owned(vec![Operator::kNone, Operator::kNone, Operator::kNone]);
+    t.leaf_value = TreeBuf::from_owned(vec![0.0, left_leaf, right_leaf]);
+    t.node_type = TreeBuf::from_owned(vec![
+        TreeNodeType::kCategoricalTestNode,
+        TreeNodeType::kLeafNode,
+        TreeNodeType::kLeafNode,
+    ]);
+    t.category_list = TreeBuf::from_owned(categories);
+    // Nodes 1/2 carry legitimately-empty in-bounds offsets (begin==end==0).
+    t.category_list_begin = TreeBuf::from_owned(vec![begin0, 0, 0]);
+    t.category_list_end = TreeBuf::from_owned(vec![end0, 0, 0]);
+    t.category_list_right_child = TreeBuf::from_owned(vec![false, false, false]);
+    t.has_categorical_split = true;
+    t
+}
+
+#[test]
+fn malformed_category_list_inverted_offsets_is_typed_error() {
+    // begin (2) > end (1) on node 0 → MalformedCategoryList, not a silent &[].
+    let m = model_of(
+        vec![categorical_tree_with_offsets(
+            vec![1, 2, 3],
+            2,
+            1,
+            10.0,
+            20.0,
+        )],
+        "identity",
+        0.0,
+    );
+    let data = [1.0_f32, 0.0];
+    let err = predict(&m, &data, 1, &Config::default()).unwrap_err();
+    assert_eq!(err, GtilError::MalformedCategoryList { node: 0 });
+}
+
+#[test]
+fn malformed_category_list_out_of_range_end_is_typed_error() {
+    // end (9) > category_list.len() (3) on node 0 → MalformedCategoryList.
+    let m = model_of(
+        vec![categorical_tree_with_offsets(
+            vec![1, 2, 3],
+            0,
+            9,
+            10.0,
+            20.0,
+        )],
+        "identity",
+        0.0,
+    );
+    let data = [1.0_f32, 0.0];
+    let err = predict(&m, &data, 1, &Config::default()).unwrap_err();
+    assert_eq!(err, GtilError::MalformedCategoryList { node: 0 });
+}
+
+#[test]
+fn legitimately_empty_category_list_is_not_an_error() {
+    // begin == end == 0 (in bounds) on node 0 → Ok(&[]): every category is a
+    // non-match, so routing falls to the non-match side (category_list_right_child
+    // == false ⇒ non-match routes RIGHT). NOT an error.
+    let m = model_of(
+        vec![categorical_tree_with_offsets(
+            vec![1, 2, 3],
+            0,
+            0,
+            10.0,
+            20.0,
+        )],
+        "identity",
+        0.0,
+    );
+    let data = [1.0_f32, 0.0]; // 1 would match if list were [1..], but list is empty → non-match → right
+    let out = predict(&m, &data, 1, &Config::default()).unwrap();
+    assert_eq!(
+        out[0], 20.0_f32,
+        "empty list → non-match → right leaf, no error"
+    );
+}
+
+#[test]
+fn malformed_leaf_vector_inverted_offsets_is_typed_error() {
+    use treelite_core::TreeNodeType;
+    // A single leaf node whose leaf-vector offsets are inverted (begin 1 > end 0)
+    // → MalformedLeafVector, NOT a silent scalar fallthrough.
+    let mut t = Tree::<f32>::new();
+    t.num_nodes = 1;
+    t.cleft = TreeBuf::from_owned(vec![-1]);
+    t.cright = TreeBuf::from_owned(vec![-1]);
+    t.split_index = TreeBuf::from_owned(vec![-1]);
+    t.default_left = TreeBuf::from_owned(vec![false]);
+    t.threshold = TreeBuf::from_owned(vec![0.0]);
+    t.cmp = TreeBuf::from_owned(vec![Operator::kNone]);
+    t.leaf_value = TreeBuf::from_owned(vec![5.0]);
+    t.node_type = TreeBuf::from_owned(vec![TreeNodeType::kLeafNode]);
+    t.leaf_vector = TreeBuf::from_owned(vec![0.1_f32]); // len 1
+    t.leaf_vector_begin = TreeBuf::from_owned(vec![1u64]); // begin > end
+    t.leaf_vector_end = TreeBuf::from_owned(vec![0u64]);
+    let m = model_of(vec![t], "identity", 0.0);
+    let data = [0.0_f32, 0.0];
+    let err = predict(&m, &data, 1, &Config::default()).unwrap_err();
+    assert_eq!(err, GtilError::MalformedLeafVector { node: 0 });
+}
+
+#[test]
+fn absent_leaf_vector_offsets_stay_scalar_no_error() {
+    use treelite_core::TreeNodeType;
+    // A scalar leaf with EMPTY leaf-vector CSR columns (absent offsets) must take
+    // the legitimate scalar path → Ok(false), NOT an error. (The split_tree
+    // helper leaves leaf_vector_begin/end empty by default.)
+    let mut t = Tree::<f32>::new();
+    t.num_nodes = 1;
+    t.cleft = TreeBuf::from_owned(vec![-1]);
+    t.cright = TreeBuf::from_owned(vec![-1]);
+    t.split_index = TreeBuf::from_owned(vec![-1]);
+    t.default_left = TreeBuf::from_owned(vec![false]);
+    t.threshold = TreeBuf::from_owned(vec![0.0]);
+    t.cmp = TreeBuf::from_owned(vec![Operator::kNone]);
+    t.leaf_value = TreeBuf::from_owned(vec![7.0]);
+    t.node_type = TreeBuf::from_owned(vec![TreeNodeType::kLeafNode]);
+    // leaf_vector_begin / leaf_vector_end left EMPTY (absent offsets).
+    let m = model_of(vec![t], "identity", 0.0);
+    let data = [0.0_f32, 0.0];
+    let out = predict(&m, &data, 1, &Config::default()).unwrap();
+    assert_eq!(
+        out[0], 7.0_f32,
+        "absent leaf-vector offsets → scalar leaf, no error"
+    );
+}

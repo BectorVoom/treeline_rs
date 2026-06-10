@@ -7,6 +7,7 @@
 //! never index out of bounds.
 
 use thiserror::Error;
+use treelite_core::Operator;
 
 /// Errors raised by `treelite-gtil` during prediction.
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -128,6 +129,45 @@ pub enum GtilError {
         /// The limit it violated (the previous fence for monotonicity, the
         /// required length, or the backing-array length).
         limit: u64,
+    },
+
+    /// A numerical-test node carries an unrecognized comparison operator
+    /// (notably [`Operator::kNone`], which is never emitted by a well-formed
+    /// numerical test node). Upstream `NextNode` (`predict.cc:120-122`) hits a
+    /// fatal `TREELITE_CHECK(false)` and returns `-1`; here the malformed
+    /// operator is a typed error rather than a silent route-right wrong
+    /// prediction (WR-05, ERR-01).
+    #[error("unrecognized comparison operator {op:?} at node {node}")]
+    UnrecognizedOperator {
+        /// The node id whose numerical test carried the bad operator.
+        node: usize,
+        /// The offending operator read from `tree.comparison_op(node)`.
+        op: Operator,
+    },
+
+    /// A node's category-list CSR offsets are malformed: an inverted slice
+    /// (`begin > end`), an end past the `category_list` value buffer, or a
+    /// missing begin/end offset for an in-range node. Upstream slices
+    /// `category_list[begin..end]` unchecked because the loader guarantees
+    /// well-formed offsets (`predict.cc:128-150`); a hand-crafted / corrupt
+    /// `Model` must surface a typed error instead of silently treating the node
+    /// as a non-match and changing the prediction (WR-04, ERR-01).
+    #[error("malformed category-list offsets at node {node}")]
+    MalformedCategoryList {
+        /// The node id whose category-list CSR offsets are malformed.
+        node: usize,
+    },
+
+    /// A leaf node's leaf-vector CSR offsets are present but malformed: an
+    /// inverted slice (`begin > end`) or an end past the `leaf_vector` value
+    /// buffer. An ABSENT offset (a scalar-leaf tree with empty CSR columns) is
+    /// NOT malformed — it is the legitimate scalar path. A present-but-inverted
+    /// offset must surface a typed error instead of silently being treated as a
+    /// scalar leaf and changing the prediction (WR-04, ERR-01).
+    #[error("malformed leaf-vector offsets at node {node}")]
+    MalformedLeafVector {
+        /// The leaf node id whose leaf-vector CSR offsets are malformed.
+        node: usize,
     },
 
     /// An error bubbled up from `treelite-core`.
