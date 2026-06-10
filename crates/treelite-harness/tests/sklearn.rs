@@ -540,3 +540,17 @@ fn sklearn_histgb_numerical() -> anyhow::Result<()> {
     eprintln!("sklearn_histgb_numerical: max |delta| = {dev:e} (< 1e-5)");
     Ok(())
 }
+
+/// SKL-04 (categorical): HistGradientBoosting WITH categorical splits — the
+/// `features_map` is a real permutation and a `categories_map` is present, so
+/// this isolates the remap risk (RESEARCH Pitfall 4). The categorical node's
+/// `left_cat_bitmap` is decoded via the `8*row` 256-bit stride; each set bit is
+/// remapped through `categories_map[fid][cat]`. Loads → predicts → matches the
+/// upstream treelite-GTIL golden within 1e-5 (not feature-transposed).
+#[test]
+fn sklearn_histgb_categorical() -> anyhow::Result<()> {
+    let path = fixture_path("sklearn_histgb_categorical.golden.json");
+    let dev = run_histgb_golden(&path, "sklearn_histgb_categorical")?;
+    eprintln!("sklearn_histgb_categorical: max |delta| = {dev:e} (< 1e-5)");
+    Ok(())
+}

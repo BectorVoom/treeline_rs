@@ -872,6 +872,106 @@ mod tests {
     }
 
     #[test]
+    fn histgb_check_bit_matches_8row_stride_reference() {
+        // Two 256-bit rows. Row 0 has bits {2, 3} set (12 = 0b1100); row 1 has
+        // bit {1} set (2 = 0b10). The `8*row` stride must select the correct row.
+        let bitmap: [u32; 16] = [12, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0];
+        // Row 0.
+        assert!(!check_bit(&bitmap, 0, 0));
+        assert!(!check_bit(&bitmap, 1, 0));
+        assert!(check_bit(&bitmap, 2, 0));
+        assert!(check_bit(&bitmap, 3, 0));
+        assert!(!check_bit(&bitmap, 4, 0));
+        // Row 1 — same words would be wrong without the 8*row stride.
+        assert!(!check_bit(&bitmap, 0, 1));
+        assert!(check_bit(&bitmap, 1, 1));
+        assert!(!check_bit(&bitmap, 2, 1));
+        // A high category (val 33) lands in word index 1 of its row.
+        let mut bm2 = [0u32; 8];
+        bm2[1] = 1 << (33 % 32); // bit 33 -> word 1, bit 1
+        assert!(check_bit(&bm2, 33, 0));
+        assert!(!check_bit(&bm2, 32, 0));
+    }
+
+    #[test]
+    fn histgb_decode_categorical_identity_when_no_categories_map() {
+        // Row 0 bits {2,3} set; no categories_map -> identity (cats 2 and 3).
+        let bitmap: [u32; 8] = [12, 0, 0, 0, 0, 0, 0, 0];
+        let cats = decode_categorical(0, 0, &bitmap, None).unwrap();
+        assert_eq!(cats, vec![2, 3]);
+    }
+
+    #[test]
+    fn histgb_decode_categorical_applies_categories_map_remap() {
+        // Row 0 bits {0,1} set; categories_map[0] = [10, 20, 30, 40] remaps
+        // cat 0 -> 10, cat 1 -> 20 (NOT identity 0,1 — Pitfall 4).
+        let bitmap: [u32; 8] = [0b11, 0, 0, 0, 0, 0, 0, 0];
+        let cm = vec![vec![10_i64, 20, 30, 40]];
+        let cats = decode_categorical(0, 0, &bitmap, Some(&cm)).unwrap();
+        assert_eq!(cats, vec![10, 20]);
+    }
+
+    #[test]
+    fn histgb_decode_categorical_rejects_out_of_range_bitset_idx() {
+        // bitmap has only one 256-bit row (8 words) but bitset_idx=1 needs row 1
+        // (words 8..16) -> typed HistGbDecode, never OOB.
+        let bitmap: [u32; 8] = [1, 0, 0, 0, 0, 0, 0, 0];
+        let res = decode_categorical(0, 1, &bitmap, None);
+        assert!(matches!(res, Err(SklError::HistGbDecode { .. })));
+    }
+
+    #[test]
+    fn histgb_categorical_node_routes_by_category_membership() {
+        // Root is a categorical split on feature_idx 0 with left categories
+        // {1, 2} (row 0 bits 1 and 2 = 0b110 = 6). A category MATCH routes LEFT.
+        // node0 internal (left=1,right=2), node1/node2 leaves.
+        let root = pack_node_56(0.0, 10, 0, 0.0, 0, 1, 2, 1.0, 0, 0, 0, 1, 0);
+        let left = pack_node_56(10.0, 6, 0, 0.0, 0, 0, 0, 0.0, 1, 1, 0, 0, 0);
+        let right = pack_node_56(20.0, 4, 0, 0.0, 0, 0, 0, 0.0, 1, 1, 0, 0, 0);
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&root);
+        buf.extend_from_slice(&left);
+        buf.extend_from_slice(&right);
+        let bitmap: Vec<u32> = vec![0b110, 0, 0, 0, 0, 0, 0, 0]; // cats {1,2}
+        let model = load_hist_gradient_boosting_regressor(
+            1,
+            1,
+            56,
+            &[3],
+            &[&buf[..]],
+            &[&bitmap[..]],
+            &[0],
+            None,
+            0.0,
+        )
+        .expect("categorical histgb loads");
+        // Feature 0 = 1.0 (category 1, in {1,2}) -> LEFT leaf (10.0).
+        let out = treelite_gtil::predict(&model, &[1.0_f32], 1).expect("predict");
+        approx::assert_abs_diff_eq!(out[0], 10.0_f32, epsilon = 1e-5);
+        // Feature 0 = 3.0 (category 3, NOT in {1,2}) -> RIGHT leaf (20.0).
+        let out = treelite_gtil::predict(&model, &[3.0_f32], 1).expect("predict");
+        approx::assert_abs_diff_eq!(out[0], 20.0_f32, epsilon = 1e-5);
+    }
+
+    #[test]
+    fn histgb_categorical_malformed_bitmap_is_typed_error_not_panic() {
+        // A categorical node whose bitset_idx points past the supplied bitmap
+        // must surface a typed error during load, never an OOB panic (T-04-20).
+        let root = pack_node_56(0.0, 10, 0, 0.0, 0, 1, 2, 1.0, 0, 0, 0, 1, 5);
+        let left = pack_node_56(1.0, 6, 0, 0.0, 0, 0, 0, 0.0, 1, 1, 0, 0, 0);
+        let right = pack_node_56(2.0, 4, 0, 0.0, 0, 0, 0, 0.0, 1, 1, 0, 0, 0);
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&root);
+        buf.extend_from_slice(&left);
+        buf.extend_from_slice(&right);
+        let bitmap: Vec<u32> = vec![0u32; 8]; // only row 0, but bitset_idx=5
+        let res = load_hist_gradient_boosting_regressor(
+            1, 1, 56, &[3], &[&buf[..]], &[&bitmap[..]], &[0], None, 0.0,
+        );
+        assert!(matches!(res, Err(SklError::HistGbDecode { .. })));
+    }
+
+    #[test]
     fn histgb_feature_idx_out_of_range_is_typed_error() {
         // feature_idx=5 but features_map has len 1 -> typed HistGbDecode.
         let root = pack_node_56(0.0, 10, 5, 0.5, 0, 1, 2, 1.0, 0, 0, 0, 0, 0);
