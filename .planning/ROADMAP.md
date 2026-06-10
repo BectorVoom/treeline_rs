@@ -248,8 +248,25 @@ Plans:
   2. A committed GPU equivalence report documents the observed max deviation per model class **on ROCm** against an accepted tolerance, noting where f64 postprocessor fallback is needed to stay in budget. CUDA/wgpu rows are filled wherever their hardware is available and explicitly marked "not run — no device" otherwise.
   3. CPU remains the default backend and small inputs do not pay GPU transfer/launch overhead (documented crossover heuristic).
 
-**Plans**: TBD
-**Research flag:** Needs research-phase — GPU transcendental/FMA divergence profiling; cubecl FMA contraction behavior.
+**Plans**: 4 plans
+Plans:
+**Wave 0** *(infrastructure spike — gates backend registration)*
+
+- [ ] 07-01-PLAN.md — rocm/cuda/wgpu cargo features + CubeclError::DeviceUnavailable + device.rs client constructor + A3 device-absence spike (D-04/D-05) (Wave 0)
+
+**Wave 1** *(blocked on Wave 0 — same treelite-cubecl lib.rs/device.rs)*
+
+- [ ] 07-02-PLAN.md — Generalize host launcher predict_cpu → predict::<R> + predict_cpu shim; CPU 1e-5 gate byte-identical (GPU-03) (Wave 1)
+
+**Wave 2** *(blocked on Wave 1 — needs predict::<R>)*
+
+- [ ] 07-03-PLAN.md — Register Backend::Rocm/Cuda/Wgpu + rocm_case()/cuda_case()/wgpu_case() in harness; ROCm selectable end-to-end (GPU-03/SC1) (Wave 2)
+
+**Wave 3** *(blocked on Wave 2 — same harness lib.rs; hardware-gated checkpoint)*
+
+- [ ] 07-04-PLAN.md — report.rs + gtil_matrix_gpu.rs sibling → committed GPU_EQUIVALENCE_REPORT.md (GPU-04/SC2) + gpu_crossover.rs → GPU_CROSSOVER.md (SC3/D-09/D-10); regenerated on ROCm hardware (Wave 3)
+
+**Research flag (resolved):** GPU transcendental/FMA divergence profiling + cubecl FMA contraction completed in 07-RESEARCH.md (FMA has ~0 surface on the pure-add tree-sum; divergence is transcendental-only, predicted-deviation model in the report's predicted column).
 
 ### Phase 8: PyO3 Python Binding
 
@@ -293,6 +310,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 4. LightGBM & scikit-learn Loaders | 8/8 | Complete    | 2026-06-10 |
 | 5. Full Scalar GTIL & Equivalence Harness | 7/7 | Complete    | 2026-06-10 |
 | 6. cubecl GTIL Kernels (CPU Backend) | 7/7 | Complete    | 2026-06-10 |
-| 7. GPU Backend & Equivalence Report | 0/TBD | Not started | - |
+| 7. GPU Backend & Equivalence Report | 0/4 | Planned | - |
 | 8. PyO3 Python Binding | 0/TBD | Not started | - |
 | 9. Memory-Efficiency Hardening | 0/TBD | Not started | - |
