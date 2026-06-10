@@ -124,10 +124,12 @@ fn gpu_crossover() -> anyhow::Result<()> {
     let reps = 5usize;
     let row_sweep = [1usize, 10, 100, 1_000, 10_000, 100_000];
 
-    // A couple of forest sizes: the small `binary` (4 features) and the wider
-    // `leaf_vec_mc` multiclass forest. Both are kLT numerical so they run the
-    // ROCm kernel (not the scalar fallback).
-    let forests = [("binary", 4usize), ("leaf_vec_mc", 4usize)];
+    // A couple of forest sizes: the small `binary` and the wider `leaf_vec_mc`
+    // multiclass forest. Both are kLT numerical so they run the ROCm kernel (not
+    // the scalar fallback). `num_feature` is read from each loaded model (NOT
+    // hardcoded) so the synthetic input matrix always matches the model's
+    // expected stride.
+    let forests = ["binary", "leaf_vec_mc"];
 
     let mut md = String::new();
     let _ = writeln!(md, "# CPU/GPU Crossover (SC3, documented-only)");
@@ -153,8 +155,10 @@ fn gpu_crossover() -> anyhow::Result<()> {
     let mut any_gpu_ran = false;
     let mut findings: Vec<String> = Vec::new();
 
-    for (class, num_feature) in forests {
+    for class in forests {
         let model = load_model(class)?;
+        let num_feature = usize::try_from(model.num_feature)
+            .with_context(|| format!("model {class} reports negative num_feature"))?;
         let _ = writeln!(md, "## Forest `{class}` ({num_feature} features)");
         let _ = writeln!(md);
         let _ = writeln!(
