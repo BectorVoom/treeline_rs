@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 04-06-PLAN.md
-last_updated: "2026-06-10T05:02:35.158Z"
-last_activity: 2026-06-10 -- Plan 04-06 complete
+last_updated: "2026-06-10T05:08:36.347Z"
+last_activity: 2026-06-10 -- Plan 04-05 complete
 progress:
   total_phases: 9
   completed_phases: 3
   total_plans: 22
-  completed_plans: 20
+  completed_plans: 21
   percent: 33
 ---
 
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 04 (lightgbm-scikit-learn-loaders) — EXECUTING
-Plan: 7 of 8
-Status: Executing Phase 04 — Plan 04-05 complete (Wave 3: LightGBM categorical bitset decode, LGB-02 — BitsetToList ported verbatim, categorical_test emission through the f64 builder's CSR category columns, minimal NextNodeCategorical GTIL branch; lightgbm_categorical golden max |delta| = 9.54e-7 < 1e-5; cargo test --workspace green). 04-06 (sklearn RF/ET/GB) also complete.
+Plan: 8 of 8
+Status: Ready to execute
 Last activity: 2026-06-10 -- Plan 04-05 complete
 
 Progress: [███████░] 88% (Phase 04 plans: 7/8)
@@ -73,6 +73,7 @@ Progress: [███████░] 88% (Phase 04 plans: 7/8)
 | Phase 04 P04 | 6min | 2 tasks | 7 files |
 | Phase 04 P06 | 13min | 2 tasks | 11 files |
 | Phase Phase 04 PP05 | 5min | 2 tasks tasks | 8 files files |
+| Phase 04 P07 | ~2min | 1 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -143,6 +144,8 @@ Recent decisions affecting current work:
 - [Phase ?]: [04-05]: LightGBM categorical bitset decoded via BitsetToList ported verbatim (lightgbm.cc:210-221, word=bits[i/32] bit=i%32 LSB-first); decoder takes &[u32] so word index is structurally in-bounds (T-04-11). Categorical node's threshold field is repurposed as cat_idx; slice cat_threshold via cat_boundaries, bounds-checked (T-04-10).
 - [Phase ?]: [04-05]: Categorical splits ignore missing_type (default_left=false, category_list_right_child=false, NaN->right, lightgbm.cc:569-573). treelite-builder categorical_test extended to carry the category list + polarity (SetCategoricalTest) and made mode-agnostic (no guard_f32) so the f64 LightGBM path uses it; end_tree flattens per-node staging into the CSR category_list columns.
 - [Phase ?]: [04-05]: Minimal NextNodeCategorical GTIL branch (D-03): integer membership + polarity (predict.cc:128-150); load-bearing subset of the float-representability guard applied, exhaustive matrix (GTIL-06) deferred to Phase 5. category_list_safe wrapper returns empty on OOB CSR slice (T-04-12). lightgbm_categorical golden max |delta|=9.54e-7 < 1e-5; workspace green.
+- [Phase ?]: 04-07: IsolationForest ratio_c assigned post-commit (Model field, not BuilderMetadata), mirroring upstream PostProcessorFunc config
+- [Phase ?]: 04-07: IsolationForest leaf isolation depths consumed AS-IS via shared GB build_tree (no loader-side recomputation, D-07); zero ratio_c rejected (T-04-17)
 
 ### Pending Todos
 
@@ -164,6 +167,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T05:01:51.056Z
+Last session: 2026-06-10T05:08:18.142Z
 Stopped at: Completed 04-06-PLAN.md
 Resume file: None

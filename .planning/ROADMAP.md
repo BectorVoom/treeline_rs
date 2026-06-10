@@ -145,7 +145,7 @@ Plans:
 **Wave 3** *(blocked on Wave 2)*
 
 - [x] 04-05-PLAN.md — LightGBM categorical bitset (BitsetToList) + minimal NextNodeCategorical GTIL, 1e-5 golden (LGB-02) (Wave 3) — DONE (2/2 tasks; bitset.rs ports BitsetToList verbatim (word=bits[i/32] bit=i%32, T-04-11 in-bounds); cat_threshold u32 / cat_boundaries u64 exact precision with length+monotone validation → LgbError::Bitset (T-04-10); builder categorical_test extended to carry the category list + polarity, CSR columns filled at end_tree; load_lightgbm emits categorical_test (cat_idx=threshold[node], default_left=false, NaN→right); minimal NextNodeCategorical GTIL branch (membership + polarity, GTIL-06 deferred) + bounds-safe category_list_safe (T-04-12); lightgbm_categorical golden max |delta| = 9.54e-7 < 1e-5; cargo test --workspace green)
-- [ ] 04-07-PLAN.md — IsolationForest MixIn (exponential_standard_ratio + ratio_c), golden == -score_samples 1e-5 (SKL-03) (Wave 3)
+- [x] 04-07-PLAN.md — IsolationForest MixIn (exponential_standard_ratio + ratio_c), golden == -score_samples 1e-5 (SKL-03) (Wave 3)
 
 **Wave 4** *(blocked on Wave 3 — the HistGB tentpole)*
 
@@ -236,7 +236,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. End-to-End Spine | 4/4 | Complete    | 2026-06-09 |
 | 2. Builder & Serialization | 6/6 | Complete    | 2026-06-10 |
 | 3. Full XGBoost Loaders | 4/4 | Complete    | 2026-06-10 |
-| 4. LightGBM & scikit-learn Loaders | 6/8 | In Progress|  |
+| 4. LightGBM & scikit-learn Loaders | 7/8 | In Progress|  |
 | 5. Full Scalar GTIL & Equivalence Harness | 0/TBD | Not started | - |
 | 6. cubecl GTIL Kernels (CPU Backend) | 0/TBD | Not started | - |
 | 7. GPU Backend & Equivalence Report | 0/TBD | Not started | - |
