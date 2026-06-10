@@ -15,7 +15,8 @@ A from-scratch Rust rewrite of [Treelite](https://github.com/dmlc/treelite) — 
 <!-- Shipped and confirmed valuable. The Rust port is greenfield; nothing validated yet.
      The upstream C++ in treelite-mainline/ is the reference SPEC, not validated Rust capability. -->
 
-(None yet — ship to validate)
+- [x] Programmatic `ModelBuilder` API with topology/orphan validation — *Validated in Phase 2 (BLD-01/02/03): fluent strict state machine, `ConcatenateModelObjects`, `BulkConstructTree`; XGBoost-JSON loader rewired through it, still within 1e-5.*
+- [x] Serialization: binary + JSON round-trip for the current (v5) format generation — *Validated in Phase 2 (SER-01..04): byte-for-byte golden v5 match, bounds-checked v5-only deserialize, zero-copy PyBuffer frames, `DumpAsJSON`, typed field accessors. (XGBoost loader→serialize byte-fidelity deferred to Phase 3 as DEF-02-01.)*
 
 ### Active
 
@@ -26,11 +27,9 @@ A from-scratch Rust rewrite of [Treelite](https://github.com/dmlc/treelite) — 
 - [ ] Import LightGBM text-format models
 - [ ] Import scikit-learn estimators — RandomForest, ExtraTrees, GradientBoosting, IsolationForest, AND HistGradientBoosting (incl. the bulk tree-construction path)
 - [ ] In-memory struct-of-arrays `Model` / `Tree` representation parameterized over float32/float64
-- [ ] Programmatic `ModelBuilder` API with topology/orphan validation
 - [ ] GTIL inference: dense + sparse CSR input, the 4 predict kinds, full postprocessor set (sigmoid, softmax, etc.)
 - [ ] GTIL inference hot path (tree traversal + postprocessors) implemented as `cubecl` kernels
 - [ ] cubecl CPU backend by default; at least one GPU backend (CUDA or wgpu) working and runtime-selectable in v1, with a GPU equivalence report
-- [ ] Serialization: binary + JSON round-trip for the current (v5) format generation
 - [ ] PyO3 Python binding exposing load → predict → serialize directly over the Rust core
 - [ ] Equivalence harness: random seeded input matrices → golden output vectors captured from C++ Treelite → assert Rust within 1e-5
 - [ ] `thiserror`-based typed errors in library crates; `anyhow` in binaries/tests
@@ -98,4 +97,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-09 after initialization*
+*Last updated: 2026-06-10 — Phase 2 (Builder & Serialization) complete; ModelBuilder + v5 serialization validated.*
