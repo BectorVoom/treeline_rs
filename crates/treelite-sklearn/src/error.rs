@@ -99,6 +99,24 @@ pub enum SklError {
         got: usize,
     },
 
+    /// A failure decoding the HistGradientBoosting packed-node byte buffer
+    /// (SKL-04). Covers: an `expected_sizeof_node_struct` not in {52, 56}
+    /// (T-04-18), a `nodes` buffer shorter than `node_count × itemsize`
+    /// (T-04-18), a `feature_idx` out of range for `features_map`/`categories_map`
+    /// (T-04-19), a `bitset_idx` out of range for the categorical bitmap
+    /// (T-04-20), and a short field read mid-decode. The packed buffer is
+    /// untrusted; every itemsize, length, and index is validated and a typed
+    /// error returned rather than an out-of-bounds read (Security Domain, D-08,
+    /// ASVS V5).
+    #[error("histgb packed-node decode failed at offset {offset}: {detail}")]
+    HistGbDecode {
+        /// The byte offset (within a node record, or `0` for whole-buffer/scalar
+        /// guards) at which the failure was detected.
+        offset: usize,
+        /// What went wrong (itemsize, buffer length, or index detail).
+        detail: String,
+    },
+
     /// An error bubbled up from `treelite-core` (e.g. an unknown enum string).
     #[error(transparent)]
     Core(#[from] treelite_core::CoreError),

@@ -84,6 +84,139 @@ struct IForestGolden {
     manifest: SklManifest,
 }
 
+/// The HistGradientBoosting packed-node array dump (`histgb` object) shared by
+/// both the numerical and categorical goldens (SKL-04). Mirrors the upstream
+/// `importer.py` HistGB capture (`:355-478`): the per-tree packed
+/// `HistGradientBoostingNode` buffers are base64-encoded (`nodes_b64`), and the
+/// `features_map` / `categories_map` carry the feature/category remaps that the
+/// loader must apply.
+#[derive(Debug, Deserialize)]
+struct HistGbDump {
+    n_iter: i32,
+    n_features_in: i32,
+    /// 52 (i32 feature index) or 56 (i64 feature index) — selects the packed
+    /// layout. On this environment the fixtures are 56.
+    expected_sizeof_node_struct: usize,
+    node_count: Vec<i64>,
+    /// Per-tree packed node buffers, base64-encoded (exact C-struct bytes).
+    nodes_b64: Vec<String>,
+    /// Per-tree categorical bitsets (8 `u32` per categorical row; empty for a
+    /// purely-numerical tree).
+    raw_left_cat_bitsets: Vec<Vec<u32>>,
+    /// Feature index remap — ALWAYS applied (`split_index = features_map[
+    /// feature_idx]`, Pitfall 4).
+    features_map: Vec<i32>,
+    /// Per-categorical-feature category remap; empty when the model has no
+    /// categorical splits (identity).
+    categories_map: Vec<Vec<i64>>,
+    /// HistGB baseline prediction (the GTIL base score), one entry per class.
+    baseline_prediction: Vec<f64>,
+}
+
+/// `sklearn_histgb_numerical.golden.json` / `sklearn_histgb_categorical.golden.json`
+/// top level (SKL-04).
+#[derive(Debug, Deserialize)]
+struct HistGbGolden {
+    input: Vec<Vec<f64>>,
+    histgb: HistGbDump,
+    output: Vec<f64>,
+    manifest: SklManifest,
+}
+
+/// Decode a standard (RFC 4648) base64 string into bytes.
+///
+/// A tiny self-contained decoder (no third-party `base64` crate, to keep the
+/// dependency graph minimal): the HistGB packed-node buffers are frozen as
+/// standard base64 by the capture script, so only the standard alphabet +
+/// `=` padding is needed.
+fn base64_decode(s: &str) -> anyhow::Result<Vec<u8>> {
+    const ALPHABET: &[u8; 64] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    // Reverse lookup: byte -> 6-bit value (255 = invalid).
+    let mut rev = [255u8; 256];
+    for (i, &c) in ALPHABET.iter().enumerate() {
+        rev[c as usize] = i as u8;
+    }
+
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len() / 4 * 3);
+    let mut acc: u32 = 0;
+    let mut nbits: u32 = 0;
+    for &c in bytes {
+        if c == b'=' || c == b'\n' || c == b'\r' {
+            continue;
+        }
+        let v = rev[c as usize];
+        anyhow::ensure!(v != 255, "invalid base64 character {:?}", c as char);
+        acc = (acc << 6) | v as u32;
+        nbits += 6;
+        if nbits >= 8 {
+            nbits -= 8;
+            out.push((acc >> nbits) as u8);
+        }
+    }
+    Ok(out)
+}
+
+/// Base64-decode every per-tree packed node buffer into owned byte vectors.
+fn decode_nodes(nodes_b64: &[String]) -> anyhow::Result<Vec<Vec<u8>>> {
+    nodes_b64
+        .iter()
+        .enumerate()
+        .map(|(t, s)| base64_decode(s).with_context(|| format!("base64-decoding nodes_b64[{t}]")))
+        .collect()
+}
+
+/// Run a HistGB golden (numerical or categorical) end-to-end: decode the packed
+/// nodes, load the regressor via `treelite_sklearn`, predict, and assert within
+/// 1e-5. Returns the max observed `|delta|`.
+fn run_histgb_golden(path: &str, label: &str) -> anyhow::Result<f64> {
+    let raw = std::fs::read_to_string(path).with_context(|| format!("reading {path}"))?;
+    let golden: HistGbGolden =
+        serde_json::from_str(&raw).with_context(|| format!("parsing {path}"))?;
+    check_manifest(&golden.manifest);
+
+    let h = &golden.histgb;
+    let n_features = h.n_features_in as usize;
+    let (flat, num_row) = flatten_input(&golden.input, n_features)?;
+
+    // Decode packed nodes + borrow as slice-of-slices for the D-01 signature.
+    let nodes_owned = decode_nodes(&h.nodes_b64)?;
+    let nodes: Vec<&[u8]> = nodes_owned.iter().map(|v| v.as_slice()).collect();
+    let bitsets: Vec<&[u32]> = h.raw_left_cat_bitsets.iter().map(|v| v.as_slice()).collect();
+
+    // Identity categories_map when the model has no categorical splits.
+    let categories_map: Option<&[Vec<i64>]> = if h.categories_map.is_empty() {
+        None
+    } else {
+        Some(&h.categories_map)
+    };
+
+    // The frozen HistGB fixtures (numerical + categorical) are both regressors
+    // (baseline_prediction has one entry; output last-dim is 1).
+    let base = h.baseline_prediction.first().copied().unwrap_or(0.0);
+    let model = treelite_sklearn::load_hist_gradient_boosting_regressor(
+        h.n_iter,
+        h.n_features_in,
+        h.expected_sizeof_node_struct,
+        &h.node_count,
+        &nodes,
+        &bitsets,
+        &h.features_map,
+        categories_map,
+        base,
+    )
+    .map_err(|e| anyhow::anyhow!("{e}"))
+    .with_context(|| format!("loading {label}"))?;
+
+    let rust = treelite_gtil::predict(&model, &flat, num_row)
+        .map_err(|e| anyhow::anyhow!("{e}"))
+        .with_context(|| format!("predicting {label}"))?;
+    let dev = assert_within_1e5(&rust, &golden.output, label)?;
+    eprintln!("{label}: max |delta| = {dev:e} (< 1e-5)");
+    Ok(dev)
+}
+
 /// `sklearn_rf.golden.json` top level.
 #[derive(Debug, Deserialize)]
 struct RfGolden {
@@ -390,5 +523,20 @@ fn sklearn_iforest() -> anyhow::Result<()> {
     eprintln!(
         "sklearn_iforest: max |delta| = {dev:e} (< 1e-5) vs treelite.gtil.predict (== -score_samples)"
     );
+    Ok(())
+}
+
+/// SKL-04 (numerical): HistGradientBoosting with an identity feature map and NO
+/// categorical splits loads from its packed-node byte buffer (56-byte layout on
+/// this env) → predicts → matches the upstream treelite-GTIL golden within 1e-5.
+///
+/// This isolates packed-node DECODE correctness (RESEARCH Open Q3): the
+/// `features_map` is the identity arange, so any deviation here is a struct
+/// offset / `from_le_bytes` field-decode bug, not a remap bug.
+#[test]
+fn sklearn_histgb_numerical() -> anyhow::Result<()> {
+    let path = fixture_path("sklearn_histgb_numerical.golden.json");
+    let dev = run_histgb_golden(&path, "sklearn_histgb_numerical")?;
+    eprintln!("sklearn_histgb_numerical: max |delta| = {dev:e} (< 1e-5)");
     Ok(())
 }

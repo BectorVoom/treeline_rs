@@ -24,15 +24,27 @@
 //! are the pre-computed isolation depths consumed AS-IS (no loader-side
 //! recomputation) and the Treelite output deliberately differs from the
 //! framework's own anomaly score (it equals `-clf.score_samples`, D-07).
-//! HistGradientBoosting (SKL-04) is the next slice.
+//!
+//! HistGradientBoosting (SKL-04) is delivered via the [`histgb`] path
+//! ([`load_hist_gradient_boosting_regressor`] /
+//! [`load_hist_gradient_boosting_classifier`]): unlike the other sklearn loaders
+//! it receives a RAW PACKED BYTE BUFFER per tree (the
+//! `HistGradientBoostingNode<FeatureIdT>` C struct), decoded field-by-field via
+//! `from_le_bytes` (Phase-3 D-08 byte-cursor discipline) at the 52/56-byte
+//! layout offsets, with `features_map` always applied to the split index and
+//! `categories_map` remapping categorical bit values when present.
 
 pub mod bulk;
 pub mod error;
+pub mod histgb;
 pub mod mixin;
 
 pub use error::SklError;
 
 pub use bulk::{load_random_forest_classifier, load_random_forest_regressor};
+pub use histgb::{
+    load_hist_gradient_boosting_classifier, load_hist_gradient_boosting_regressor,
+};
 pub use mixin::{
     load_gradient_boosting_classifier, load_gradient_boosting_regressor, load_isolation_forest,
 };
