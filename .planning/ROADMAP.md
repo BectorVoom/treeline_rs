@@ -110,7 +110,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 03-03-PLAN.md — UBJSON slice: hand-rolled tag decoder → serde_json::Value + DetectXGBoostFormat, converging at the shared structs (XGB-02/XGB-04) (Wave 2)
+- [x] 03-03-PLAN.md — UBJSON slice: hand-rolled tag decoder → serde_json::Value + DetectXGBoostFormat, converging at the shared structs (XGB-02/XGB-04) (Wave 2) — DONE (2/2 tasks; UBJSON byte-fidelity closed: load_xgboost_ubjson==load_xgboost_json==golden_v5_3format.bin + 1e-5; detect_/ubjson_ tests green; legacy leg of three_format_equivalence stays RED until 03-04)
 
 **Wave 3** *(blocked on Wave 2)*
 

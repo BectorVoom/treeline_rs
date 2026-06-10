@@ -32,9 +32,9 @@ Requirements for the initial release. Each maps to a roadmap phase. All are hypo
 ### XGBoost Loader
 
 - [x] **XGB-01**: User can load an XGBoost JSON model
-- [ ] **XGB-02**: User can load an XGBoost UBJSON model (parser shares the JSON state machine for numeric parity)
+- [x] **XGB-02**: User can load an XGBoost UBJSON model (parser shares the JSON state machine for numeric parity)
 - [ ] **XGB-03**: User can load an XGBoost legacy binary model (little-endian layout)
-- [ ] **XGB-04**: The loader auto-detects which XGBoost format a file uses
+- [x] **XGB-04**: The loader auto-detects which XGBoost format a file uses
 - [x] **XGB-05**: XGBoost objective maps to the correct postprocessor, with the version-gated `base_score` margin transform applied
 
 ### LightGBM Loader
@@ -152,9 +152,9 @@ Which phases cover which requirements.
 | SER-03 | Phase 2 | Complete |
 | SER-04 | Phase 2 | Complete |
 | XGB-01 | Phase 3 | Complete |
-| XGB-02 | Phase 3 | Pending |
+| XGB-02 | Phase 3 | Complete |
 | XGB-03 | Phase 3 | Pending |
-| XGB-04 | Phase 3 | Pending |
+| XGB-04 | Phase 3 | Complete |
 | XGB-05 | Phase 3 | Complete |
 | LGB-01 | Phase 4 | Pending |
 | LGB-02 | Phase 4 | Pending |
