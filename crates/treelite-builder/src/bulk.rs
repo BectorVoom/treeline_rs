@@ -153,11 +153,22 @@ pub fn bulk_construct_tree(
             let sample_cnt = n_node_samples[node_id] as f64;
             let left_sample_cnt = n_node_samples[left_child as usize] as f64;
             let right_sample_cnt = n_node_samples[right_child as usize] as f64;
-            let g = sample_cnt
-                * (impurity[node_id]
-                    - left_sample_cnt * impurity[left_child as usize] / sample_cnt
-                    - right_sample_cnt * impurity[right_child as usize] / sample_cnt)
-                / total_sample_cnt as f64;
+            // Zero guard (hardening, not present upstream): a well-formed sklearn
+            // tree always has sample_cnt > 0 for an internal node and
+            // total_sample_cnt > 0, so this never fires for real models and the
+            // computed gain is byte-identical. It only avoids writing NaN/inf
+            // into the metadata-only `gain` column for a crafted zero-sample
+            // array. Gain never enters the prediction path, so the 1e-5
+            // fidelity contract is unaffected.
+            let g = if sample_cnt == 0.0 || total_sample_cnt as f64 == 0.0 {
+                0.0
+            } else {
+                sample_cnt
+                    * (impurity[node_id]
+                        - left_sample_cnt * impurity[left_child as usize] / sample_cnt
+                        - right_sample_cnt * impurity[right_child as usize] / sample_cnt)
+                    / total_sample_cnt as f64
+            };
             gain.push(g);
             gain_present.push(true);
         } else {

@@ -160,11 +160,21 @@ fn build_tree(
             let left_sample_cnt = n_node_samples[lc] as f64;
             let right_sample_cnt = n_node_samples[rc] as f64;
             let sc = sample_cnt as f64;
-            let gain = sc
-                * (impurity[node]
+            // Zero guard (hardening, not present upstream): a well-formed sklearn
+            // tree always has sc > 0 for an internal node and total_sample_cnt >
+            // 0, so this never fires for real models and the computed gain is
+            // byte-identical. It only avoids writing NaN/inf into the
+            // metadata-only `gain` field for a crafted zero-sample array. Gain
+            // never enters the prediction path, so the 1e-5 fidelity contract is
+            // unaffected.
+            let gain = if sc == 0.0 || total_sample_cnt as f64 == 0.0 {
+                0.0
+            } else {
+                sc * (impurity[node]
                     - left_sample_cnt * impurity[lc] / sc
                     - right_sample_cnt * impurity[rc] / sc)
-                / total_sample_cnt as f64;
+                    / total_sample_cnt as f64
+            };
 
             builder.numerical_test_f64(
                 split_index,
