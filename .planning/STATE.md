@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: gap_closure
-stopped_at: Phase 05 plans built; CR-01 blocker found in code review — routing to gap closure
-last_updated: "2026-06-10T07:41:18.592Z"
-last_activity: 2026-06-10 -- Phase 05 code review found CR-01 (f64 postprocessor precision); gap closure pending
+status: Pending CR-01 gap closure — f64-input postprocessors run at f32 (upstream runs in f64); see 05-REVIEW.md
+stopped_at: Completed 05-04-PLAN.md
+last_updated: "2026-06-10T08:42:52.856Z"
+last_activity: 2026-06-10 -- Phase 05 code review found CR-01; gap closure planned
 progress:
   total_phases: 9
   completed_phases: 4
