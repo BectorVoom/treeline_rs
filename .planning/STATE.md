@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: planned
-stopped_at: Phase 8 planned (5 plans, verification passed)
-last_updated: "2026-06-11T00:00:00.000Z"
-last_activity: 2026-06-11
+status: executing
+stopped_at: Phase 8 context gathered
+last_updated: "2026-06-10T23:52:00.126Z"
+last_activity: 2026-06-10 -- Phase 08 execution started
 progress:
   total_phases: 9
   completed_phases: 7
-  total_plans: 40
-  completed_plans: 40
+  total_plans: 45
+  completed_plans: 41
   percent: 78
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 
 ## Current Position
 
-Phase: 8
-Plan: Not started
-Status: Ready to execute — 5 plans built and verified (plan-checker PASSED, all 7 reqs covered)
-Last activity: 2026-06-11
+Phase: 08 (pyo3-python-binding) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
+Last activity: 2026-06-10 -- Phase 08 execution started
 
 Progress: [██████████] Phase 06 complete (7/7 plans) — milestone 6/9 phases
 
@@ -97,6 +97,7 @@ Progress: [██████████] Phase 06 complete (7/7 plans) — mil
 | Phase 07 P02 | ~9min | 2 tasks | 1 file |
 | Phase 07 P03 | ~4min | 2 tasks | 2 files |
 | Phase 07 P04 | 12min | 3 tasks | 5 files |
+| Phase 08 P01 | 7min | 2 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -208,6 +209,8 @@ Recent decisions affecting current work:
 - [Phase ?]: [07-03]: cubecl is an OPTIONAL harness dep gated into rocm/cuda/wgpu features (dep:cubecl + cubecl/<backend>) so *_case() names cubecl::hip::HipRuntime directly; default cpu-only build never pulls cubecl. No device probe (A3: DeviceUnavailable propagates via ?, skip-not-fail, no silent CPU fallback). GPU-03 In Progress (registration done; on-hardware execution is Plan-04).
 - [Phase 07-04]: GPU equivalence report regenerated ON-HARDWARE (AMD/ROCm) — 160 cells ran, worst max|delta|=2.9e-6 « 1e-5, observational (D-01). CUDA/wgpu not run (no device). Crossover: ROCm beats CPU at ~100k rows (documented-only, D-09). GPU-03+GPU-04 satisfied on-hardware.
 - [Phase 07-04]: Artifact writers create_dir_all(docs/) before write (checkpoint write-failure root cause); crossover reads model.num_feature instead of hardcoded 4 (under-sized synth input for the 5-feature forest).
+- [Phase ?]: [08-01]: module-name treelite_rs._treelite_rs (compiled cdylib installed AS a private submodule of the python-source package); maturin run from repo root via --manifest-path targets the root uv venv (cd into the crate spawns a stray crate-local .venv); maturin editable .so/__pycache__/uv.lock gitignored.
+- [Phase ?]: [08-01]: Wave-0 binding is an EMPTY importable surface (frontend/gtil/sklearn submodules registered, no functions) + 21 RED pytest stubs marked @pytest.mark.skip; PY-06 build/import/test plumbing proven before any slice depends on it.
 
 ### Pending Todos
 
@@ -230,6 +233,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T23:07:46.734Z
+Last session: 2026-06-10T23:51:40.407Z
 Stopped at: Phase 8 context gathered
 Resume file: .planning/phases/08-pyo3-python-binding/08-CONTEXT.md
