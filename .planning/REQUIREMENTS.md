@@ -41,7 +41,7 @@ Requirements for the initial release. Each maps to a roadmap phase. All are hypo
 
 - [x] **LGB-01**: User can load a LightGBM text-format model
 - [x] **LGB-02**: Categorical splits decode correctly (bitset) with upstream-matching per-field precision
-- [ ] **LGB-03**: LightGBM objective maps to the correct postprocessor (+ `sigmoid_alpha`), with `class_id` round-robin and `average_output` honored
+- [x] **LGB-03**: LightGBM objective maps to the correct postprocessor (+ `sigmoid_alpha`), with `class_id` round-robin and `average_output` honored
 
 ### scikit-learn Loader
 
@@ -158,7 +158,7 @@ Which phases cover which requirements.
 | XGB-05 | Phase 3 | Complete |
 | LGB-01 | Phase 4 | Complete |
 | LGB-02 | Phase 4 | Complete |
-| LGB-03 | Phase 4 | Pending |
+| LGB-03 | Phase 4 | Complete |
 | SKL-01 | Phase 4 | Complete |
 | SKL-02 | Phase 4 | Complete |
 | SKL-03 | Phase 4 | Complete |

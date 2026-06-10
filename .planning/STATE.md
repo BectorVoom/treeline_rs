@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-03-PLAN.md
-last_updated: "2026-06-10T04:28:51.834Z"
-last_activity: 2026-06-10 -- Plan 04-03 complete
+stopped_at: Completed 04-04-PLAN.md
+last_updated: "2026-06-10T04:37:00.000Z"
+last_activity: 2026-06-10 -- Plan 04-04 complete
 progress:
   total_phases: 9
   completed_phases: 3
   total_plans: 22
-  completed_plans: 17
-  percent: 33
+  completed_plans: 18
+  percent: 35
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 04 (lightgbm-scikit-learn-loaders) — EXECUTING
-Plan: 4 of 8
-Status: Executing Phase 04 — Plan 04-03 complete (Wave 1 done: frozen per-estimator goldens captured from upstream treelite.gtil.predict). Next: Wave 2 estimator slices (04-04 LightGBM loader onward).
-Last activity: 2026-06-10 -- Plan 04-03 complete
+Plan: 5 of 8
+Status: Executing Phase 04 — Plan 04-04 complete (Wave 2: treelite-lightgbm crate created; numerical LightGBM model loads→predicts→verifies bitwise vs the treelite-GTIL golden). Next: 04-05 LightGBM categorical (LGB-02), then the sklearn slices.
+Last activity: 2026-06-10 -- Plan 04-04 complete
 
-Progress: [███░░░░░] 38% (Phase 04 plans: 3/8)
+Progress: [████░░░░] 50% (Phase 04 plans: 4/8)
 
 ## Performance Metrics
 
@@ -70,6 +70,7 @@ Progress: [███░░░░░] 38% (Phase 04 plans: 3/8)
 | Phase 04 P01 | 12min | 2 tasks | 10 files |
 | Phase 04 P02 | 5min | 2 tasks | 5 files |
 | Phase 04 P03 | 6min | 2 tasks | 10 files |
+| Phase 04 P04 | 6min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -130,6 +131,11 @@ Recent decisions affecting current work:
 - [Phase ?]: [04-03]: IsolationForest golden == -clf.score_samples(X) cross-checked at capture time (max delta 6.9e-9 < 1e-5) — the canonical Treelite-not-framework case (D-07).
 - [Phase ?]: [04-03]: HistGB packed node itemsize is 56 (64-bit feature-index variant) on this env; nodes frozen as base64; numerical fixture has identity features_map, categorical carries categories_map (Pitfall 4 split).
 - [Phase ?]: [04-03]: LightGBM numerical golden references vendored deep_lightgbm/model.txt (no dup); categorical model fit with max_cat_to_onehot=1 to force bitset splits (num_cat=3) for LGB-02.
+- [04-04]: treelite-lightgbm fleshed out from the Plan-01 placeholder, mirroring treelite-xgboost (parse.rs/objective.rs/error.rs/lib.rs converge-then-build). LightGBM loads into ModelVariant::F64 unconditionally — leaf_value/threshold are f64 emitted via numerical_test_f64/leaf_scalar_f64, NO f32 downcast (D-02/D-05).
+- [04-04]: Negative-index leaf re-numbering ported verbatim (lightgbm.cc:533-601): BFS deque seeded (-1,1) single-leaf / (0,1) otherwise; dfs_index starts at 1, +2 per internal node; leaf value = leaf_value[!old_node_id]; children push_front. Missing-type default_left override = (0.0 <= threshold) when missing_type != kNaN (Pitfall 3); operator always kLE.
+- [04-04]: CanonicalObjective alias-collapse runs BEFORE the objective→postprocessor map; sigmoid:<a> parsed with strict >0 check (T-04-09); class_id[i]=i%num_class; average_tree_output from average_output key presence; base_scores = num_class zeros; sigmoid_alpha stamped post-commit.
+- [04-04]: Categorical splits rejected with a typed LgbError in this numerical slice (LGB-01) rather than mis-predicting — cat bitset decode (LGB-02) is Plan 04-05; cat_boundaries(u64)/cat_threshold(u32) are already parsed and stored on LGBTree so 04-05 only adds emission.
+- [04-04]: lightgbm_numerical golden gate green at max |delta| = 0e0 (bitwise-exact vs upstream treelite.gtil.predict); harness gained a treelite-lightgbm dev-dep; cargo test --workspace fully green (no XGBoost regression).
 
 ### Pending Todos
 
@@ -151,6 +157,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T04:28:35.123Z
-Stopped at: Completed 04-02-PLAN.md
+Last session: 2026-06-10T04:37:00.000Z
+Stopped at: Completed 04-04-PLAN.md
 Resume file: None
