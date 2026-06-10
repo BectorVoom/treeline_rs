@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 05-01-PLAN.md
-last_updated: "2026-06-10T07:05:40.082Z"
+last_updated: "2026-06-10T07:17:35.875Z"
 last_activity: 2026-06-10 -- Phase 05 execution started
 progress:
   total_phases: 9
   completed_phases: 4
   total_plans: 27
-  completed_plans: 24
+  completed_plans: 25
   percent: 44
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 05 (full-scalar-gtil-equivalence-harness) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-06-10 -- Phase 05 execution started
 
@@ -78,6 +78,7 @@ Progress: [████████] 100% (Phase 04 plans: 8/8)
 | Phase 04 P08 | ~8min | 2 tasks | 4 files |
 | Phase 05 P01 | 12min | 2 tasks | 4 files |
 | Phase 05 P02 | 22min | 2 tasks | 7 files |
+| Phase 05 P03 | ~8min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -158,6 +159,7 @@ Recent decisions affecting current work:
 - [Phase ?]: [05-01]: RED Wave-0 scaffolds (gtil_matrix runner + 3 postprocessor stubs + categorical_full_guard) compile and are ignored with reason strings as Nyquist MISSING markers; existing workspace suite stays green
 - [Phase ?]: Plan 05-02: GTIL next_node compares in f64 (exact f32->f64 widening is order-preserving) — bit-faithful routing across all 4 input×preset combos
 - [Phase ?]: Plan 05-02: f64 element-wise postprocessor arithmetic deferred to Plan 05-03; apply_postprocessor uses an f32 boundary so postprocessor.rs intermediates stay f32 (Pitfall 2)
+- [Phase ?]: GTIL PredictOut representability const MANTISSA_BITS (not DIGITS: inherent f32::DIGITS shadows Self::DIGITS to decimal-6)
 
 ### Pending Todos
 
@@ -179,6 +181,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T07:05:32.127Z
+Last session: 2026-06-10T07:17:20.860Z
 Stopped at: Completed 05-01-PLAN.md
 Resume file: None

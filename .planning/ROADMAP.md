@@ -176,7 +176,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 — same lib.rs)*
 
-- [ ] 05-03-PLAN.md — 3 remaining postprocessors (`signed_square`/`hinge`/`multiclass_ova`) verbatim + full categorical float-representability guard (2^24 f32 / 2^32-1 f64) + child polarity; NaN→default routing confirmed (GTIL-04/GTIL-05/GTIL-06)
+- [x] 05-03-PLAN.md — 3 remaining postprocessors (`signed_square`/`hinge`/`multiclass_ova`) verbatim + full categorical float-representability guard (2^24 f32 / 2^32-1 f64) + child polarity; NaN→default routing confirmed (GTIL-04/GTIL-05/GTIL-06)
 
 **Wave 4** *(blocked on Wave 3 — same lib.rs)*
 
@@ -256,7 +256,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 2. Builder & Serialization | 6/6 | Complete    | 2026-06-10 |
 | 3. Full XGBoost Loaders | 4/4 | Complete    | 2026-06-10 |
 | 4. LightGBM & scikit-learn Loaders | 8/8 | Complete    | 2026-06-10 |
-| 5. Full Scalar GTIL & Equivalence Harness | 2/5 | In Progress|  |
+| 5. Full Scalar GTIL & Equivalence Harness | 3/5 | In Progress|  |
 | 6. cubecl GTIL Kernels (CPU Backend) | 0/TBD | Not started | - |
 | 7. GPU Backend & Equivalence Report | 0/TBD | Not started | - |
 | 8. PyO3 Python Binding | 0/TBD | Not started | - |

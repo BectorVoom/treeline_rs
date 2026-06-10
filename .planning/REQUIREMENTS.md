@@ -55,9 +55,9 @@ Requirements for the initial release. Each maps to a roadmap phase. All are hypo
 - [x] **GTIL-01**: User can predict over a dense row-major input matrix
 - [ ] **GTIL-02**: User can predict over a sparse CSR input matrix (absent entries treated as NaN)
 - [x] **GTIL-03**: All four predict kinds are supported (`default`, `raw`, `leaf_id`, `score_per_tree`)
-- [ ] **GTIL-04**: All ten postprocessors are ported verbatim, preserving upstream mixed-precision arithmetic
-- [ ] **GTIL-05**: Missing-value routing fires on NaN only, via the node default direction
-- [ ] **GTIL-06**: Categorical-split evaluation applies the float-representability guard and correct child polarity
+- [x] **GTIL-04**: All ten postprocessors are ported verbatim, preserving upstream mixed-precision arithmetic
+- [x] **GTIL-05**: Missing-value routing fires on NaN only, via the node default direction
+- [x] **GTIL-06**: Categorical-split evaluation applies the float-representability guard and correct child polarity
 - [x] **GTIL-07**: Output shaping is correct — `GetOutputShape`, leaf-vector broadcast, tree averaging, and `f64` base-score addition
 - [x] **GTIL-08**: Per-row tree summation is serial in `tree_id` order (parallelism only across rows)
 
@@ -166,9 +166,9 @@ Which phases cover which requirements.
 | GTIL-01 | Phase 5 | Complete |
 | GTIL-02 | Phase 5 | Pending |
 | GTIL-03 | Phase 5 | Complete |
-| GTIL-04 | Phase 5 | Pending |
-| GTIL-05 | Phase 5 | Pending |
-| GTIL-06 | Phase 5 | Pending |
+| GTIL-04 | Phase 5 | Complete |
+| GTIL-05 | Phase 5 | Complete |
+| GTIL-06 | Phase 5 | Complete |
 | GTIL-07 | Phase 5 | Complete |
 | GTIL-08 | Phase 5 | Complete |
 | EQV-01 | Phase 5 | Complete |
