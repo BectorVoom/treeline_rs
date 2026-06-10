@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-02-PLAN.md
-last_updated: "2026-06-10T12:00:00.000Z"
-last_activity: 2026-06-10 -- Completed 06-02-PLAN.md (cubecl descent spike)
+stopped_at: Completed 06-02-PLAN.md (cubecl descent spike, A1-A4 retired)
+last_updated: "2026-06-10T11:46:22.625Z"
+last_activity: 2026-06-10 -- Completed 06-02-PLAN.md (cubecl descent spike, A1-A4 retired)
 progress:
   total_phases: 9
   completed_phases: 5
   total_plans: 34
   completed_plans: 32
-  percent: 59
+  percent: 56
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 06 (cubecl-gtil-kernels-cpu-backend) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-06-10 -- Completed 06-02-PLAN.md (cubecl descent spike, A1-A4 retired)
 
@@ -86,6 +86,7 @@ Progress: [███░░░░░] 40% (Phase 06 plans: 2/5)
 | Phase 05 P07 | 28min | 2 tasks | 3 files |
 | Phase 06 P01 | 6min | 2 tasks | 12 files |
 | Phase 06 P02 | ~25min | 2 tasks | 4 files |
+| Phase 06 P03 | 10min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -180,6 +181,8 @@ Recent decisions affecting current work:
 - [06-02]: descend NaN routing uses the self-inequality fv != fv (overturns the planned/RESEARCH F::is_nan form). Float::is_nan returns Self::WithScalar<bool> (associated type, not plain bool) on generic F, so `if F::is_nan(fv)` fails E0308. fv != fv is the verbatim equivalent of evaluate_tree's fvalue.is_nan_val().
 - [06-02]: ABSOLUTE_POS is usize in cubecl 0.10.0 (cast `as u32` at the kernel top). Float-width launch scalars (base_score/ratio_c/ln2) ride as 1-element Array<F> (sidesteps the Float ScalarArg ambiguity); u32 scalars passed plain. Upload=client.create_from_slice(&[u8]) (A3); read-back=read_one_unchecked+bytemuck::cast_slice; import=cubecl::cpu::CpuRuntime (A4). A1-A4 retired.
 - [06-02]: descend<F: Float> #[cube] helper authored ONCE in kernels/traversal.rs (kernels.rs file module -> kernels/ directory); Wave 3 reuses it verbatim (D-11). Break-free while-!is_leaf, if-STATEMENT child routing (never if-expr value), default_left==1u32 (bool-as-u32, Pitfall 4), ragged-SoA base/row_off offset indexing.
+- [Phase ?]: 06-03: per-column ragged-SoA upload (one Handle/column) + prefix-sum offset index + validate-before-device (SC3/GPU-05/T-06-06)
+- [Phase ?]: 06-03: 10 postprocessors as #[cube] helpers, verbatim cast order to 1e-5; copysign as sign-flip if-statement, exp2 via exp(x*ln2) (D-03/CR-01)
 
 ### Pending Todos
 
@@ -202,6 +205,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T12:00:00.000Z
+Last session: 2026-06-10T11:46:04.548Z
 Stopped at: Completed 06-02-PLAN.md (cubecl descent spike, A1-A4 retired)
 Resume file: None

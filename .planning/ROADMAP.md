@@ -218,7 +218,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 — building blocks)*
 
-- [ ] 06-03-PLAN.md — Per-column ragged-SoA upload (one handle/column, SC3/GPU-05) + all 10 #[cube] postprocessors verbatim cast order to 1e-5 (D-03) (Wave 3)
+- [x] 06-03-PLAN.md — Per-column ragged-SoA upload (one handle/column, SC3/GPU-05) + all 10 #[cube] postprocessors verbatim cast order to 1e-5 (D-03) (Wave 3)
 
 **Wave 4** *(blocked on Wave 3 — the dense kernel slice)*
 
@@ -284,7 +284,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. Full XGBoost Loaders | 4/4 | Complete    | 2026-06-10 |
 | 4. LightGBM & scikit-learn Loaders | 8/8 | Complete    | 2026-06-10 |
 | 5. Full Scalar GTIL & Equivalence Harness | 7/7 | Complete    | 2026-06-10 |
-| 6. cubecl GTIL Kernels (CPU Backend) | 2/5 | In Progress|  |
+| 6. cubecl GTIL Kernels (CPU Backend) | 3/5 | In Progress|  |
 | 7. GPU Backend & Equivalence Report | 0/TBD | Not started | - |
 | 8. PyO3 Python Binding | 0/TBD | Not started | - |
 | 9. Memory-Efficiency Hardening | 0/TBD | Not started | - |
