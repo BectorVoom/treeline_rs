@@ -203,8 +203,14 @@ fn frozen_csr<O: FromF64>(frozen: &FrozenCsr) -> anyhow::Result<(Vec<O>, Vec<u64
 
 /// Outcome of running one cell: either the produced output (`f64`), or the typed
 /// device-absent skip (D-05).
+///
+/// `ran_on_gpu` records the routing decision (WR-02): a DENSE cell ran the ROCm
+/// kernel (`predict::<HipRuntime, _>`) and its deviation belongs in the ROCm
+/// column; a SPARSE cell ran the scalar CPU fallback (`predict_sparse`, D-02)
+/// and its deviation must NOT contaminate the GPU provenance. The caller folds a
+/// cell's delta into `rocm_max` only when `ran_on_gpu` is true.
 enum CellRun {
-    Output(Vec<f64>),
+    Output { vec: Vec<f64>, ran_on_gpu: bool },
     DeviceAbsent,
 }
 
@@ -283,8 +289,16 @@ fn run_cell(
         other => anyhow::bail!("{fname}: unknown input_dtype {other:?}"),
     };
 
+    // A cell ran on the ROCm GPU kernel iff it took the DENSE path (no frozen
+    // CSR). A sparse cell rode the scalar CPU fallback (D-02) and must NOT
+    // populate the ROCm provenance column (WR-02).
+    let ran_on_gpu = golden.csr.is_none();
+
     match result {
-        Ok(out) => Ok(CellRun::Output(out)),
+        Ok(out) => Ok(CellRun::Output {
+            vec: out,
+            ran_on_gpu,
+        }),
         Err(e) if is_device_absent(&e) => Ok(CellRun::DeviceAbsent),
         Err(e) => Err(e),
     }
@@ -403,21 +417,25 @@ fn gtil_matrix_gpu() -> anyhow::Result<()> {
 
         // Run the cell on ROCm (report mode — RECORD, never panic on >1e-5).
         match run_cell(&case, &model, &golden, &cfg, fname)? {
-            CellRun::Output(own) => {
+            CellRun::Output { vec: own, ran_on_gpu } => {
                 let max_dev = max_abs_delta_report_mode(&own, &expected);
-                // Only finite recorded deviations contribute to the class max
-                // (a length-mismatch sentinel NaN is surfaced, not folded in).
-                if max_dev.is_finite() {
-                    let cur = acc.rocm_max.unwrap_or(0.0);
-                    if max_dev > cur {
-                        acc.rocm_max = Some(max_dev);
-                    } else if acc.rocm_max.is_none() {
-                        acc.rocm_max = Some(cur);
-                    }
+                // Only a cell that actually ran the ROCm kernel (dense path)
+                // contributes to the ROCm provenance column (WR-02): a sparse
+                // cell rode the scalar CPU fallback (D-02) and is already tracked
+                // by `f64_fallback_used`, so folding its deviation here would mix
+                // CPU and GPU provenance in the report's central column.
+                // Among GPU cells, only a finite recorded deviation contributes
+                // to the class max (IN-01: a plain `.max(...)`); a non-finite
+                // length-mismatch sentinel is surfaced separately, not folded in.
+                if ran_on_gpu && max_dev.is_finite() {
+                    acc.rocm_max = Some(acc.rocm_max.unwrap_or(0.0).max(max_dev));
                 }
                 eprintln!(
-                    "{fname} [{}/{}/{}] (rocm): max |delta| = {max_dev:e} (RECORDED, observational)",
-                    golden.manifest.input_dtype, golden.manifest.kind, golden.manifest.layout,
+                    "{fname} [{}/{}/{}] ({}): max |delta| = {max_dev:e} (RECORDED, observational)",
+                    golden.manifest.input_dtype,
+                    golden.manifest.kind,
+                    golden.manifest.layout,
+                    if ran_on_gpu { "rocm" } else { "scalar-fallback" },
                 );
                 ran_cells += 1;
             }
