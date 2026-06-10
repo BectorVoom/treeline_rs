@@ -402,22 +402,24 @@ For f64-input, launch with `F = f64` so `F::exp` is the double `exp` (D-05). `si
 
 **These four assumptions are exactly what the mandatory spike (D-04 / Open Q3) retires.** None is a precision risk — they are cubecl API-surface details. Do NOT design 1e-5 fallback contingencies around them (D-04).
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All three questions are resolved — the recommendation below each is adopted by the Phase-6 plans (Q1 → 06-04, Q2 → 06-04, Q3 → 06-02). No open decision reaches execution.
 
 1. **Categorical-split detection granularity (route-to-fallback boundary).**
    - What we know: D-02 sends categorical splits to the scalar fallback. Models are tagged per-tree via `Tree::has_categorical_split` (`tree.rs:70`) and per-node via `node_type == kCategoricalTestNode`.
    - What's unclear: whether the cubecl path should fall back for the *whole model* if ANY tree has a categorical split (simplest, coarsest), or handle numerical trees in-kernel and route only categorical-node rows to fallback (finer, more complex).
-   - Recommendation: **whole-model fallback if `any tree.has_categorical_split`** for this MVP slice — simplest, keeps the kernel purely numerical, and the per-cell provenance (D-06) records `scalar-fallback` honestly. The numerical-dense matrix cells (the dominant path, D-01) still exercise real kernels. Finer routing is a later cubecl-coverage pass.
+   - **RESOLVED:** **whole-model fallback if `any tree.has_categorical_split`** for this MVP slice — simplest, keeps the kernel purely numerical, and the per-cell provenance (D-06) records `scalar-fallback` honestly. The numerical-dense matrix cells (the dominant path, D-01) still exercise real kernels. Finer routing is a later cubecl-coverage pass. Adopted by plan 06-04 (the `has_categorical_split` gate in `predict_cpu`).
 
 2. **Model upload caching vs per-call upload.**
    - What we know: the harness calls `predict` per cell; uploading the forest every call is correct but redundant across cells sharing a model.
    - What's unclear: whether to cache device handles keyed by model identity.
-   - Recommendation: **upload per `predict` call** for the MVP (correctness first; the matrix is small). Note caching as a Phase-9/perf follow-up — it does not affect 1e-5 or SC1/SC2/SC3.
+   - **RESOLVED:** **upload per `predict` call** for the MVP (correctness first; the matrix is small). Note caching as a Phase-9/perf follow-up — it does not affect 1e-5 or SC1/SC2/SC3. Adopted by plan 06-04 (per-call upload in `predict_cpu`).
 
 3. **Spike scope (D-04 confirmation — NOT a gate).**
    - What we know: the spike must confirm (a) the break-free / no-`continue` descent compiles & runs, (b) f64 in-kernel arithmetic on CpuRuntime, (c) one postprocessor's exact cast order (recommend `exponential_standard_ratio` to also retire A1, plus a `softmax_f64` micro-probe to retire A2).
    - What's unclear: nothing blocking — this is confirmation.
-   - Recommendation: a single `crates/treelite-cubecl` test that uploads a 2-tree numerical forest + a tiny input matrix, runs the default kernel, and asserts within 1e-5 of `treelite_gtil::predict` on the same model — plus a standalone `softmax_f64`/`exponential_standard_ratio` micro-kernel asserting against the scalar twins. Small, time-boxed; per D-04 it is expected to pass.
+   - **RESOLVED:** a single `crates/treelite-cubecl` test that uploads a 2-tree numerical forest + a tiny input matrix, runs the default kernel, and asserts within 1e-5 of `treelite_gtil::predict` on the same model — plus a standalone `softmax_f64`/`exponential_standard_ratio` micro-kernel asserting against the scalar twins. Small, time-boxed; per D-04 it is expected to pass. Adopted by plan 06-02 (the mandatory confirmation spike).
 
 ## Environment Availability
 
