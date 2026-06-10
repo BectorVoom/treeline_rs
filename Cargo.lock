@@ -157,6 +157,7 @@ dependencies = [
 name = "treelite-gtil"
 version = "0.1.0"
 dependencies = [
+ "approx",
  "thiserror",
  "treelite-core",
 ]
