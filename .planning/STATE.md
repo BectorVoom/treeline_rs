@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: 02-06 complete — Phase 2 gap-closure done (CR-01 + CR-02); next is Phase 2 re-verification then Phase 3
-last_updated: "2026-06-10T00:40:00.000Z"
-last_activity: 2026-06-10 -- 02-06 complete; end_tree now emits AllocNode per-node columns + empty-unless-set stats, byte-fidelity gap (02-VERIFICATION criterion 3 PARTIAL) closed, workspace green
+status: verifying
+stopped_at: 02-06 complete — Phase 2 gap-closure done (CR-01 + CR-02); next is Phase 2 re-verification
+last_updated: "2026-06-10T00:41:35.270Z"
+last_activity: 2026-06-10
 progress:
   total_phases: 9
-  completed_phases: 1
-  total_plans: 9
-  completed_plans: 9
-  percent: 11
+  completed_phases: 2
+  total_plans: 10
+  completed_plans: 10
+  percent: 22
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 
 ## Current Position
 
-Phase: 02 (builder-serialization) — 5/5 PLANS + 02-06 gap-closure COMPLETE
-Plan: 02-06 (gap-closure) — COMPLETE
+Phase: 3
+Plan: Not started
 Status: Plan 02-06 COMPLETE — end_tree now ports upstream AllocNode column emission: five per-node CSR/category columns at length num_nodes (CR-01) and empty-unless-set stat columns gated per-column (CR-02); new tests/column_fidelity.rs guards both invariants; 02-VERIFICATION criterion 3 PARTIAL closed; golden round-trip + 1e-5 equivalence NOT regressed; workspace green; next: Phase 2 re-verification then Phase 3 (Full XGBoost Loaders)
-Last activity: 2026-06-10 -- 02-06 complete; builder byte-fidelity gap closed, workspace green (golden round-trip + 1e-5 equivalence intact)
+Last activity: 2026-06-10
 
 Progress: [██████░░░░] 56%
 
@@ -36,7 +36,7 @@ Progress: [██████░░░░] 56%
 
 **Velocity:**
 
-- Total plans completed: 5
+- Total plans completed: 11
 - Average duration: ~5 min
 - Total execution time: 0.1 hours
 
@@ -45,6 +45,7 @@ Progress: [██████░░░░] 56%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01 | 4 | - | - |
+| 02 | 6 | - | - |
 
 **Recent Trend:**
 
