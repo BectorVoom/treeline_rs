@@ -8,28 +8,28 @@ Measured wall-clock per dense `predict` call (median of 5 reps, incl. upload + l
 
 | num_row | rows×features | CPU (ns) | ROCm (ns) | ROCm faster? |
 |---------|---------------|----------|-----------|--------------|
-| 1 | 4 | 426708 | 733111 | no |
-| 10 | 40 | 455772 | 615189 | no |
-| 100 | 400 | 471301 | 556721 | no |
-| 1000 | 4000 | 474176 | 488403 | no |
-| 10000 | 40000 | 823308 | 880235 | no |
-| 100000 | 400000 | 3710805 | 3148655 | yes |
+| 1 | 4 | 439094 | 436188 | yes |
+| 10 | 40 | 505469 | 452629 | yes |
+| 100 | 400 | 571382 | 457288 | yes |
+| 1000 | 4000 | 467187 | 394190 | yes |
+| 10000 | 40000 | 822453 | 511780 | yes |
+| 100000 | 400000 | 3764754 | 2730714 | yes |
 
 ## Forest `leaf_vec_mc` (5 features)
 
 | num_row | rows×features | CPU (ns) | ROCm (ns) | ROCm faster? |
 |---------|---------------|----------|-----------|--------------|
-| 1 | 5 | 484415 | 604369 | no |
-| 10 | 50 | 474998 | 630609 | no |
-| 100 | 500 | 495095 | 677757 | no |
-| 1000 | 5000 | 611253 | 838127 | no |
-| 10000 | 50000 | 1926741 | 2037809 | no |
-| 100000 | 500000 | 20642951 | 18939317 | yes |
+| 1 | 5 | 508965 | 468689 | yes |
+| 10 | 50 | 473288 | 507903 | no |
+| 100 | 500 | 462087 | 535505 | no |
+| 1000 | 5000 | 727645 | 507983 | yes |
+| 10000 | 50000 | 1918560 | 1678510 | yes |
+| 100000 | 500000 | 22225954 | 11984708 | yes |
 
 ## Empirical crossover + dominant metric
 
-- On `binary` (4 features), ROCm wall-clock first beats `cubecl_cpu_case` at ~100000 rows.
-- On `leaf_vec_mc` (5 features), ROCm wall-clock first beats `cubecl_cpu_case` at ~100000 rows.
+- On `binary` (4 features), ROCm wall-clock first beats `cubecl_cpu_case` at ~1 rows.
+- On `leaf_vec_mc` (5 features), ROCm wall-clock first beats `cubecl_cpu_case` at ~1 rows.
 
 **Dominant metric (let the data decide, D-10):** the GPU pays a fixed upload+launch+readback cost per call, amortized over rows — so the crossover keys on **row count** (or `rows × features` for the input transfer when the forest is small). Compare the two forests' crossover rows above: if they crossover at a similar `rows × features` product rather than a similar row count, the input transfer dominates; if they crossover at a similar row count, the per-row traversal dominates. No formula is pre-committed (D-10) — the table is the evidence.
 
