@@ -14,19 +14,21 @@
 //!   directly via [`treelite_builder::bulk_construct_tree`] +
 //!   [`treelite_builder::bulk_to_model`]. RF leaf-normalization is load-time
 //!   (already inside `bulk_construct_tree`, A4).
-//! - `mixin` — GradientBoosting (SKL-02): the node-by-node MixIn path through
+//! - [`mixin`] — GradientBoosting (SKL-02): the node-by-node MixIn path through
 //!   the f64 `ModelBuilder`. GB leaf-shrink is capture-side; the loader does NOT
-//!   re-shrink (A4 / Anti-pattern). (Added in the second slice.)
+//!   re-shrink (A4 / Anti-pattern).
 //!
 //! IsolationForest (SKL-03) and HistGradientBoosting (SKL-04) are the next
 //! slices.
 
 pub mod bulk;
 pub mod error;
+pub mod mixin;
 
 pub use error::SklError;
 
 pub use bulk::{load_random_forest_classifier, load_random_forest_regressor};
+pub use mixin::{load_gradient_boosting_classifier, load_gradient_boosting_regressor};
 
 // ---------------------------------------------------------------------------
 // ExtraTrees

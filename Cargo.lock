@@ -172,6 +172,7 @@ dependencies = [
  "treelite-core",
  "treelite-gtil",
  "treelite-lightgbm",
+ "treelite-sklearn",
  "treelite-xgboost",
 ]
 

@@ -25,6 +25,17 @@ pub fn identity(_alpha: f32, v: f32) -> f32 {
     v
 }
 
+/// `identity_multiclass` postprocessor (`postprocessor.cc:55`), a no-op ported
+/// verbatim (the upstream body is empty: `void identity_multiclass(...) {}`).
+///
+/// Used by the sklearn RandomForest/ExtraTrees classifier loaders (SKL-01),
+/// whose averaged leaf-vector outputs are already normalized class
+/// probabilities at load time — no further transform is applied. Mirrors the
+/// shape of [`identity`] (the `_alpha` slot is unused).
+pub fn identity_multiclass(_alpha: f32, v: f32) -> f32 {
+    v
+}
+
 /// `sigmoid` postprocessor (`postprocessor.cc:33-37`), ported verbatim:
 ///
 /// ```cpp

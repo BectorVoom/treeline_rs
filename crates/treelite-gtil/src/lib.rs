@@ -519,6 +519,14 @@ fn apply_postprocessor(
                 *v = postprocessor::identity(1.0, *v);
             }
         }
+        "identity_multiclass" => {
+            // No-op (upstream `identity_multiclass` body is empty). The sklearn
+            // RF/ET classifier averaged leaf-vectors are already normalized
+            // class probabilities at load time (A4).
+            for v in output.iter_mut() {
+                *v = postprocessor::identity_multiclass(1.0, *v);
+            }
+        }
         "sigmoid" => {
             for v in output.iter_mut() {
                 *v = postprocessor::sigmoid(model.sigmoid_alpha, *v);

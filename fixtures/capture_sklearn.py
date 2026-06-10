@@ -234,6 +234,19 @@ def capture_gb():
     for key, clf in {"gb_regressor": gb_reg, "gb_classifier": gb_clf}.items():
         tl_model = treelite.sklearn.import_model(clf)
         gtil_out = np.asarray(treelite.gtil.predict(tl_model, X), dtype=np.float64)
+        # Derive the GB base_scores exactly as importer.py does (importer.py:
+        # 289-293 regressor / 314-321 classifier). The Rust loader needs these
+        # as an explicit input (the array dump does not otherwise carry them);
+        # GTIL adds them to the tree sum BEFORE the postprocessor, so they must
+        # match for the 1e-5 gate. This field is additive — it does NOT change
+        # `input`/`output`, so the frozen sha256 over (input, output) is
+        # unchanged.
+        if isinstance(clf, GradientBoostingRegressor):
+            base_scores = np.asarray(clf.init_.constant_, dtype=np.float64).reshape(-1)
+        else:
+            base_scores = np.asarray(
+                clf._raw_predict_init(X[:1]), dtype=np.float64
+            ).reshape(-1)
         families[key] = {
             "n_estimators": int(clf.n_estimators),
             "n_features_in": int(clf.n_features_in_),
@@ -241,6 +254,8 @@ def capture_gb():
             # NOTE: trees[].value already has *learning_rate applied capture-side
             # (importer.py:220-223). The Rust loader must NOT re-shrink.
             "leaf_shrink_applied_capture_side": True,
+            "n_classes": int(getattr(clf, "n_classes_", 1)),
+            "base_scores": base_scores.tolist(),
             "trees": _dump_node_arrays(clf, is_gb=True),
             "output": gtil_out.reshape(-1).tolist(),
             "output_shape": list(gtil_out.shape),

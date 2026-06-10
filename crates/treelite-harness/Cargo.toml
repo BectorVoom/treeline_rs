@@ -16,3 +16,5 @@ serde_json = { workspace = true }
 [dev-dependencies]
 # treelite-lightgbm drives the LightGBM 1e-5 golden in tests/lightgbm.rs.
 treelite-lightgbm = { path = "../treelite-lightgbm" }
+# treelite-sklearn drives the RF/ET + GB 1e-5 goldens in tests/sklearn.rs.
+treelite-sklearn = { path = "../treelite-sklearn" }
