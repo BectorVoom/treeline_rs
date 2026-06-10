@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
+status: executing
 stopped_at: Completed 06-02-PLAN.md (cubecl descent spike, A1-A4 retired)
-last_updated: "2026-06-10T12:08:47.567Z"
-last_activity: 2026-06-10 -- Completed 06-02-PLAN.md (cubecl descent spike, A1-A4 retired)
+last_updated: "2026-06-10T14:27:24.169Z"
+last_activity: 2026-06-10 -- Phase 06 execution started
 progress:
   total_phases: 9
-  completed_phases: 6
-  total_plans: 34
-  completed_plans: 34
-  percent: 67
+  completed_phases: 5
+  total_plans: 36
+  completed_plans: 35
+  percent: 56
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 06 (cubecl-gtil-kernels-cpu-backend) — EXECUTING
-Plan: 5 of 5
-Status: Phase complete — ready for verification
-Last activity: 2026-06-10 -- Completed 06-02-PLAN.md (cubecl descent spike, A1-A4 retired)
+Plan: 6 of 7 (06-06 complete; 06-07 real-upstream-golden capture remains)
+Status: Ready to execute
+Last activity: 2026-06-10 -- Completed 06-06 (CR-01/02/03 gap closure)
 
-Progress: [███░░░░░] 40% (Phase 06 plans: 2/5)
+Progress: [█████████░] 86% (Phase 06 plans: 6/7)
 
 ## Performance Metrics
 
@@ -89,6 +89,7 @@ Progress: [███░░░░░] 40% (Phase 06 plans: 2/5)
 | Phase 06 P03 | 10min | 2 tasks | 5 files |
 | Phase 06 P04 | ~30min | 2 tasks | 8 files |
 | Phase 06 P05 | 5min | 2 tasks | 4 files |
+| Phase 06 P06 | 9min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -189,6 +190,9 @@ Recent decisions affecting current work:
 - [Phase ?]: 06-04: descend generalized to descend<F,T> (Pitfall 6 input/threshold width split); spike call site updated to descend::<F,F>, unchanged behavior
 - [Phase ?]: 06-05: treelite-cubecl is a regular harness [dependency] (not dev-dep) because cubecl_cpu_case() is a pub fn in src/lib.rs
 - [Phase ?]: 06-05: D-06 provenance recorded from the EXECUTED path with a >=1-kernel-cell guard (T-06-12), never the scalar-cpu manifest literal
+- [Phase ?]: [06-06]: CR-01 closed via approach A — a whole-model has_non_klt fallback gate in predict_cpu routes any model with a non-kLT operator (every LightGBM kLE numerical model) to treelite_gtil::predict, mirroring the categorical gate (D-02); the cubecl kernel covers only kLT. Matrix provenance widened to model_routes_to_fallback so such cells are tagged scalar-fallback (D-06).
+- [Phase ?]: [06-06]: CR-02 closed — descend() compares both operands in f64 (f64::cast_from(fv) < f64::cast_from(threshold)) matching the scalar next_node f64 promotion (05-02 contract); the lossy F::cast_from(threshold) f64->f32 narrowing is gone. Self-contained f64_threshold_f32_input_routes_like_scalar test locks it inside 06-06.
+- [Phase ?]: [06-06]: CR-03 closed — validate_leaf_vectors (host-side, called from upload_forest before any device op) rejects out-of-range leaf-vector spans with CubeclError::MalformedLeafVector (begin<=end, end<=segment_len, begin+broadcast<=segment_len); absent/short CSR columns treated as scalar leaves. malformed.rs locks the T-06-09 no-OOB contract.
 
 ### Pending Todos
 
@@ -211,6 +215,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T12:08:31.583Z
+Last session: 2026-06-10T14:26:18.216Z
 Stopped at: Completed 06-02-PLAN.md (cubecl descent spike, A1-A4 retired)
 Resume file: None

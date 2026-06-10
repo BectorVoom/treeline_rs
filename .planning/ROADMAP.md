@@ -230,7 +230,7 @@ Plans:
 
 **Wave 6** *(gap closure — fixes the 3 BLOCKERs from 06-VERIFICATION.md)*
 
-- [ ] 06-06-PLAN.md — Gap closure: CR-01 non-kLT operator fallback gate + CR-02 f64-promoted descend() comparison + CR-03 leaf-vector span validation (MalformedLeafVector) + matrix provenance honesty + malformed-model test (Wave 6)
+- [x] 06-06-PLAN.md — Gap closure: CR-01 non-kLT operator fallback gate + CR-02 f64-promoted descend() comparison + CR-03 leaf-vector span validation (MalformedLeafVector) + matrix provenance honesty + malformed-model test (Wave 6)
 
 **Wave 7** *(blocked on Wave 6 — real-upstream-golden lock)*
 
@@ -292,7 +292,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. Full XGBoost Loaders | 4/4 | Complete    | 2026-06-10 |
 | 4. LightGBM & scikit-learn Loaders | 8/8 | Complete    | 2026-06-10 |
 | 5. Full Scalar GTIL & Equivalence Harness | 7/7 | Complete    | 2026-06-10 |
-| 6. cubecl GTIL Kernels (CPU Backend) | 5/5 | Gaps Found | 2026-06-10 |
+| 6. cubecl GTIL Kernels (CPU Backend) | 6/7 | In Progress|  |
 | 7. GPU Backend & Equivalence Report | 0/TBD | Not started | - |
 | 8. PyO3 Python Binding | 0/TBD | Not started | - |
 | 9. Memory-Efficiency Hardening | 0/TBD | Not started | - |
