@@ -18,8 +18,13 @@
 //!   the f64 `ModelBuilder`. GB leaf-shrink is capture-side; the loader does NOT
 //!   re-shrink (A4 / Anti-pattern).
 //!
-//! IsolationForest (SKL-03) and HistGradientBoosting (SKL-04) are the next
-//! slices.
+//! IsolationForest (SKL-03) is also delivered here via the [`mixin`] path
+//! ([`load_isolation_forest`], `task=kIsolationForest`,
+//! `postprocessor="exponential_standard_ratio"` + `model.ratio_c`): leaf values
+//! are the pre-computed isolation depths consumed AS-IS (no loader-side
+//! recomputation) and the Treelite output deliberately differs from the
+//! framework's own anomaly score (it equals `-clf.score_samples`, D-07).
+//! HistGradientBoosting (SKL-04) is the next slice.
 
 pub mod bulk;
 pub mod error;
@@ -28,7 +33,9 @@ pub mod mixin;
 pub use error::SklError;
 
 pub use bulk::{load_random_forest_classifier, load_random_forest_regressor};
-pub use mixin::{load_gradient_boosting_classifier, load_gradient_boosting_regressor};
+pub use mixin::{
+    load_gradient_boosting_classifier, load_gradient_boosting_regressor, load_isolation_forest,
+};
 
 // ---------------------------------------------------------------------------
 // ExtraTrees

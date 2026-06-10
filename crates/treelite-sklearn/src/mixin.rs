@@ -234,6 +234,88 @@ fn build_model(
     Ok(builder.commit_model()?)
 }
 
+/// Load an `IsolationForest` via the MixIn path (SKL-03).
+///
+/// Ports `LoadIsolationForest` (`sklearn.cc:373-383`) driven by the
+/// `IsolationForestMixIn` (`sklearn.cc:33-57`). Metadata:
+/// `task=kIsolationForest`, `average_tree_output=true`, `num_target=1`,
+/// `num_class={1}`, `leaf_vector_shape={1,1}`, `target_id=class_id=vec![0;
+/// n_estimators]`, `postprocessor="exponential_standard_ratio"`,
+/// `base_scores={0.0}`, and `model.ratio_c = ratio_c` (assigned post-commit
+/// since `ratio_c` is a `Model` field, not a builder-metadata field).
+///
+/// CRITICAL (D-07): the leaf `value[tree][node]` is the pre-computed isolation
+/// depth, consumed AS-IS — there is NO loader-side depth recomputation. The
+/// `ratio_c` is `expected_depth(max_samples_)` (isolation_forest.py), computed
+/// capture-side and passed in; the loader does NOT recompute it.
+///
+/// `ratio_c` must be non-zero — the `exponential_standard_ratio` postprocessor
+/// divides by it (`(-v/ratio_c).exp2()`); a `0` would yield inf/NaN. Upstream
+/// `expected_depth` returns 0 only for the degenerate `max_samples <= 1` case,
+/// which is rejected here with a typed error rather than silently producing
+/// inf/NaN (T-04-17).
+#[allow(clippy::too_many_arguments)]
+pub fn load_isolation_forest(
+    n_estimators: i32,
+    n_features: i32,
+    node_count: &[i64],
+    children_left: &[&[i64]],
+    children_right: &[&[i64]],
+    feature: &[&[i64]],
+    threshold: &[&[f64]],
+    value: &[&[f64]],
+    n_node_samples: &[&[i64]],
+    weighted_n_node_samples: &[&[f64]],
+    impurity: &[&[f64]],
+    ratio_c: f64,
+) -> Result<Model, SklError> {
+    let n_estimators = require_positive("n_estimators", n_estimators)?;
+    let n_features = require_positive("n_features", n_features)?;
+
+    // ratio_c must be non-zero and finite — the exponential_standard_ratio
+    // postprocessor divides by it (T-04-17). A 0 (or non-finite) ratio_c would
+    // produce inf/NaN predictions silently.
+    if ratio_c == 0.0 || !ratio_c.is_finite() {
+        return Err(SklError::InvalidScalar {
+            field: "ratio_c",
+            value: 0,
+            reason: "must be non-zero and finite (exponential_standard_ratio divides by it)",
+        });
+    }
+
+    let metadata = BuilderMetadata {
+        num_feature: n_features,
+        task_type: TaskType::kIsolationForest,
+        average_tree_output: true,
+        num_target: 1,
+        num_class: vec![1],
+        leaf_vector_shape: vec![1, 1],
+        target_id: vec![0; n_estimators as usize],
+        class_id: vec![0; n_estimators as usize],
+        postprocessor: "exponential_standard_ratio".to_string(),
+        base_scores: vec![0.0],
+        attributes: None,
+    };
+    let mut model = build_model(
+        n_estimators as usize,
+        metadata,
+        node_count,
+        children_left,
+        children_right,
+        feature,
+        threshold,
+        value,
+        n_node_samples,
+        weighted_n_node_samples,
+        impurity,
+    )?;
+    // ratio_c is a Model field (f32), not part of BuilderMetadata — assign it
+    // post-commit, exactly as upstream sets it via the PostProcessorFunc config
+    // (`{{"ratio_c", ratio_c_}}`, sklearn.cc:46).
+    model.ratio_c = ratio_c as f32;
+    Ok(model)
+}
+
 /// Load a `GradientBoostingRegressor` via the MixIn path (SKL-02).
 ///
 /// Metadata per `GradientBoostingRegressorMixIn` (`sklearn.cc:59-80`):
@@ -465,6 +547,58 @@ mod tests {
         assert_eq!(model.postprocessor, "softmax");
         // class_id round-robin: 0,1,2,0,1,2.
         assert_eq!(model.class_id, vec![0, 1, 2, 0, 1, 2]);
+    }
+
+    #[test]
+    fn iforest_sets_exponential_standard_ratio_metadata() {
+        let (cl, cr, feat, thr, val, nns, wns, imp) = tiny_gb_tree();
+        let ratio_c = 6.08;
+        let model = load_isolation_forest(
+            1, 1, &[3], &[&cl], &[&cr], &[&feat], &[&thr], &[&val], &[&nns], &[&wns], &[&imp],
+            ratio_c,
+        )
+        .expect("iforest loads");
+        assert_eq!(model.task_type, TaskType::kIsolationForest);
+        assert_eq!(model.postprocessor, "exponential_standard_ratio");
+        assert!(model.average_tree_output);
+        assert_eq!(model.num_target, 1);
+        assert_eq!(model.num_class, vec![1]);
+        assert_eq!(model.leaf_vector_shape, vec![1, 1]);
+        assert_eq!(model.base_scores, vec![0.0]);
+        // ratio_c assigned post-commit (f32 Model field).
+        approx::assert_abs_diff_eq!(model.ratio_c, ratio_c as f32, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn iforest_rejects_zero_ratio_c() {
+        // ratio_c == 0 would make exponential_standard_ratio divide by zero →
+        // inf/NaN (T-04-17); the loader rejects it with a typed error.
+        let (cl, cr, feat, thr, val, nns, wns, imp) = tiny_gb_tree();
+        let res = load_isolation_forest(
+            1, 1, &[3], &[&cl], &[&cr], &[&feat], &[&thr], &[&val], &[&nns], &[&wns], &[&imp], 0.0,
+        );
+        assert!(matches!(res, Err(SklError::InvalidScalar { field: "ratio_c", .. })));
+    }
+
+    #[test]
+    fn iforest_consumes_leaf_depth_as_is_no_recomputation() {
+        // The leaf isolation depth is consumed AS-IS. With a single tree,
+        // average_tree_output, base_score 0, the GTIL margin before the
+        // postprocessor is exactly the leaf value `v`; the final prediction is
+        // exp2(-v / ratio_c). Route feature 0 = 1.0 → right leaf (value -0.1).
+        let (cl, cr, feat, thr, val, nns, wns, imp) = tiny_gb_tree();
+        let ratio_c = 2.0_f64;
+        let model = load_isolation_forest(
+            1, 1, &[3], &[&cl], &[&cr], &[&feat], &[&thr], &[&val], &[&nns], &[&wns], &[&imp],
+            ratio_c,
+        )
+        .expect("iforest loads");
+        let flat = [1.0_f32];
+        let out = treelite_gtil::predict(&model, &flat, 1).expect("predict");
+        // exp2(-(-0.1) / 2.0) = exp2(0.05). If the loader had recomputed the
+        // depth (instead of using -0.1 as-is) this would differ.
+        let expected = (0.1_f32 / 2.0_f32).exp2();
+        approx::assert_abs_diff_eq!(out[0], expected, epsilon = 1e-5);
     }
 
     #[test]
