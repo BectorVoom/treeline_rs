@@ -11,9 +11,14 @@ license.workspace = true
 # GPU system libs. The `*_case()` constructors are `#[cfg(feature = …)]`-gated.
 [features]
 default = []
-rocm = ["treelite-cubecl/rocm"]
-cuda = ["treelite-cubecl/cuda"]
-wgpu = ["treelite-cubecl/wgpu"]
+# Each GPU feature forwards to the matching Plan-01 treelite-cubecl feature AND
+# pulls in the (otherwise-optional) `cubecl` umbrella crate so the `*_case()`
+# constructors can name the runtime type directly (`cubecl::hip::HipRuntime`
+# etc.) — `treelite-cubecl/<backend>` enables that backend's runtime symbols
+# inside cubecl; `dep:cubecl` brings the crate name into the harness's scope.
+rocm = ["dep:cubecl", "cubecl/rocm", "treelite-cubecl/rocm"]
+cuda = ["dep:cubecl", "cubecl/cuda", "treelite-cubecl/cuda"]
+wgpu = ["dep:cubecl", "cubecl/wgpu", "treelite-cubecl/wgpu"]
 
 [dependencies]
 treelite-core = { path = "../treelite-core" }
@@ -24,6 +29,10 @@ treelite-gtil = { path = "../treelite-gtil" }
 # (NOT a dev-dep) because cubecl_cpu_case() is a `pub fn` in src/lib.rs — it must
 # resolve at library-build time, exactly like treelite-gtil/treelite-xgboost.
 treelite-cubecl = { path = "../treelite-cubecl" }
+# `cubecl` is OPTIONAL and only enabled by the rocm/cuda/wgpu features — the
+# `*_case()` constructors name `cubecl::{hip,cuda,wgpu}::*Runtime` directly. The
+# default cpu-only harness build does NOT pull cubecl in (no GPU system libs).
+cubecl = { workspace = true, optional = true }
 anyhow = { workspace = true }
 approx = { workspace = true }
 serde = { workspace = true }

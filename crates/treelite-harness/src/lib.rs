@@ -213,6 +213,136 @@ pub fn cubecl_cpu_case() -> RunnerCase {
     }
 }
 
+/// The cubecl-ROCm (AMD HIP) [`RunnerCase`] (Phase-7 registration, D-11).
+/// Mirrors [`cubecl_cpu_case`] EXACTLY except the dense slots route through the
+/// runtime-generic GPU launcher
+/// [`treelite_cubecl::predict`]`::<cubecl::hip::HipRuntime, _>` (Plan 02). The
+/// sparse slots keep the scalar [`treelite_gtil::predict_sparse`] fallback
+/// (D-02 — the cubecl kernels are dense-numerical only). Adding this constructor
+/// together with the [`Backend::Rocm`] variant is the WHOLE registration: the
+/// [`RunnerCase`] struct, the slot type aliases, and the matrix iteration are
+/// all untouched (D-11 registration-not-refactor).
+///
+/// **Device-absence (D-05, A3):** a missing HIP device surfaces as the typed
+/// `treelite_cubecl::CubeclError::DeviceUnavailable` propagated out of
+/// `predict::<R, _>` via `?` (Plan-01 proved this is a catchable error, not an
+/// FFI abort — NO pre-construction probe is required). The harness branches on
+/// that `Err` as a SKIP, never a silent CPU fallback (D-09). Behind the `rocm`
+/// cargo feature.
+#[cfg(feature = "rocm")]
+pub fn rocm_case() -> RunnerCase {
+    RunnerCase {
+        backend: Backend::Rocm,
+        dense_f32: |model, data, num_row, cfg| {
+            // f32 input → f32 output, widened to the common f64 accumulator for
+            // comparison. The PREDICT runs in f32 (no pre-cast — Pitfall 6);
+            // only the already-computed f32 RESULT is lifted to f64 afterwards.
+            let out =
+                treelite_cubecl::predict::<cubecl::hip::HipRuntime, f32>(model, data, num_row, cfg)
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok(out.into_iter().map(|v| v as f64).collect())
+        },
+        dense_f64: |model, data, num_row, cfg| {
+            let out =
+                treelite_cubecl::predict::<cubecl::hip::HipRuntime, f64>(model, data, num_row, cfg)
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok(out)
+        },
+        // Sparse rides the scalar fallback (D-02): identical to cubecl_cpu_case.
+        sparse_f32: |model, csr, num_row, cfg| {
+            let out = treelite_gtil::predict_sparse::<f32>(model, csr, num_row, cfg)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok(out.into_iter().map(|v| v as f64).collect())
+        },
+        sparse_f64: |model, csr, num_row, cfg| {
+            let out = treelite_gtil::predict_sparse::<f64>(model, csr, num_row, cfg)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok(out)
+        },
+    }
+}
+
+/// The cubecl-CUDA [`RunnerCase`] (Phase-7 registration, D-11). Identical in
+/// shape to [`rocm_case`] but routes dense cells through
+/// [`treelite_cubecl::predict`]`::<cubecl::cuda::CudaRuntime, _>` and tags
+/// [`Backend::Cuda`]. Sparse keeps the scalar fallback (D-02). A missing CUDA
+/// device propagates the typed `DeviceUnavailable` skip out of `predict::<R, _>`
+/// via `?` (A3: catchable error, not an FFI abort — no pre-construction probe).
+/// Behind the `cuda` cargo feature.
+#[cfg(feature = "cuda")]
+pub fn cuda_case() -> RunnerCase {
+    RunnerCase {
+        backend: Backend::Cuda,
+        dense_f32: |model, data, num_row, cfg| {
+            let out = treelite_cubecl::predict::<cubecl::cuda::CudaRuntime, f32>(
+                model, data, num_row, cfg,
+            )
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok(out.into_iter().map(|v| v as f64).collect())
+        },
+        dense_f64: |model, data, num_row, cfg| {
+            let out = treelite_cubecl::predict::<cubecl::cuda::CudaRuntime, f64>(
+                model, data, num_row, cfg,
+            )
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok(out)
+        },
+        sparse_f32: |model, csr, num_row, cfg| {
+            let out = treelite_gtil::predict_sparse::<f32>(model, csr, num_row, cfg)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok(out.into_iter().map(|v| v as f64).collect())
+        },
+        sparse_f64: |model, csr, num_row, cfg| {
+            let out = treelite_gtil::predict_sparse::<f64>(model, csr, num_row, cfg)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok(out)
+        },
+    }
+}
+
+/// The cubecl-wgpu [`RunnerCase`] (Phase-7 registration, D-11). Identical in
+/// shape to [`rocm_case`] but routes dense cells through
+/// [`treelite_cubecl::predict`]`::<cubecl::wgpu::WgpuRuntime, _>` and tags
+/// [`Backend::Wgpu`]. Sparse keeps the scalar fallback (D-02). A missing adapter
+/// propagates the typed `DeviceUnavailable` skip out of `predict::<R, _>` via
+/// `?`. Behind the `wgpu` cargo feature.
+///
+/// **f64 caveat (RESEARCH Pitfall 3):** not every wgpu adapter advertises
+/// 64-bit float support; on such an adapter the `dense_f64` slot's
+/// `predict::<WgpuRuntime, f64>` may surface a runtime error rather than a
+/// silent downcast. That error propagates through `?` (the harness reports it
+/// rather than masking it), preserving the 1e-5 fidelity contract.
+#[cfg(feature = "wgpu")]
+pub fn wgpu_case() -> RunnerCase {
+    RunnerCase {
+        backend: Backend::Wgpu,
+        dense_f32: |model, data, num_row, cfg| {
+            let out = treelite_cubecl::predict::<cubecl::wgpu::WgpuRuntime, f32>(
+                model, data, num_row, cfg,
+            )
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok(out.into_iter().map(|v| v as f64).collect())
+        },
+        dense_f64: |model, data, num_row, cfg| {
+            let out = treelite_cubecl::predict::<cubecl::wgpu::WgpuRuntime, f64>(
+                model, data, num_row, cfg,
+            )
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok(out)
+        },
+        sparse_f32: |model, csr, num_row, cfg| {
+            let out = treelite_gtil::predict_sparse::<f32>(model, csr, num_row, cfg)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok(out.into_iter().map(|v| v as f64).collect())
+        },
+        sparse_f64: |model, csr, num_row, cfg| {
+            let out = treelite_gtil::predict_sparse::<f64>(model, csr, num_row, cfg)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok(out)
+        },
+    }
+}
+
 /// One input feature cell: a finite number, or a missing value (`f32::NAN`).
 ///
 /// Accepts either a JSON number or a JSON `null` (the latter is what a bare
