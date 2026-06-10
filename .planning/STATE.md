@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 5 context gathered
-last_updated: "2026-06-10T06:41:24.966Z"
-last_activity: 2026-06-10 -- Phase 05 planning complete
+stopped_at: Completed 05-01-PLAN.md
+last_updated: "2026-06-10T06:52:12.302Z"
+last_activity: 2026-06-10 -- Phase 05 execution started
 progress:
   total_phases: 9
   completed_phases: 4
-  total_plans: 22
-  completed_plans: 22
+  total_plans: 27
+  completed_plans: 23
   percent: 44
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-09)
 
 **Core value:** Predictions match upstream Treelite within 1e-5.
-**Current focus:** Phase 04 — lightgbm-scikit-learn-loaders
+**Current focus:** Phase 05 — full-scalar-gtil-equivalence-harness
 
 ## Current Position
 
-Phase: 5
-Plan: Not started
+Phase: 05 (full-scalar-gtil-equivalence-harness) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-06-10 -- Phase 05 planning complete
+Last activity: 2026-06-10 -- Phase 05 execution started
 
 Progress: [████████] 100% (Phase 04 plans: 8/8)
 
@@ -76,6 +76,7 @@ Progress: [████████] 100% (Phase 04 plans: 8/8)
 | Phase Phase 04 PP05 | 5min | 2 tasks tasks | 8 files files |
 | Phase 04 P07 | ~2min | 1 tasks | 3 files |
 | Phase 04 P08 | ~8min | 2 tasks | 4 files |
+| Phase 05 P01 | 12min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -152,6 +153,8 @@ Recent decisions affecting current work:
 - [04-08]: leaf detection is left==0 (HistGB missing-child marker, NOT the sklearn-tree ==-1 rule); split_index = features_map[feature_idx] ALWAYS applied (Pitfall 4); num_threshold read DIRECTLY (Pitfall 5, no _bin_mapper recon); known_cat_bitsets UNUSED in v4.7.0 (A3) so omitted from the Rust signatures.
 - [04-08]: HistGB categorical check(bitmap,val,row)=(bitmap[8*row+val/32]>>(val%32))&1 ported verbatim — the 8*row (8 uint32 = one 256-bit row) stride is a SEPARATE function from LightGBM's bitset_to_list (different layout, RESEARCH No-Analog). cat_transform = categories_map[fid][cat] when present else identity.
 - [04-08]: sklearn_histgb_numerical max |delta| = 0e0; sklearn_histgb_categorical max |delta| = 1.19e-7 (f32-quant floor) — both « 1e-5. SKL-04 closed; Phase 4 complete. Harness uses a self-contained base64 decoder (no new dependency).
+- [Phase ?]: [05-01]: 64 frozen GTIL goldens (binary + unconditional multiclass leaf_vec) capture the exhaustive matrix; dense==CSR parity asserted at capture time (D-04); non-finite cells encoded as null/inf/-inf tokens (D-08 contract)
+- [Phase ?]: [05-01]: RED Wave-0 scaffolds (gtil_matrix runner + 3 postprocessor stubs + categorical_full_guard) compile and are ignored with reason strings as Nyquist MISSING markers; existing workspace suite stays green
 
 ### Pending Todos
 
@@ -173,6 +176,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T06:02:58.082Z
-Stopped at: Phase 5 context gathered
-Resume file: .planning/phases/05-full-scalar-gtil-equivalence-harness/05-CONTEXT.md
+Last session: 2026-06-10T06:51:58.748Z
+Stopped at: Completed 05-01-PLAN.md
+Resume file: None

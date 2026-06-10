@@ -87,8 +87,8 @@ Requirements for the initial release. Each maps to a roadmap phase. All are hypo
 
 ### Equivalence & Testing
 
-- [ ] **EQV-01**: The harness generates random seeded input matrices (dense + sparse CSR)
-- [ ] **EQV-02**: Golden output vectors are captured from C++ Treelite and committed as fixtures with a toolchain/libm manifest
+- [x] **EQV-01**: The harness generates random seeded input matrices (dense + sparse CSR)
+- [x] **EQV-02**: Golden output vectors are captured from C++ Treelite and committed as fixtures with a toolchain/libm manifest
 - [ ] **EQV-03**: Rust predictions assert within 1e-5 of goldens across model types, both presets, and all predict kinds
 - [ ] **EQV-04**: The harness reports max observed deviation, not just pass/fail
 
@@ -171,8 +171,8 @@ Which phases cover which requirements.
 | GTIL-06 | Phase 5 | Pending |
 | GTIL-07 | Phase 5 | Pending |
 | GTIL-08 | Phase 5 | Pending |
-| EQV-01 | Phase 5 | Pending |
-| EQV-02 | Phase 5 | Pending |
+| EQV-01 | Phase 5 | Complete |
+| EQV-02 | Phase 5 | Complete |
 | EQV-03 | Phase 5 | Pending |
 | EQV-04 | Phase 5 | Pending |
 | GPU-01 | Phase 6 | Pending |
