@@ -50,13 +50,15 @@ use cubecl::prelude::*;
 ///
 /// Generic over BOTH the input element `F` (the feature matrix) and the
 /// threshold element `T` (the preset's threshold column) — Pitfall 6, mirroring
-/// `predict_preset<T, O>`. The Wave-1 spike used matching widths
-/// (`<f32,f32>`+f32 input, `<f64,f64>`+f64 input); Wave 3 generalizes to the two
-/// distinct widths by comparing the input value `fv` (in `F`) against the
-/// threshold cast into `F` (`F::cast_from(threshold[...])`), reproducing
-/// `NextNode<InputT, ThresholdT>`'s usual-arithmetic-conversion promotion
-/// (`predict.cc:99-124`). For the matching-width presets this cast is the
-/// identity, so the spike's behavior is unchanged.
+/// `predict_preset<T, O>`. The numerical comparison promotes BOTH operands to
+/// `f64` before comparing (`f64::cast_from(fv) < f64::cast_from(threshold[...])`),
+/// exactly reproducing the scalar reference `next_node`, which takes both
+/// `fvalue` and `threshold` as `f64` (treelite-gtil/src/lib.rs:324-355; the
+/// f32→f64 widening is exact and order-preserving, the 05-02 GTIL promotion
+/// contract). This is a WIDENING for f32 and the identity for f64 — it NEVER
+/// narrows an f64 threshold down to the input width. For the matching-width
+/// presets (f32/f32, f64/f64) the f64 promotion of equal-width operands is
+/// order-preserving, so the spike/predict_kinds/determinism behavior is unchanged.
 #[cube]
 pub fn descend<F: Float, T: Float>(
     cleft: &Array<i32>,
@@ -92,11 +94,14 @@ pub fn descend<F: Float, T: Float>(
                 next = cleft[(base + nid) as usize];
             }
         } else {
-            // XGBoost always kLT: fvalue < threshold ? left : right. The
-            // threshold (width `T`) is cast into the input width `F` to compare
-            // (`NextNode<InputT, ThresholdT>`'s promotion, predict.cc:99-124); for
-            // the matching-width presets this is the identity.
-            if fv < F::cast_from(threshold[(base + nid) as usize]) {
+            // kLT: fvalue < threshold ? left : right. Promote BOTH operands to
+            // f64 before comparing, matching the scalar reference `next_node`,
+            // which compares in f64 (treelite-gtil/src/lib.rs:324-355). The
+            // f32→f64 widening is exact and order-preserving; for the f64 preset
+            // it is the identity. This never narrows an f64 threshold to f32 (the
+            // CR-02 bug), so an f64 threshold falling between two adjacent f32
+            // values routes to the SAME child as the scalar twin.
+            if f64::cast_from(fv) < f64::cast_from(threshold[(base + nid) as usize]) {
                 next = cleft[(base + nid) as usize];
             }
         }

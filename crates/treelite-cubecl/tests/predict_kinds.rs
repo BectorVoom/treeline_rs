@@ -175,6 +175,48 @@ fn all_kinds_scalar_binary_f64() {
 }
 
 // --------------------------------------------------------------------------- //
+// CR-02 self-contained lock: f64-preset threshold not representable in f32, fed
+// an f32 input straddling it, must route like the scalar f64-promoted next_node
+// (NOT the old f32-narrowed threshold). Independent of the 06-07 mixed-width
+// golden — this test MUST exist and pass inside 06-06.
+// --------------------------------------------------------------------------- //
+
+#[test]
+fn f64_threshold_f32_input_routes_like_scalar() {
+    // WHY 0.1 is f32-unrepresentable: the nearest f32 to 0.1 is
+    // 0.100000001490116119384765625, slightly ABOVE the exact f64 0.1. The OLD
+    // kernel narrowed the f64 threshold down to that f32 (≈0.10000000149), so an
+    // f32 input value lying in the gap (0.1 < x < 0.10000000149) compared FALSE
+    // against the narrowed threshold (routed right) while the scalar reference —
+    // promoting both operands to f64 and comparing against the true f64 0.1 —
+    // compares TRUE (routed left). The f64-promoted kernel now agrees with scalar.
+    //
+    // F64 preset, single split at 0.1_f64; distinct leaves (10.0 / -10.0) so a
+    // mis-route is unambiguous. split_tree hardcodes Operator::kLT, so this model
+    // does NOT trip the Task-1 non-kLT gate — it genuinely exercises the kernel
+    // descend() path under test.
+    let tree = split_tree::<f64>(0, 0.1_f64, 10.0, -10.0);
+    let model = scalar_model(vec![tree], ModelVariant::F64, 1, "identity", 0.0);
+
+    // f32 probe rows straddling the f32-unrepresentable 0.1 boundary: the f32
+    // value just below 0.1 and the f32 value just above 0.1 (the bit-neighbors of
+    // 0.1_f32). At least one of these lies in the f64-0.1 vs f32-narrowed-0.1 gap,
+    // so a wrong f32-narrowed threshold would route it to the wrong child.
+    let below = f32::from_bits(0.1_f32.to_bits() - 1); // ≈ 0.099999994
+    let at = 0.1_f32; // ≈ 0.100000001490116 (the nearest f32, > exact 0.1)
+    let above = f32::from_bits(0.1_f32.to_bits() + 1); // ≈ 0.10000001
+    let data: Vec<f32> = vec![below, at, above];
+
+    // assert_parity_f32 runs cubecl predict_cpu::<f32> AND scalar predict::<f32>
+    // on the SAME f64-preset model and requires them within 1e-5 element-wise —
+    // i.e. the kernel's f64-promoted comparison routes each straddling row to the
+    // SAME child as the scalar f64-promoted next_node.
+    for kind in [PredictKind::Default, PredictKind::Raw] {
+        assert_parity_f32(&model, &data, 3, kind);
+    }
+}
+
+// --------------------------------------------------------------------------- //
 // Multiclass leaf-vector broadcast (the 4-way OutputLeafVector branch), f32+f64.
 // --------------------------------------------------------------------------- //
 
