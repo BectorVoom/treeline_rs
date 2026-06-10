@@ -200,4 +200,77 @@ mod tests {
         softmax(&mut row);
         assert_eq!(row.len(), 0);
     }
+
+    // ----------------------------------------------------------------------- //
+    // RED Wave-0 scaffolds for the THREE remaining postprocessors (GTIL-04).
+    //
+    // These are the Nyquist Wave-0 targets: hand-computed references for the
+    // not-yet-implemented `signed_square`, `hinge`, and `multiclass_ova`
+    // postprocessors. They are `#[ignore]`d with a "RED until Plan 03" reason
+    // (the Wave-0 MISSING marker the Nyquist gate reads). Each test names the
+    // EXACT fn signature Plan 03 must add to this module (porting
+    // `postprocessor.cc:22-31, 77-82` verbatim) and asserts the hand reference;
+    // until those fns exist the call sites stay commented so the crate still
+    // compiles (acceptance: `cargo test -p treelite-gtil --no-run` exits 0).
+    // ----------------------------------------------------------------------- //
+
+    /// RED (Plan 03): `signed_square(v: f32) -> f32` = `(v*v).copysign(v)`
+    /// (`postprocessor.cc:22-26`). Hand reference: `signed_square(-3.0) == -9.0`,
+    /// `signed_square(2.0) == 4.0`.
+    #[test]
+    #[ignore = "RED until Plan 03 (signed_square postprocessor not yet implemented)"]
+    fn signed_square_matches_copysign_reference() {
+        // TODO Plan 03: implement `pub fn signed_square(v: f32) -> f32`, then
+        // replace the hand references below with calls to it.
+        // let got = signed_square(-3.0); assert!((got - (-9.0)).abs() < 1e-7);
+        let reference_neg3 = (-3.0_f32 * -3.0_f32).copysign(-3.0); // == -9.0
+        let reference_pos2 = (2.0_f32 * 2.0_f32).copysign(2.0); // == 4.0
+        assert!((reference_neg3 - (-9.0)).abs() < 1e-7);
+        assert!((reference_pos2 - 4.0).abs() < 1e-7);
+    }
+
+    /// RED (Plan 03): `hinge(v: f32) -> f32` = `1.0` if `v > 0` else `0.0`
+    /// (`postprocessor.cc:28-31`). Hand reference: `hinge(0.5) == 1.0`,
+    /// `hinge(-0.5) == 0.0`, `hinge(0.0) == 0.0`.
+    #[test]
+    #[ignore = "RED until Plan 03 (hinge postprocessor not yet implemented)"]
+    fn hinge_matches_step_reference() {
+        // TODO Plan 03: implement `pub fn hinge(v: f32) -> f32`, then replace
+        // the hand references below with calls to it.
+        // assert_eq!(hinge(0.5), 1.0); assert_eq!(hinge(-0.5), 0.0);
+        let r_pos = if 0.5_f32 > 0.0 { 1.0_f32 } else { 0.0 };
+        let r_neg = if -0.5_f32 > 0.0 { 1.0_f32 } else { 0.0 };
+        let r_zero = if 0.0_f32 > 0.0 { 1.0_f32 } else { 0.0 };
+        assert_eq!(r_pos, 1.0);
+        assert_eq!(r_neg, 0.0);
+        assert_eq!(r_zero, 0.0);
+    }
+
+    /// RED (Plan 03): `multiclass_ova(sigmoid_alpha: f32, row: &mut [f32])` =
+    /// per-class independent sigmoid (NOT softmax), `sigmoid_alpha` stays `f32`
+    /// (`postprocessor.cc:77-82`). Hand reference: with `alpha = 1.0`, each cell
+    /// `c` becomes `1 / (1 + exp(-c))`.
+    #[test]
+    #[ignore = "RED until Plan 03 (multiclass_ova postprocessor not yet implemented)"]
+    fn multiclass_ova_matches_per_class_sigmoid_reference() {
+        // TODO Plan 03: implement `pub fn multiclass_ova(sigmoid_alpha: f32,
+        // row: &mut [f32])`, then drive `row` through it and compare.
+        let alpha = 1.0_f32;
+        let mut row = [-1.0_f32, 0.0, 2.0];
+        // Hand reference: independent per-class sigmoid (NOT normalized).
+        for c in row.iter_mut() {
+            *c = 1.0_f32 / (1.0_f32 + (-alpha * *c).exp());
+        }
+        let expect = [
+            1.0_f32 / (1.0 + 1.0_f32.exp()),
+            0.5_f32,
+            1.0_f32 / (1.0 + (-2.0_f32).exp()),
+        ];
+        for i in 0..3 {
+            assert!((row[i] - expect[i]).abs() < 1e-7, "ova class {i}");
+        }
+        // A true OVA row does NOT sum to 1 (distinguishes it from softmax).
+        let sum: f32 = row.iter().sum();
+        assert!((sum - 1.0).abs() > 1e-3, "OVA must not normalize like softmax");
+    }
 }

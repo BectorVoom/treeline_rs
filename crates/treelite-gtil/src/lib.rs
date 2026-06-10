@@ -646,3 +646,54 @@ fn apply_postprocessor(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod red_scaffolds {
+    //! RED Wave-0 scaffold for the FULL categorical representability guard
+    //! (GTIL-06, Pitfall 3).
+    //!
+    //! 04-05 shipped a MINIMAL `next_node_categorical` guard
+    //! (`fvalue < 0 || !finite || fvalue > u32::MAX`). The FULL upstream guard
+    //! (`predict.cc:127-150`) rejects `fvalue < 0 || fabs(fvalue) >
+    //! max_representable_int` where, for f32 input,
+    //! `max_representable_int = min(u32::MAX, 2^digits) = min(4294967295, 2^24)
+    //! = 2^24`. The f32 representability-gap value `2.0**24 + 1.0`
+    //! (`== 16_777_217.0`, which rounds to `16_777_216.0 = 2^24` in f32) sits in
+    //! the `(2^24, u32::MAX]` gap: the minimal guard ACCEPTS it (and would route
+    //! it as a category match), but the FULL guard must REJECT it (route the
+    //! not-matched direction).
+    //!
+    //! This test asserts the FULL-guard outcome and is `#[ignore]`d with a
+    //! "RED until Plan 03 full categorical guard" reason — the Wave-0 MISSING
+    //! marker the Nyquist gate reads. It documents the exact edge value the
+    //! frozen capture (`fixtures/gtil/`) seeds (`2**24 + 1`).
+
+    use super::next_node_categorical;
+
+    /// RED (Plan 03): an f32 input value of `2.0**24 + 1.0` in a categorical
+    /// feature must be REJECTED as a non-match (routed the not-matched
+    /// direction) by the FULL representability guard, even though the integer it
+    /// rounds to (`2^24 = 16_777_216`) is present in the category list and fits
+    /// in `u32`. The current minimal guard does NOT yet reject it, so this test
+    /// is RED until Plan 03 ports the full `predict.cc:135-138` formula.
+    #[test]
+    #[ignore = "RED until Plan 03 full categorical guard (2^24+1 f32 representability gap)"]
+    fn categorical_full_guard_red() {
+        // The gap value: 2^24 + 1, which is NOT exactly representable in f32.
+        let gap_value: f32 = (2.0_f32).powi(24) + 1.0; // rounds to 2^24 in f32
+        // category_list contains the integer it rounds to (2^24 = 16_777_216),
+        // so the *minimal* guard would treat it as a MATCH.
+        let category_list: [u32; 1] = [16_777_216];
+        let (left, right) = (10_i32, 20_i32);
+        // category_list_right_child = false -> match routes LEFT, non-match RIGHT.
+        let routed = next_node_categorical(gap_value, &category_list, false, left, right);
+        // FULL GTIL-06 contract: gap value is REJECTED (fabs > 2^24 max_repr),
+        // i.e. NON-match, so it must route RIGHT. The minimal guard currently
+        // routes LEFT (it accepts the value), making this assertion RED.
+        assert_eq!(
+            routed, right,
+            "FULL categorical guard must reject the 2^24+1 f32 gap value as a \
+             non-match (route the not-matched direction)"
+        );
+    }
+}
