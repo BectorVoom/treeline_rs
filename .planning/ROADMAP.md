@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Builder & Serialization** - Validated `ModelBuilder` + bulk path + v5 binary/PyBuffer/JSON round-trip and field accessors (completed 2026-06-10)
 - [x] **Phase 3: Full XGBoost Loaders** - JSON + UBJSON + legacy binary with auto-detect and version-gated base_score margin transform (completed 2026-06-10)
 - [x] **Phase 4: LightGBM & scikit-learn Loaders** - LightGBM text + RF/ET/GBM/IsolationForest + HistGradientBoosting (completed 2026-06-10)
-- [x] **Phase 5: Full Scalar GTIL & Equivalence Harness** - All 4 predict kinds, 10 postprocessors, sparse CSR, categoricals, output shaping, seeded golden harness at 1e-5 (plans 5/5 built + 2 gap-closure plans 05-06/05-07 for CR-01 + WR-01…WR-06) (completed 2026-06-10)
+- [ ] **Phase 5: Full Scalar GTIL & Equivalence Harness** - All 4 predict kinds, 10 postprocessors, sparse CSR, categoricals, output shaping, seeded golden harness at 1e-5 (plans 5/5 built + 2 gap-closure plans 05-06/05-07 for CR-01 + WR-01…WR-06)
 - [ ] **Phase 6: cubecl GTIL Kernels (CPU Backend)** - Traversal + postprocessor kernels; CPU backend default, validated to 1e-5 with zero-copy SoA upload
 - [ ] **Phase 7: GPU Backend & Equivalence Report** - Runtime-selectable GPU backend (CUDA/wgpu/ROCm) with a documented per-model-class deviation report
 - [ ] **Phase 8: PyO3 Python Binding** - load/predict/serialize/dump from Python with zero-copy numpy I/O and abi3 wheel
