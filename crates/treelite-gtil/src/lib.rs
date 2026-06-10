@@ -927,15 +927,12 @@ fn predict_rows<O: PredictOut>(
     // sum-over-trees body.
     match config.kind {
         PredictKind::Default | PredictKind::Raw => {}
-        // LeafId/ScorePerTree are wired in Task 2 of this plan; until then they
-        // surface as a typed error (no silent/wrong output).
-        PredictKind::LeafId => {
-            return Err(GtilError::UnsupportedPredictKind { kind: "LeafId" });
-        }
+        // LeafId/ScorePerTree write RAW leaf data with NO postprocess/average/
+        // base-score and have their own output shapes (predict.cc:325-378), so
+        // they return directly from their own bodies.
+        PredictKind::LeafId => return predict_leaf(model, rows, num_row, num_feature),
         PredictKind::ScorePerTree => {
-            return Err(GtilError::UnsupportedPredictKind {
-                kind: "ScorePerTree",
-            });
+            return predict_score_by_tree(model, rows, num_row, num_feature);
         }
     }
 
@@ -974,6 +971,143 @@ fn predict_rows<O: PredictOut>(
         apply_postprocessor(model, &shape, &mut output, num_row)?;
     }
 
+    Ok(output)
+}
+
+/// `PredictKind::LeafId` body (`PredictLeaf`, `predict.cc:325-345`).
+///
+/// Writes one integer leaf NODE ID per `(row, tree)` into a row-major
+/// `(num_row, num_tree)` buffer: `output[row * num_tree + tree_id] =
+/// leaf_id`. The leaf id is cast into the `O` output element via
+/// `O::from_leaf_f64(leaf_id as f64)` — upstream stores it in the SAME
+/// `Array2DView<InputT>` output buffer (`predict.cc:329,340`; A4), so for
+/// `O = f32`/`f64` it is the float-typed node id. There is NO
+/// postprocessor, NO RF averaging, and NO base-score add for this kind
+/// (`PredictImpl` routes `kPredictLeafID` straight to `PredictLeaf`,
+/// `predict.cc:389-390`).
+///
+/// `num_tree` is the ACTUAL per-variant tree count (`Model::GetNumTree`,
+/// `tree.h:478` ⇒ `trees.size()`), not the staged header field. Reuses the same
+/// NaN-materialized scratch row + [`evaluate_tree`] as every other kind, so the
+/// dense and sparse leaf-id paths are identical (D-04).
+fn predict_leaf<O: PredictOut>(
+    model: &Model,
+    rows: &RowSource<'_, O>,
+    num_row: usize,
+    num_feature: usize,
+) -> Result<Vec<O>, GtilError> {
+    let mut scratch = vec![O::nan(); num_feature];
+    match &model.variant {
+        ModelVariant::F32(preset) => {
+            predict_leaf_preset(&preset.trees, rows, num_row, &mut scratch)
+        }
+        ModelVariant::F64(preset) => {
+            predict_leaf_preset(&preset.trees, rows, num_row, &mut scratch)
+        }
+    }
+}
+
+/// `T`-monomorphic body of [`predict_leaf`].
+fn predict_leaf_preset<T: PredictScalar + PartialOrd, O: PredictOut>(
+    trees: &[Tree<T>],
+    rows: &RowSource<'_, O>,
+    num_row: usize,
+    scratch: &mut [O],
+) -> Result<Vec<O>, GtilError> {
+    let num_tree = trees.len();
+    let mut output = vec![O::zero(); num_row * num_tree];
+    for r in 0..num_row {
+        rows.materialize(r, scratch);
+        let row: &[O] = scratch;
+        for (tree_id, tree) in trees.iter().enumerate() {
+            let leaf = evaluate_tree(tree, row)?;
+            // output_view(row_id, tree_id) = leaf_id (predict.cc:340). The leaf
+            // node id is cast into the InputT output buffer (A4).
+            output[r * num_tree + tree_id] = O::from_leaf_f64(leaf as f64);
+        }
+    }
+    Ok(output)
+}
+
+/// `PredictKind::ScorePerTree` body (`PredictScoreByTree`,
+/// `predict.cc:347-378`).
+///
+/// Writes the RAW per-tree leaf data into a row-major `(num_row, num_tree,
+/// lvs)` buffer where `lvs = leaf_vector_shape[0] * leaf_vector_shape[1]` (≥ 1;
+/// read defensively so a short/malformed shape vector yields 1 rather than
+/// panicking, matching the `shape.rs` clamp). Per `(row, tree)`:
+///
+/// - if the reached leaf carries a leaf VECTOR
+///   ([`has_leaf_vector`]), write each element `tree.leaf_vector(leaf)[i]` at
+///   `(row, tree, i)` (`predict.cc:367-370`);
+/// - else write the scalar `tree.leaf_value(leaf)` at `(row, tree, 0)`
+///   (`predict.cc:372`; Pitfall 5 — scalar-leaf models have third-dim size 1).
+///
+/// There is NO postprocessor, NO RF averaging, and NO base-score add for this
+/// kind (`PredictImpl` routes `kPredictPerTree` straight to
+/// `PredictScoreByTree`, `predict.cc:391-392`). Leaf-vector element access is
+/// bounds-checked (`LeafVectorTooShort`), never an OOB read.
+fn predict_score_by_tree<O: PredictOut>(
+    model: &Model,
+    rows: &RowSource<'_, O>,
+    num_row: usize,
+    num_feature: usize,
+) -> Result<Vec<O>, GtilError> {
+    // lvs = leaf_vector_shape[0] * leaf_vector_shape[1]; clamp to >= 1 so a
+    // scalar-leaf model (shape [1,1]) writes at index 0 and a degenerate /
+    // malformed shape never produces a zero-width third dim (Pitfall 5 / T-05-11).
+    let a = model.leaf_vector_shape.first().copied().unwrap_or(1).max(0) as usize;
+    let b = model.leaf_vector_shape.get(1).copied().unwrap_or(1).max(0) as usize;
+    let lvs = (a * b).max(1);
+    let mut scratch = vec![O::nan(); num_feature];
+    match &model.variant {
+        ModelVariant::F32(preset) => {
+            predict_score_by_tree_preset(&preset.trees, rows, num_row, lvs, &mut scratch)
+        }
+        ModelVariant::F64(preset) => {
+            predict_score_by_tree_preset(&preset.trees, rows, num_row, lvs, &mut scratch)
+        }
+    }
+}
+
+/// `T`-monomorphic body of [`predict_score_by_tree`].
+fn predict_score_by_tree_preset<T: PredictScalar + PartialOrd, O: PredictOut>(
+    trees: &[Tree<T>],
+    rows: &RowSource<'_, O>,
+    num_row: usize,
+    lvs: usize,
+    scratch: &mut [O],
+) -> Result<Vec<O>, GtilError> {
+    let num_tree = trees.len();
+    // Filled with 0's (predict.cc:355 `std::fill_n(.., InputT{})`); the scalar
+    // path only writes index 0 of each (row, tree) slot, leaving any padding
+    // columns at 0.
+    let mut output = vec![O::zero(); num_row * num_tree * lvs];
+    for r in 0..num_row {
+        rows.materialize(r, scratch);
+        let row: &[O] = scratch;
+        for (tree_id, tree) in trees.iter().enumerate() {
+            let leaf = evaluate_tree(tree, row)?;
+            let base = (r * num_tree + tree_id) * lvs;
+            if has_leaf_vector(tree, leaf) {
+                // Write each leaf-vector element at (row, tree, i)
+                // (predict.cc:367-370). Bounds-checked against lvs.
+                let leafvec = tree.leaf_vector(leaf);
+                for (i, &v) in leafvec.iter().enumerate() {
+                    if i >= lvs {
+                        return Err(GtilError::LeafVectorTooShort {
+                            needed: leafvec.len(),
+                            got: lvs,
+                        });
+                    }
+                    output[base + i] = leaf_as_out(v);
+                }
+            } else {
+                // Scalar leaf → write at index 0 (predict.cc:372; Pitfall 5).
+                output[base] = leaf_as_out(tree.leaf_value(leaf));
+            }
+        }
+    }
     Ok(output)
 }
 
