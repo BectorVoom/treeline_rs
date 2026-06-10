@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
+status: verifying
 stopped_at: Completed 06-02-PLAN.md (cubecl descent spike, A1-A4 retired)
-last_updated: "2026-06-10T12:00:12.011Z"
+last_updated: "2026-06-10T12:08:47.567Z"
 last_activity: 2026-06-10 -- Completed 06-02-PLAN.md (cubecl descent spike, A1-A4 retired)
 progress:
   total_phases: 9
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 34
-  completed_plans: 33
-  percent: 56
+  completed_plans: 34
+  percent: 67
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 
 Phase: 06 (cubecl-gtil-kernels-cpu-backend) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-10 -- Completed 06-02-PLAN.md (cubecl descent spike, A1-A4 retired)
 
 Progress: [███░░░░░] 40% (Phase 06 plans: 2/5)
@@ -88,6 +88,7 @@ Progress: [███░░░░░] 40% (Phase 06 plans: 2/5)
 | Phase 06 P02 | ~25min | 2 tasks | 4 files |
 | Phase 06 P03 | 10min | 2 tasks | 5 files |
 | Phase 06 P04 | ~30min | 2 tasks | 8 files |
+| Phase 06 P05 | 5min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -186,6 +187,8 @@ Recent decisions affecting current work:
 - [Phase ?]: 06-03: 10 postprocessors as #[cube] helpers, verbatim cast order to 1e-5; copysign as sign-flip if-statement, exp2 via exp(x*ln2) (D-03/CR-01)
 - [Phase ?]: 06-04: Default-kind postprocessor applied host-side after kernel read-back (PredictCpuElem reuses public treelite_gtil::postprocessor::* arm-for-arm), byte-identical to scalar predict; default_raw produces the Raw margin
 - [Phase ?]: 06-04: descend generalized to descend<F,T> (Pitfall 6 input/threshold width split); spike call site updated to descend::<F,F>, unchanged behavior
+- [Phase ?]: 06-05: treelite-cubecl is a regular harness [dependency] (not dev-dep) because cubecl_cpu_case() is a pub fn in src/lib.rs
+- [Phase ?]: 06-05: D-06 provenance recorded from the EXECUTED path with a >=1-kernel-cell guard (T-06-12), never the scalar-cpu manifest literal
 
 ### Pending Todos
 
@@ -208,6 +211,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T11:59:47.763Z
+Last session: 2026-06-10T12:08:31.583Z
 Stopped at: Completed 06-02-PLAN.md (cubecl descent spike, A1-A4 retired)
 Resume file: None
