@@ -98,8 +98,23 @@ Plans:
   2. The loader auto-detects which XGBoost format a file is, with the UBJSON path sharing the JSON numeric state machine for parity (NaN/Inf literals accepted as upstream does) and legacy binary read via explicit little-endian decoders (no native-endian struct transmute).
   3. XGBoost objective maps to the correct postprocessor, and the version-gated (`major_version >= 1`) base_score probability→margin transform is applied (scalar and vector base_score forms handled), with no constant offset on predictions.
 
-**Plans**: TBD
-**Research flag:** Needs research-phase — SAX/streaming serde_json; UBJSON type-tag decoding; NaN/Inf extension; base_score version gate.
+**Plans**: 4 plans
+Plans:
+**Wave 0**
+
+- [ ] 03-01-PLAN.md — Three-format fixtures + shared prediction golden + single v5 byte-fidelity golden + frozen manifest (A1/A2 generation spike) + RED 3-format test scaffold (Wave 0)
+
+**Wave 1** *(blocked on Wave 0)*
+
+- [ ] 03-02-PLAN.md — JSON slice: widen recognized key set, NaN/Inf (D-02), shared build_model_from_parsed, sum_hess/gain/attributes (D-10 JSON leg), scalar/vector base_score version gate (XGB-01/XGB-05) (Wave 1)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 03-03-PLAN.md — UBJSON slice: hand-rolled tag decoder → serde_json::Value + DetectXGBoostFormat, converging at the shared structs (XGB-02/XGB-04) (Wave 2)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 03-04-PLAN.md — Legacy-binary slice: LE byte cursor + PeekableReader (no transmute) + close DEF-02-01/D-10 across all three formats (XGB-03/XGB-05) (Wave 3)
 
 ### Phase 4: LightGBM & scikit-learn Loaders
 
@@ -201,7 +216,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 |-------|----------------|--------|-----------|
 | 1. End-to-End Spine | 4/4 | Complete    | 2026-06-09 |
 | 2. Builder & Serialization | 6/6 | Complete    | 2026-06-10 |
-| 3. Full XGBoost Loaders | 0/TBD | Not started | - |
+| 3. Full XGBoost Loaders | 0/4 | Not started | - |
 | 4. LightGBM & scikit-learn Loaders | 0/TBD | Not started | - |
 | 5. Full Scalar GTIL & Equivalence Harness | 0/TBD | Not started | - |
 | 6. cubecl GTIL Kernels (CPU Backend) | 0/TBD | Not started | - |
