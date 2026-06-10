@@ -18,14 +18,14 @@ A from-scratch Rust rewrite of [Treelite](https://github.com/dmlc/treelite) — 
 - [x] Programmatic `ModelBuilder` API with topology/orphan validation — *Validated in Phase 2 (BLD-01/02/03): fluent strict state machine, `ConcatenateModelObjects`, `BulkConstructTree`; XGBoost-JSON loader rewired through it, still within 1e-5.*
 - [x] Serialization: binary + JSON round-trip for the current (v5) format generation — *Validated in Phase 2 (SER-01..04): byte-for-byte golden v5 match, bounds-checked v5-only deserialize, zero-copy PyBuffer frames, `DumpAsJSON`, typed field accessors. (XGBoost loader→serialize byte-fidelity, DEF-02-01, now closed in Phase 3.)*
 - [x] Import XGBoost models: JSON, UBJSON, and legacy binary formats — *Validated in Phase 3 (XGB-01..05): all three formats load one logical `binary:logistic` model, predict within 1e-5 of a shared golden, and serialize byte-identically to a single upstream v5 golden blob (closes DEF-02-01 across all three formats). Auto-detect (JSON/UBJSON), NaN/Inf-tolerant numeric path, explicit little-endian legacy decoder (no native-endian transmute), version-gated scalar+vector base_score margin transform. Parse-wide/verify-narrow: categorical/multiclass parsed but their prediction parity deferred to Phase 5. 4 critical untrusted-input hardening findings (panic/overflow/recursion) fixed with regression tests.*
+- [x] Import LightGBM text-format models — *Validated in Phase 4 (LGB-01/02/03): numerical + categorical text models load through the f64 `ModelBuilder` and predict within 1e-5 of frozen upstream-GTIL goldens (numerical max |delta| = 0e0, categorical 9.54e-7). Verbatim `BitsetToList` categorical decode, per-field precision (leaf_value/threshold f64, split_gain f32), objective→postprocessor map with sigmoid_alpha + class_id round-robin + average_output.*
+- [x] Import scikit-learn estimators — RandomForest, ExtraTrees, GradientBoosting, IsolationForest, AND HistGradientBoosting (incl. the bulk tree-construction path) — *Validated in Phase 4 (SKL-01..04): new `treelite-sklearn` crate mirroring upstream `namespace sklearn` 1:1; RF/ET via bulk path, GB + IsolationForest via f64 MixIn, HistGB via packed-node `from_le_bytes` decode (52/56 itemsize) + features_map/categories_map remap. All within 1e-5 (worst HistGB-categorical 1.19e-7). IsolationForest golden is `treelite.gtil.predict == -score_samples`, not the framework anomaly score.*
 
 ### Active
 
 <!-- v1 scope. All hypotheses until shipped and validated against the 1e-5 equivalence harness. -->
 
 - [ ] Cargo workspace with modular crates, one responsibility each (core model, enums, loaders, builder, GTIL, serialization, Python binding)
-- [ ] Import LightGBM text-format models
-- [ ] Import scikit-learn estimators — RandomForest, ExtraTrees, GradientBoosting, IsolationForest, AND HistGradientBoosting (incl. the bulk tree-construction path)
 - [ ] In-memory struct-of-arrays `Model` / `Tree` representation parameterized over float32/float64
 - [ ] GTIL inference: dense + sparse CSR input, the 4 predict kinds, full postprocessor set (sigmoid, softmax, etc.)
 - [ ] GTIL inference hot path (tree traversal + postprocessors) implemented as `cubecl` kernels
@@ -97,4 +97,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-10 — Phase 3 (Full XGBoost Loaders) complete; all three XGBoost formats load → predict 1e-5 → serialize byte-identically (DEF-02-01 closed); untrusted-input hardening applied. Next: Phase 4 (LightGBM & scikit-learn loaders).*
+*Last updated: 2026-06-10 — Phase 4 (LightGBM & scikit-learn Loaders) complete; LightGBM text (numerical + categorical) and the full sklearn estimator set (RF/ET, GB, IsolationForest, HistGradientBoosting) all load → predict within 1e-5 of frozen upstream-GTIL goldens (verification passed 4/4, 205 tests green). Next: Phase 5 (Full Scalar GTIL & Equivalence Harness).*
