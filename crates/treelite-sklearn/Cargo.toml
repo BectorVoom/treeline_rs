@@ -5,3 +5,13 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+treelite-core = { path = "../treelite-core" }
+treelite-builder = { path = "../treelite-builder" }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+# treelite-gtil + approx drive the in-crate metadata/predict unit assertions.
+# NOTE: treelite-harness is deliberately NOT a dev-dependency here — it depends
+# on treelite-sklearn (tests/sklearn.rs), so adding it would create a cycle.
+treelite-gtil = { path = "../treelite-gtil" }
+approx = { workspace = true }
