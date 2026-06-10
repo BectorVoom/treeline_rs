@@ -20,10 +20,12 @@
 //!    fixture flows through the f32 entry point of the [`scalar_cpu_case`]
 //!    [`RunnerCase`] with NO f32→f64 pre-cast; an `f64` fixture flows through
 //!    the f64 entry point. Output is uniformly `f64` for comparison.
-//! 4. DISPATCH ON `manifest.layout`: `dense` → `dense_*`; `sparse` →
-//!    reconstruct the CSR from the dense-with-NaN input's PRESENT (non-NaN)
-//!    cells (this is exactly the capture-time construction, predict.cc:80-85)
-//!    and call `sparse_*`.
+//! 4. DISPATCH ON `manifest.layout`: `dense` → `dense_*`; `sparse` → load the
+//!    FROZEN CSR triple (`golden.csr` = `data`/`indices`/`indptr`, captured at
+//!    freeze time, WR-01) VERBATIM into a [`SparseCsr`] and call `sparse_*` —
+//!    never re-deriving the CSR from NaN-presence (which can mistake a present
+//!    NaN for absent, T-05-19). The reconstructed CSR survives ONLY as the
+//!    independent D-04 dense==sparse parity probe.
 //! 5. Assert every output element within `1e-5` of the golden (`approx`,
 //!    epsilon = 1e-5 — the HARD gate, never loosened to mask a real gap).
 //! 6. D-04 parity: for every cell, also run the dense path on the
@@ -65,6 +67,27 @@ struct MatrixGolden {
     /// Full-provenance manifest carrying the `backend`/`model`/`kind`/`layout`/
     /// `input_dtype`/`seed` axes (D-09).
     manifest: MatrixManifest,
+    /// WR-01: the REAL frozen CSR triple (`data`/`indices`/`indptr`) captured at
+    /// freeze time. Present ONLY on sparse cells (dense cells parse with `None`
+    /// via `#[serde(default)]`). The sparse arm loads THIS verbatim instead of
+    /// re-deriving a CSR from NaN-presence — closing the "present NaN == absent"
+    /// reconstruction ambiguity (T-05-19).
+    #[serde(default)]
+    csr: Option<FrozenCsr>,
+}
+
+/// The frozen CSR triple a sparse cell carries (WR-01). `data` cells may be the
+/// non-finite tokens (`null`/`"inf"`/`"-inf"`) the capture emits, so they are
+/// tolerant `serde_json::Value`s decoded via [`cell_to_f64`]; `indices`/`indptr`
+/// are exact non-negative integers.
+#[derive(Debug, Deserialize)]
+struct FrozenCsr {
+    /// The present feature values, row-major CSR order (may be non-finite).
+    data: Vec<serde_json::Value>,
+    /// Column (feature) index of each `data` entry.
+    indices: Vec<u64>,
+    /// Per-row offsets into `data`/`indices`; length `num_row + 1`.
+    indptr: Vec<u64>,
 }
 
 /// Capture-environment provenance for a matrix cell (D-09). Carries the axis
@@ -85,6 +108,8 @@ struct MatrixManifest {
     layout: String,
     /// Input-dtype axis: `f32`/`f64`.
     input_dtype: String,
+    /// Seed axis (`1234`/`5678`) — part of the WR-06 paired-cell key.
+    seed: u64,
 }
 
 /// Resolve a path under the workspace-root `fixtures/` dir (mirrors
@@ -185,10 +210,45 @@ fn decode_input_f64(golden: &MatrixGolden, fname: &str) -> anyhow::Result<Vec<f6
     Ok(flat)
 }
 
+/// Decode the FROZEN CSR triple (WR-01) into a typed `(data, col_ind, row_ptr)`
+/// in the cell's input dtype. `data` is decoded to `f64` (NaN/±inf tolerant)
+/// then narrowed to `O` WITHOUT changing any value (exact-or-NaN — the same
+/// no-pre-cast discipline as [`decode_input_f64`]); `indices`/`indptr` map
+/// verbatim to `col_ind`/`row_ptr`. This is the captured CSR the upstream sparse
+/// golden was produced from — loaded verbatim, never reconstructed from
+/// NaN-presence (T-05-19).
+fn frozen_csr<O: FromF64>(frozen: &FrozenCsr) -> anyhow::Result<(Vec<O>, Vec<u64>, Vec<u64>)> {
+    let mut data: Vec<O> = Vec::with_capacity(frozen.data.len());
+    for cell in &frozen.data {
+        data.push(O::from_f64(cell_to_f64(cell)?));
+    }
+    Ok((data, frozen.indices.clone(), frozen.indptr.clone()))
+}
+
+/// Narrowing of a decoded `f64` CSR value into the cell's input element type,
+/// WITHOUT changing the value (exact-or-NaN round-trip, no pre-cast).
+trait FromF64: Copy {
+    fn from_f64(v: f64) -> Self;
+}
+impl FromF64 for f32 {
+    fn from_f64(v: f64) -> Self {
+        v as f32
+    }
+}
+impl FromF64 for f64 {
+    fn from_f64(v: f64) -> Self {
+        v
+    }
+}
+
 /// Reconstruct a CSR (`data`, `col_ind`, `row_ptr`) from a row-major
 /// dense-with-NaN buffer: PRESENT cells are the non-NaN entries (exactly the
 /// capture-time construction — absent == NaN, predict.cc:80-85). Generic over
 /// the input element type so the f32 and f64 sparse arms reuse it.
+///
+/// Used ONLY for the D-04 dense==sparse PARITY check (an independent invariant);
+/// the GOLDEN gate for sparse cells now loads the FROZEN triple via
+/// [`frozen_csr`] (WR-01) so it never asserts against a reconstruction.
 fn build_csr<O: Copy + IsNan>(
     flat: &[O],
     num_row: usize,
@@ -248,6 +308,17 @@ fn run_cell(
     let num_feature = golden.n_features;
     let flat64 = decode_input_f64(golden, fname)?;
 
+    let is_sparse = golden.manifest.layout == "sparse";
+    // WR-01: a sparse cell MUST carry the frozen CSR triple — the golden gate
+    // asserts against the captured CSR, never a NaN-presence reconstruction.
+    if is_sparse {
+        anyhow::ensure!(
+            golden.csr.is_some(),
+            "{fname}: sparse cell is missing the frozen CSR triple (WR-01); \
+             regenerate via capture_gtil_matrix.py"
+        );
+    }
+
     match golden.manifest.input_dtype.as_str() {
         "f32" => {
             // Narrow to f32 WITHOUT changing any value (exact-or-NaN). This is
@@ -256,38 +327,56 @@ fn run_cell(
             let flat32: Vec<f32> = flat64.iter().map(|&v| v as f32).collect();
             let dense = (case.dense_f32)(model, &flat32, num_row, cfg)
                 .with_context(|| format!("{fname}: dense f32 predict"))?;
-            let (data, col_ind, row_ptr) = build_csr(&flat32, num_row, num_feature);
-            let csr = SparseCsr {
-                data: &data,
-                col_ind: &col_ind,
-                row_ptr: &row_ptr,
+            // Parity sparse: the CSR reconstructed from the dense-with-NaN input
+            // (D-04 dense==sparse invariant only — NOT the golden gate).
+            let (pdata, pcol, prow) = build_csr(&flat32, num_row, num_feature);
+            let parity_csr = SparseCsr {
+                data: &pdata,
+                col_ind: &pcol,
+                row_ptr: &prow,
             };
-            let sparse = (case.sparse_f32)(model, csr, num_row, cfg)
-                .with_context(|| format!("{fname}: sparse f32 predict"))?;
-            let own = if golden.manifest.layout == "sparse" {
-                sparse.clone()
+            let parity_sparse = (case.sparse_f32)(model, parity_csr, num_row, cfg)
+                .with_context(|| format!("{fname}: parity sparse f32 predict"))?;
+            // `own` for a sparse cell is the FROZEN-CSR result (WR-01); for a
+            // dense cell it is the dense result.
+            let own = if let Some(frozen) = &golden.csr {
+                let (fdata, fcol, frow) = frozen_csr::<f32>(frozen)?;
+                let frozen_view = SparseCsr {
+                    data: &fdata,
+                    col_ind: &fcol,
+                    row_ptr: &frow,
+                };
+                (case.sparse_f32)(model, frozen_view, num_row, cfg)
+                    .with_context(|| format!("{fname}: frozen-CSR sparse f32 predict"))?
             } else {
                 dense.clone()
             };
-            Ok((own, dense, sparse))
+            Ok((own, dense, parity_sparse))
         }
         "f64" => {
             let dense = (case.dense_f64)(model, &flat64, num_row, cfg)
                 .with_context(|| format!("{fname}: dense f64 predict"))?;
-            let (data, col_ind, row_ptr) = build_csr(&flat64, num_row, num_feature);
-            let csr = SparseCsr {
-                data: &data,
-                col_ind: &col_ind,
-                row_ptr: &row_ptr,
+            let (pdata, pcol, prow) = build_csr(&flat64, num_row, num_feature);
+            let parity_csr = SparseCsr {
+                data: &pdata,
+                col_ind: &pcol,
+                row_ptr: &prow,
             };
-            let sparse = (case.sparse_f64)(model, csr, num_row, cfg)
-                .with_context(|| format!("{fname}: sparse f64 predict"))?;
-            let own = if golden.manifest.layout == "sparse" {
-                sparse.clone()
+            let parity_sparse = (case.sparse_f64)(model, parity_csr, num_row, cfg)
+                .with_context(|| format!("{fname}: parity sparse f64 predict"))?;
+            let own = if let Some(frozen) = &golden.csr {
+                let (fdata, fcol, frow) = frozen_csr::<f64>(frozen)?;
+                let frozen_view = SparseCsr {
+                    data: &fdata,
+                    col_ind: &fcol,
+                    row_ptr: &frow,
+                };
+                (case.sparse_f64)(model, frozen_view, num_row, cfg)
+                    .with_context(|| format!("{fname}: frozen-CSR sparse f64 predict"))?
             } else {
                 dense.clone()
             };
-            Ok((own, dense, sparse))
+            Ok((own, dense, parity_sparse))
         }
         other => anyhow::bail!("{fname}: unknown input_dtype {other:?}"),
     }
@@ -341,6 +430,26 @@ fn gtil_matrix() -> anyhow::Result<()> {
     let mut sparse_cells = 0usize;
     let mut parity_cells = 0usize;
     let mut global_max_dev: f64 = 0.0;
+
+    // CR-01 visibility: count the large-margin f64 cells that ran the corrected
+    // `sigmoid_f64`/`exponential_f64` path through the 1e-5 gate, and record the
+    // worst delta among them (the band that masked CR-01 pre-05-06).
+    let mut large_margin_f64_cells = 0usize;
+    let mut large_margin_f64_max_dev: f64 = 0.0;
+
+    // WR-06: collect the large-margin (CR-01) model's f32 and f64 `own` outputs,
+    // keyed by the SHARED axes (kind/layout/seed), so a paired f32-vs-f64
+    // divergence can be asserted after the loop. A silent f32→f64 input pre-cast
+    // would collapse the two computations and make them EQUAL — failing the
+    // assertion. (For these <f32,f32> XGBoost models the upstream GOLDENS are
+    // bit-identical across input dtype, because upstream accumulates the
+    // tree-sum in f64 regardless of input width; the genuine, catchable axis is
+    // the RUST f32 postprocessor path vs the f64 `sigmoid_f64` path — see
+    // SUMMARY deviation. So WR-06 asserts the Rust outputs diverge, not the
+    // goldens.)
+    use std::collections::HashMap;
+    let mut wr06_f32: HashMap<String, Vec<f64>> = HashMap::new();
+    let mut wr06_f64: HashMap<String, Vec<f64>> = HashMap::new();
 
     // Stable iteration order so the per-cell report is deterministic.
     let mut paths: Vec<PathBuf> = Vec::new();
@@ -427,12 +536,118 @@ fn gtil_matrix() -> anyhow::Result<()> {
         if golden.manifest.layout == "sparse" {
             sparse_cells += 1;
         }
+
+        // CR-01: the large-margin f64 cells exercise the corrected f64
+        // postprocessor path against the 1e-5 gate (the gate that would have
+        // caught the pre-05-06 collapse-to-f32). Track them for explicit
+        // visibility in `--nocapture` output.
+        let is_large_margin = golden.manifest.model == "large_margin";
+        if is_large_margin && golden.manifest.input_dtype == "f64" {
+            large_margin_f64_cells += 1;
+            if max_dev > large_margin_f64_max_dev {
+                large_margin_f64_max_dev = max_dev;
+            }
+            eprintln!(
+                "  CR-01 large_margin f64 [{}/{}]: max |delta| = {max_dev:e} (< 1e-5) — \
+                 sigmoid_f64 path asserted against upstream ApplyPostProcessor<double>",
+                golden.manifest.kind, golden.manifest.layout
+            );
+        }
+
+        // WR-06: stash the large-margin model's `own` output per shared axis so
+        // the f32 vs f64 paired divergence can be asserted after the loop.
+        if is_large_margin {
+            let key = format!(
+                "{}/{}/{}",
+                golden.manifest.kind, golden.manifest.layout, golden.manifest.seed
+            );
+            match golden.manifest.input_dtype.as_str() {
+                "f32" => {
+                    wr06_f32.insert(key, own.clone());
+                }
+                "f64" => {
+                    wr06_f64.insert(key, own.clone());
+                }
+                _ => {}
+            }
+        }
     }
 
     anyhow::ensure!(cells > 0, "no fixtures/gtil/*.golden.json cells found");
     anyhow::ensure!(f32_cells > 0, "no f32-input cells exercised (D-05)");
     anyhow::ensure!(f64_cells > 0, "no f64-input cells exercised (D-05)");
     anyhow::ensure!(sparse_cells > 0, "no sparse cells exercised (GTIL-02/D-04)");
+
+    // --- CR-01 coverage gate ---------------------------------------------------
+    // At least one large-margin f64 sigmoid cell must have run the corrected
+    // f64-postprocessor path through the 1e-5 gate. If this is zero, the CR-01
+    // fixture is missing and the regression is no longer measured (GTIL-04).
+    anyhow::ensure!(
+        large_margin_f64_cells > 0,
+        "no large_margin f64 cells exercised — the CR-01 1e-5 gate is not measured \
+         (regenerate fixtures via capture_gtil_matrix.py)"
+    );
+    eprintln!(
+        "CR-01: {large_margin_f64_cells} large_margin f64 cells passed the 1e-5 gate \
+         (worst |delta| = {large_margin_f64_max_dev:e}) — the corrected f64-postprocessor \
+         path (05-06 sigmoid_f64) is now MEASURED, not absorbed."
+    );
+
+    // --- WR-06 paired f32/f64 divergence gate ----------------------------------
+    // The large-margin (CR-01) model's f32 `default` output must DIFFER from its
+    // f64 output on at least one row — proving the input-dtype axis is a genuinely
+    // distinct computation (the f32 postprocessor path vs the f64 `sigmoid_f64`
+    // path). A silent f32→f64 pre-cast inside a future backend would collapse the
+    // two and make them equal, FAILING this assertion (T-05-20). We assert on the
+    // `default` (post-processed sigmoid) cells where the postprocessor-width
+    // divergence is observable; `raw`/leaf_id share the f64-accumulated margin.
+    let mut wr06_checked = 0usize;
+    let mut wr06_max_div: f64 = 0.0;
+    for (key, f32_out) in &wr06_f32 {
+        if !key.starts_with("default/") {
+            continue; // postprocessor-width divergence lives in the sigmoid output
+        }
+        let Some(f64_out) = wr06_f64.get(key) else {
+            continue;
+        };
+        anyhow::ensure!(
+            f32_out.len() == f64_out.len(),
+            "WR-06 {key}: f32/f64 large_margin output length mismatch"
+        );
+        let mut max_div = 0.0f64;
+        for (&a, &b) in f32_out.iter().zip(f64_out.iter()) {
+            if a.is_finite() && b.is_finite() {
+                let d = (a - b).abs();
+                if d > max_div {
+                    max_div = d;
+                }
+            }
+        }
+        if max_div > wr06_max_div {
+            wr06_max_div = max_div;
+        }
+        // The two input-dtype axes must be DISTINCT computations: a non-zero
+        // divergence proves no silent f32→f64 pre-cast collapsed them.
+        anyhow::ensure!(
+            max_div > 0.0,
+            "WR-06 {key}: large_margin f32 and f64 outputs are bit-identical — \
+             the input-dtype axis collapsed (a silent f32→f64 pre-cast would do \
+             this). The f64 sigmoid_f64 path must differ from the f32 path on a \
+             large-margin row (T-05-20)."
+        );
+        wr06_checked += 1;
+    }
+    anyhow::ensure!(
+        wr06_checked > 0,
+        "WR-06: no large_margin default f32/f64 pair was checked for divergence — \
+         the input-dtype axis is unguarded (regenerate fixtures)"
+    );
+    eprintln!(
+        "WR-06: {wr06_checked} large_margin f32/f64 default pairs DIVERGE \
+         (max divergence = {wr06_max_div:e}) — the input-dtype axis is a genuine, \
+         distinct computation; a silent f32→f64 pre-cast would fail this gate."
+    );
+
     eprintln!(
         "gtil_matrix: {cells} cells ({f32_cells} f32-input, {f64_cells} f64-input, \
          {sparse_cells} sparse), {parity_cells} dense==sparse parity asserts, \
