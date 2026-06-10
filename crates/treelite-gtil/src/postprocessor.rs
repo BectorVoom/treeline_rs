@@ -2,12 +2,13 @@
 //!
 //! Ports `treelite-mainline/src/gtil/postprocessor.cc:19-82` VERBATIM. Phase 1
 //! shipped the two postprocessors exercised by the `binary:logistic` fixture
-//! (`identity` and `sigmoid`). Plan 04-02 pulls forward the four postprocessors
+//! (`identity` and `sigmoid`). Plan 04-02 pulled forward the four postprocessors
 //! the Phase-4 loaders need to verify 1e-5: `exponential`,
 //! `exponential_standard_ratio`, `logarithm_one_plus_exp`, and the row-wise
-//! `softmax`. The remaining upstream postprocessors (`signed_square`, `hinge`,
-//! `identity_multiclass`, `multiclass_ova`) are deferred to Phase 5 (complete
-//! GTIL surface).
+//! `softmax`. Plan 05-03 completes the surface with the final three —
+//! `signed_square`, `hinge`, and `multiclass_ova` — so all 10 upstream
+//! postprocessors are now ported (GTIL-04). (`identity_multiclass` was already
+//! shipped by the sklearn loaders in Phase 4.)
 //!
 //! ## The 1e-5 cast-ordering contract
 //!
@@ -131,6 +132,52 @@ pub fn softmax(row: &mut [f32]) {
     }
 }
 
+/// `signed_square` postprocessor (`postprocessor.cc:22-26`), ported verbatim:
+///
+/// ```cpp
+/// InputT const margin = *elem;
+/// *elem = std::copysign(margin * margin, margin);
+/// ```
+///
+/// Squares the margin then re-applies the margin's sign via `copysign`, so a
+/// negative margin yields a negative result (`signed_square(-3.0) == -9.0`).
+/// Instantiated with `InputT == float` in GTIL, so the multiply and `copysign`
+/// run in `f32` — the Rust port keeps the operation in `f32` (the cast-ordering
+/// contract).
+pub fn signed_square(v: f32) -> f32 {
+    (v * v).copysign(v)
+}
+
+/// `hinge` postprocessor (`postprocessor.cc:28-31`), ported verbatim:
+///
+/// ```cpp
+/// *elem = (*elem > 0 ? InputT(1) : InputT(0));
+/// ```
+///
+/// A strict step: `1.0` iff the margin is strictly greater than zero, else
+/// `0.0` (so `hinge(0.0) == 0.0`). Runs in `f32` (the cast-ordering contract).
+pub fn hinge(v: f32) -> f32 {
+    if v > 0.0 { 1.0 } else { 0.0 }
+}
+
+/// `multiclass_ova` postprocessor (`postprocessor.cc:77-82`), ported verbatim:
+///
+/// ```cpp
+/// for (i = 0; i < num_class; ++i)
+///   row[i] = InputT(1) / (InputT(1) + std::exp(-model.sigmoid_alpha * row[i]));
+/// ```
+///
+/// One-vs-all: applies an *independent* per-class sigmoid in place over the
+/// row's `num_class` cells (this is the per-class form of [`sigmoid`], NOT a
+/// `softmax` — the cells do NOT sum to 1). `sigmoid_alpha` is a `float` model
+/// field and every cell's multiply and `std::exp` run in `f32` — there is NO
+/// double-precision promotion (the cast-ordering contract, RESEARCH Pitfall 2).
+pub fn multiclass_ova(sigmoid_alpha: f32, row: &mut [f32]) {
+    for c in row.iter_mut() {
+        *c = 1.0_f32 / (1.0_f32 + (-sigmoid_alpha * *c).exp());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -202,65 +249,45 @@ mod tests {
     }
 
     // ----------------------------------------------------------------------- //
-    // RED Wave-0 scaffolds for the THREE remaining postprocessors (GTIL-04).
+    // GREEN (Plan 05-03): the THREE remaining postprocessors (GTIL-04).
     //
-    // These are the Nyquist Wave-0 targets: hand-computed references for the
-    // not-yet-implemented `signed_square`, `hinge`, and `multiclass_ova`
-    // postprocessors. They are `#[ignore]`d with a "RED until Plan 03" reason
-    // (the Wave-0 MISSING marker the Nyquist gate reads). Each test names the
-    // EXACT fn signature Plan 03 must add to this module (porting
-    // `postprocessor.cc:22-31, 77-82` verbatim) and asserts the hand reference;
-    // until those fns exist the call sites stay commented so the crate still
-    // compiles (acceptance: `cargo test -p treelite-gtil --no-run` exits 0).
+    // These were RED Wave-0 scaffolds in Plan 01 (`#[ignore]`d, hand references
+    // only). Plan 05-03 ports `signed_square`/`hinge`/`multiclass_ova` verbatim
+    // (`postprocessor.cc:22-31, 77-82`) and these tests now call the real fns
+    // and pass — completing the 10/10 postprocessor surface.
     // ----------------------------------------------------------------------- //
 
-    /// RED (Plan 03): `signed_square(v: f32) -> f32` = `(v*v).copysign(v)`
-    /// (`postprocessor.cc:22-26`). Hand reference: `signed_square(-3.0) == -9.0`,
-    /// `signed_square(2.0) == 4.0`.
+    /// `signed_square(v: f32) -> f32` = `(v*v).copysign(v)`
+    /// (`postprocessor.cc:22-26`). `signed_square(-3.0) == -9.0`,
+    /// `signed_square(2.0) == 4.0` (copysign preserves the margin sign).
     #[test]
-    #[ignore = "RED until Plan 03 (signed_square postprocessor not yet implemented)"]
     fn signed_square_matches_copysign_reference() {
-        // TODO Plan 03: implement `pub fn signed_square(v: f32) -> f32`, then
-        // replace the hand references below with calls to it.
-        // let got = signed_square(-3.0); assert!((got - (-9.0)).abs() < 1e-7);
-        let reference_neg3 = (-3.0_f32 * -3.0_f32).copysign(-3.0); // == -9.0
-        let reference_pos2 = (2.0_f32 * 2.0_f32).copysign(2.0); // == 4.0
-        assert!((reference_neg3 - (-9.0)).abs() < 1e-7);
-        assert!((reference_pos2 - 4.0).abs() < 1e-7);
+        assert!((signed_square(-3.0) - (-9.0)).abs() < 1e-7);
+        assert!((signed_square(2.0) - 4.0).abs() < 1e-7);
+        // copysign carries the sign of zero / negatives through faithfully.
+        assert!((signed_square(-0.5) - (-0.25)).abs() < 1e-7);
+        assert_eq!(signed_square(0.0), 0.0);
     }
 
-    /// RED (Plan 03): `hinge(v: f32) -> f32` = `1.0` if `v > 0` else `0.0`
-    /// (`postprocessor.cc:28-31`). Hand reference: `hinge(0.5) == 1.0`,
-    /// `hinge(-0.5) == 0.0`, `hinge(0.0) == 0.0`.
+    /// `hinge(v: f32) -> f32` = `1.0` if `v > 0` else `0.0`
+    /// (`postprocessor.cc:28-31`). `hinge(0.5) == 1.0`, `hinge(-1.0) == 0.0`,
+    /// `hinge(0.0) == 0.0` (strict `> 0`).
     #[test]
-    #[ignore = "RED until Plan 03 (hinge postprocessor not yet implemented)"]
     fn hinge_matches_step_reference() {
-        // TODO Plan 03: implement `pub fn hinge(v: f32) -> f32`, then replace
-        // the hand references below with calls to it.
-        // assert_eq!(hinge(0.5), 1.0); assert_eq!(hinge(-0.5), 0.0);
-        let r_pos = if 0.5_f32 > 0.0 { 1.0_f32 } else { 0.0 };
-        let r_neg = if -0.5_f32 > 0.0 { 1.0_f32 } else { 0.0 };
-        let r_zero = if 0.0_f32 > 0.0 { 1.0_f32 } else { 0.0 };
-        assert_eq!(r_pos, 1.0);
-        assert_eq!(r_neg, 0.0);
-        assert_eq!(r_zero, 0.0);
+        assert_eq!(hinge(0.5), 1.0);
+        assert_eq!(hinge(-1.0), 0.0);
+        assert_eq!(hinge(0.0), 0.0);
     }
 
-    /// RED (Plan 03): `multiclass_ova(sigmoid_alpha: f32, row: &mut [f32])` =
-    /// per-class independent sigmoid (NOT softmax), `sigmoid_alpha` stays `f32`
-    /// (`postprocessor.cc:77-82`). Hand reference: with `alpha = 1.0`, each cell
-    /// `c` becomes `1 / (1 + exp(-c))`.
+    /// `multiclass_ova(sigmoid_alpha: f32, row: &mut [f32])` = per-class
+    /// independent sigmoid (NOT softmax), `sigmoid_alpha` stays `f32`
+    /// (`postprocessor.cc:77-82`). With `alpha = 1.0`, each cell `c` becomes
+    /// `1 / (1 + exp(-c))`; the cells do NOT sum to 1.
     #[test]
-    #[ignore = "RED until Plan 03 (multiclass_ova postprocessor not yet implemented)"]
     fn multiclass_ova_matches_per_class_sigmoid_reference() {
-        // TODO Plan 03: implement `pub fn multiclass_ova(sigmoid_alpha: f32,
-        // row: &mut [f32])`, then drive `row` through it and compare.
         let alpha = 1.0_f32;
         let mut row = [-1.0_f32, 0.0, 2.0];
-        // Hand reference: independent per-class sigmoid (NOT normalized).
-        for c in row.iter_mut() {
-            *c = 1.0_f32 / (1.0_f32 + (-alpha * *c).exp());
-        }
+        multiclass_ova(alpha, &mut row);
         let expect = [
             1.0_f32 / (1.0 + 1.0_f32.exp()),
             0.5_f32,

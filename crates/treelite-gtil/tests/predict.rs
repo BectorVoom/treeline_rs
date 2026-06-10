@@ -282,15 +282,19 @@ fn negative_child_node_id_other_than_leaf_sentinel_is_typed_error() {
 
 #[test]
 fn unsupported_postprocessor_is_typed_error() {
-    // `hinge` is a real upstream postprocessor not yet ported (deferred to
-    // Phase 5); it must surface as a typed error, not panic. (Plan 04-02 added
-    // softmax/exponential/exp_standard_ratio/log1p_exp, so those are now
-    // supported and no longer valid "unsupported" probes.)
-    let m = model_of(vec![split_tree(0, 0.5, 1.0, -1.0)], "hinge", 0.0);
+    // A genuinely-unknown postprocessor name must surface as a typed error, not
+    // panic. (All 10 real upstream postprocessors are now ported — Plan 05-03
+    // added the last three: signed_square/hinge/multiclass_ova — so only a name
+    // that is not in the upstream set is a valid "unsupported" probe.)
+    let m = model_of(
+        vec![split_tree(0, 0.5, 1.0, -1.0)],
+        "not_a_real_postprocessor",
+        0.0,
+    );
     let data = [0.0_f32, 0.0];
     let err = predict(&m, &data, 1, &Config::default()).unwrap_err();
     assert_eq!(
         err,
-        GtilError::UnsupportedPostprocessor("hinge".to_string())
+        GtilError::UnsupportedPostprocessor("not_a_real_postprocessor".to_string())
     );
 }

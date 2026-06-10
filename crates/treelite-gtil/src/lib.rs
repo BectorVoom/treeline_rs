@@ -867,6 +867,16 @@ fn apply_postprocessor_f32(
                 *v = postprocessor::sigmoid(model.sigmoid_alpha, *v);
             }
         }
+        "signed_square" => {
+            for v in output.iter_mut() {
+                *v = postprocessor::signed_square(*v);
+            }
+        }
+        "hinge" => {
+            for v in output.iter_mut() {
+                *v = postprocessor::hinge(*v);
+            }
+        }
         "exponential" => {
             for v in output.iter_mut() {
                 *v = postprocessor::exponential(*v);
@@ -892,6 +902,23 @@ fn apply_postprocessor_f32(
                     let start = shape.idx(r, t, 0);
                     let end = start + n as usize;
                     postprocessor::softmax(&mut output[start..end]);
+                }
+            }
+        }
+        "multiclass_ova" => {
+            // One-vs-all: per (row, target) over that target's num_class cells,
+            // an independent per-class sigmoid (NOT a normalizing softmax). Same
+            // row-wise loop structure as `softmax` (predict.cc:318); sigmoid_alpha
+            // is a float model field and stays f32 (Pitfall 2).
+            for r in 0..num_row {
+                for t in 0..shape.num_target {
+                    let n = shape.num_class_of(t);
+                    if n <= 0 {
+                        continue;
+                    }
+                    let start = shape.idx(r, t, 0);
+                    let end = start + n as usize;
+                    postprocessor::multiclass_ova(model.sigmoid_alpha, &mut output[start..end]);
                 }
             }
         }
