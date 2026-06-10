@@ -17,7 +17,9 @@
 //! sklearn impurity-reduction formula (`sklearn_bulk.cc:193-205`).
 
 use treelite_core::enums::{Operator, TreeNodeType};
-use treelite_core::{Tree, TreeBuf};
+use treelite_core::{Model, ModelPreset, ModelVariant, Tree, TreeBuf};
+
+use crate::BuilderMetadata;
 
 /// Bulk-construct a `Tree<f64>` from pre-validated sklearn-shaped arrays
 /// (`sklearn_bulk.cc:36-211`), bypassing per-node validation (D-09).
@@ -188,4 +190,38 @@ pub fn bulk_construct_tree(
     tree.has_categorical_split = false;
     tree.num_nodes = n_nodes as i32;
     tree
+}
+
+/// Assemble pre-validated bulk `Tree<f64>` outputs + hand-set metadata into a
+/// `ModelVariant::F64` `Model` (`sklearn_bulk.cc:244-330`).
+///
+/// The bulk path bypasses the per-node `ModelBuilder` entirely (D-09), so this
+/// wraps the trees as `Model::new(ModelVariant::F64(ModelPreset::new(trees)))`
+/// (mirroring `concat.rs:147` and the `commit_model` metadata tail at
+/// `lib.rs`) and assigns every header field by hand from `metadata`:
+/// `num_feature`, `task_type`, `average_tree_output`, `num_target`, `num_class`,
+/// `leaf_vector_shape`, `target_id`, `class_id`, `postprocessor`, `base_scores`.
+/// `sigmoid_alpha`/`ratio_c` keep the model defaults (`1.0`) supplied by
+/// [`Model::new`]. `attributes` defaults to `"{}"` when omitted, matching the
+/// builder tail.
+///
+/// D-09: topology is NOT re-validated here — the bulk arrays are the caller's
+/// pre-validated contract (the sklearn loader in Plan 06 bounds-checks before
+/// constructing). No `panic!`/`anyhow`; this is an infallible assembly of
+/// trusted input (threat register T-04-02: accepted).
+pub fn bulk_to_model(trees: Vec<Tree<f64>>, metadata: BuilderMetadata) -> Model {
+    let mut model = Model::new(ModelVariant::F64(ModelPreset::new(trees)));
+    model.num_feature = metadata.num_feature;
+    model.task_type = metadata.task_type;
+    model.average_tree_output = metadata.average_tree_output;
+    model.num_target = metadata.num_target;
+    model.num_class = metadata.num_class;
+    model.leaf_vector_shape = metadata.leaf_vector_shape;
+    model.target_id = metadata.target_id;
+    model.class_id = metadata.class_id;
+    model.postprocessor = metadata.postprocessor;
+    model.base_scores = metadata.base_scores;
+    model.attributes = metadata.attributes.unwrap_or_else(|| "{}".to_string());
+    // sigmoid_alpha / ratio_c stay at the Model::new defaults (1.0).
+    model
 }

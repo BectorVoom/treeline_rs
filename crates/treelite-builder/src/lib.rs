@@ -15,7 +15,7 @@ pub mod bulk;
 pub mod concat;
 pub mod error;
 
-pub use bulk::bulk_construct_tree;
+pub use bulk::{bulk_construct_tree, bulk_to_model};
 pub use concat::concatenate;
 pub use error::BuilderError;
 
