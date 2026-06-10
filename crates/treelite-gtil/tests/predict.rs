@@ -66,6 +66,77 @@ fn routes_left_and_right_on_numerical_split() {
     assert_eq!(out[1], -1.0_f32);
 }
 
+/// Build a single-split categorical `Tree<f32>` on `feature` with category list
+/// `categories` and the given `category_list_right_child` polarity.
+/// - node 0: categorical test, default_left == false,
+/// - node 1: leaf with `left_leaf`,
+/// - node 2: leaf with `right_leaf`.
+fn categorical_tree(
+    feature: i32,
+    categories: Vec<u32>,
+    category_list_right_child: bool,
+    left_leaf: f32,
+    right_leaf: f32,
+) -> Tree<f32> {
+    use treelite_core::TreeNodeType;
+    let mut t = Tree::<f32>::new();
+    t.num_nodes = 3;
+    t.cleft = TreeBuf::from_owned(vec![1, -1, -1]);
+    t.cright = TreeBuf::from_owned(vec![2, -1, -1]);
+    t.split_index = TreeBuf::from_owned(vec![feature, -1, -1]);
+    t.default_left = TreeBuf::from_owned(vec![false, false, false]);
+    t.threshold = TreeBuf::from_owned(vec![0.0, 0.0, 0.0]);
+    t.cmp = TreeBuf::from_owned(vec![Operator::kNone, Operator::kNone, Operator::kNone]);
+    t.leaf_value = TreeBuf::from_owned(vec![0.0, left_leaf, right_leaf]);
+    t.node_type = TreeBuf::from_owned(vec![
+        TreeNodeType::kCategoricalTestNode,
+        TreeNodeType::kLeafNode,
+        TreeNodeType::kLeafNode,
+    ]);
+    // CSR category list: node 0 has [0, categories.len()); nodes 1/2 empty.
+    let n = categories.len() as u64;
+    t.category_list = TreeBuf::from_owned(categories);
+    t.category_list_begin = TreeBuf::from_owned(vec![0u64, n, n]);
+    t.category_list_end = TreeBuf::from_owned(vec![n, n, n]);
+    t.category_list_right_child =
+        TreeBuf::from_owned(vec![category_list_right_child, false, false]);
+    t.has_categorical_split = true;
+    t
+}
+
+#[test]
+fn categorical_match_routes_by_polarity() {
+    // category_list_right_child == false ⇒ a category MATCH routes LEFT.
+    // categories = {1, 2}; left leaf 10.0, right leaf 20.0.
+    let m = model_of(
+        vec![categorical_tree(0, vec![1, 2], false, 10.0, 20.0)],
+        "identity",
+        0.0,
+    );
+    // feature[0] = 2.0 IS in {1,2} → match → LEFT (10.0).
+    // feature[0] = 3.0 NOT in {1,2} → non-match → RIGHT (20.0).
+    let data = [2.0_f32, 9.0, 3.0, 9.0];
+    let out = predict(&m, &data, 2).unwrap();
+    assert_eq!(out[0], 10.0_f32, "category 2 in list → left");
+    assert_eq!(out[1], 20.0_f32, "category 3 not in list → right");
+}
+
+#[test]
+fn categorical_right_child_polarity_inverts_routing() {
+    // category_list_right_child == true ⇒ a MATCH routes RIGHT.
+    let m = model_of(
+        vec![categorical_tree(0, vec![1, 2], true, 10.0, 20.0)],
+        "identity",
+        0.0,
+    );
+    // feature[0] = 1.0 IS in {1,2} → match → RIGHT (20.0).
+    // feature[0] = 5.0 NOT in {1,2} → non-match → LEFT (10.0).
+    let data = [1.0_f32, 9.0, 5.0, 9.0];
+    let out = predict(&m, &data, 2).unwrap();
+    assert_eq!(out[0], 20.0_f32, "category 1 in list, right-child polarity → right");
+    assert_eq!(out[1], 10.0_f32, "category 5 not in list, right-child polarity → left");
+}
+
 #[test]
 fn nan_routes_to_default_child() {
     // default_left == true → NaN routes to the LEFT leaf (1.0), regardless of

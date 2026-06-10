@@ -158,3 +158,67 @@ fn lightgbm_numerical() -> anyhow::Result<()> {
     eprintln!("lightgbm_numerical: max |delta| = {max_dev:e} (< 1e-5)");
     Ok(())
 }
+
+/// LGB-02: a LightGBM CATEGORICAL model (bitset splits decoded via
+/// `BitsetToList`) loads → predicts → matches the upstream treelite-GTIL golden
+/// within `1e-5`. Mirrors [`lightgbm_numerical`] but its `model_path` points at
+/// the workspace-rooted `fixtures/lightgbm_categorical.txt` (a real LightGBM
+/// text model fit with `max_cat_to_onehot=1` to force bitset categorical
+/// splits, captured by Plan 04-03).
+#[test]
+fn lightgbm_categorical() -> anyhow::Result<()> {
+    let golden_path = fixture_path("lightgbm_categorical.golden.json");
+    let raw = std::fs::read_to_string(&golden_path)
+        .with_context(|| format!("reading {golden_path}"))?;
+    let golden: LgbGolden =
+        serde_json::from_str(&raw).context("parsing lightgbm_categorical.golden.json")?;
+
+    check_manifest(&golden.manifest);
+
+    // The categorical golden's model_path is workspace-rooted
+    // (`fixtures/lightgbm_categorical.txt`).
+    let model_path = workspace_path(&golden.model_path);
+    let model_text =
+        std::fs::read_to_string(&model_path).with_context(|| format!("reading {model_path}"))?;
+    let model = treelite_lightgbm::load_lightgbm(&model_text)
+        .map_err(|e| anyhow::anyhow!("{e}"))
+        .context("loading LightGBM categorical model")?;
+
+    let num_row = golden.input.len();
+    anyhow::ensure!(num_row > 0, "golden input has zero rows");
+    let num_feature = golden.n_features;
+    let mut flat: Vec<f32> = Vec::with_capacity(num_row * num_feature);
+    for (r, row) in golden.input.iter().enumerate() {
+        anyhow::ensure!(
+            row.len() == num_feature,
+            "golden input row {r} has {} cells, expected {num_feature}",
+            row.len()
+        );
+        flat.extend(row.iter().map(|&c| c as f32));
+    }
+
+    let rust = treelite_gtil::predict(&model, &flat, num_row)
+        .map_err(|e| anyhow::anyhow!("{e}"))
+        .context("predicting")?;
+
+    anyhow::ensure!(
+        rust.len() == golden.output.len(),
+        "prediction length {} != golden output length {}",
+        rust.len(),
+        golden.output.len()
+    );
+
+    let mut max_dev: f64 = 0.0;
+    for (i, &got) in rust.iter().enumerate() {
+        let expected = golden.output[i] as f32;
+        let delta = (got - expected).abs() as f64;
+        if delta > max_dev {
+            max_dev = delta;
+        }
+        // HARD 1e-5 gate — never loosen to mask a real fidelity gap.
+        approx::assert_abs_diff_eq!(got, expected, epsilon = 1e-5);
+    }
+
+    eprintln!("lightgbm_categorical: max |delta| = {max_dev:e} (< 1e-5)");
+    Ok(())
+}

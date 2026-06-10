@@ -11,7 +11,7 @@ pub mod postprocessor;
 
 pub use error::GtilError;
 
-use treelite_core::{Model, ModelVariant, Operator, Tree};
+use treelite_core::{Model, ModelVariant, Operator, Tree, TreeNodeType};
 
 /// Conversion of an `f32` feature value into a tree's threshold/leaf domain `T`,
 /// plus a cast of `T` back to `f32` for accumulation. This reifies the upstream
@@ -76,6 +76,76 @@ fn next_node<T: PartialOrd>(fvalue: T, threshold: T, op: Operator, left: i32, ri
     if cond { left } else { right }
 }
 
+/// The `NextNodeCategorical` membership switch (`predict.cc:128-150`).
+///
+/// Tests whether `fvalue` (a non-NaN feature value) names a category present in
+/// `category_list`, then routes per the `category_list_right_child` polarity: a
+/// MATCH goes right when `category_list_right_child` is true, else left (and a
+/// non-match goes the other way).
+///
+/// MINIMAL pull-forward (D-03): this ports the integer-category membership +
+/// polarity that the captured `lightgbm_categorical` fixture exercises. The full
+/// float-representability guard upstream (`predict.cc:132-139`: a category must
+/// be exactly representable as the input type AND fit in u32) is GTIL-06,
+/// deferred to Phase 5. Here we apply the load-bearing subset of that guard —
+/// reject negative or non-finite values (which can never be a valid category) so
+/// the `as u32` cast is well-defined — and leave the exhaustive
+/// representability matrix to Phase 5.
+#[inline]
+fn next_node_categorical(
+    fvalue: f32,
+    category_list: &[u32],
+    category_list_right_child: bool,
+    left: i32,
+    right: i32,
+) -> i32 {
+    // A valid category is a non-negative value that fits in u32 (the subset of
+    // the upstream guard exercised by the fixture; full GTIL-06 is Phase 5).
+    let category_matched = if fvalue < 0.0
+        || !fvalue.is_finite()
+        || fvalue > u32::MAX as f32
+    {
+        false
+    } else {
+        let category_value = fvalue as u32; // truncates toward zero (static_cast<u32>).
+        category_list.contains(&category_value)
+    };
+    if category_list_right_child {
+        if category_matched { right } else { left }
+    } else if category_matched {
+        left
+    } else {
+        right
+    }
+}
+
+/// Bounds-safe category-list slice for `nid` (T-04-12).
+///
+/// The core `Tree::category_list(nid)` indexes the CSR `category_list_begin/end`
+/// columns and slices the `category_list` value buffer directly. For builder- or
+/// serializer-produced trees that is always in-bounds, but a hand-crafted /
+/// malformed `Model` (short offset columns, or begin/end past the value buffer)
+/// would panic. Read the offsets defensively and return an empty list on any
+/// out-of-range / inverted slice rather than panicking (ERR-01) — an empty
+/// category list simply makes every category a non-match.
+fn category_list_safe<T: Copy>(tree: &Tree<T>, nid: usize) -> &[u32] {
+    let begin = tree.category_list_begin.as_slice();
+    let end = tree.category_list_end.as_slice();
+    let values = tree.category_list.as_slice();
+    match (begin.get(nid), end.get(nid)) {
+        (Some(&b), Some(&e)) => {
+            let b = b as usize;
+            let e = e as usize;
+            if b <= e && e <= values.len() {
+                &values[b..e]
+            } else {
+                &[]
+            }
+        }
+        _ => &[],
+    }
+}
+
 /// Scalar node-0 traversal (`EvaluateTree`, `predict.cc:152-172`).
 ///
 /// Walks from node 0 until a leaf is reached, routing NaN features to the
@@ -103,8 +173,20 @@ fn evaluate_tree<T: PredictScalar + PartialOrd>(
         }
         let fvalue = row[fi as usize];
         let next: i32 = if fvalue.is_nan() {
-            // Missing value → default direction (predict.cc:159).
+            // Missing value → default direction (predict.cc:158-159).
             tree.default_child(nid)
+        } else if tree.node_type(nid) == TreeNodeType::kCategoricalTestNode {
+            // Categorical split (predict.cc:161-165): membership in the node's
+            // category list, routed by the category_list_right_child polarity.
+            // `fvalue` is compared as an integer category (the float-
+            // representability guard subset lives in `next_node_categorical`).
+            next_node_categorical(
+                fvalue,
+                category_list_safe(tree, nid),
+                tree.category_list_right_child(nid),
+                tree.left_child(nid),
+                tree.right_child(nid),
+            )
         } else {
             next_node(
                 T::from_f32(fvalue),
