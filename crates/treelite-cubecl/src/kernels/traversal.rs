@@ -48,16 +48,21 @@ use cubecl::prelude::*;
 /// Returns the leaf node id (relative to this tree's `base`, i.e. the raw `nid`
 /// the caller adds `base` to when reading `leaf_value[base + nid]`).
 ///
-/// `F` is the element width of BOTH the input matrix and the threshold column
-/// (the spike uses matching widths: `<f32,f32>`+f32 input and `<f64,f64>`+f64
-/// input). The Wave-3 generalization to distinct input/threshold widths
-/// (`predict_preset<T, O>`) is layered on top of this same control-flow shape.
+/// Generic over BOTH the input element `F` (the feature matrix) and the
+/// threshold element `T` (the preset's threshold column) — Pitfall 6, mirroring
+/// `predict_preset<T, O>`. The Wave-1 spike used matching widths
+/// (`<f32,f32>`+f32 input, `<f64,f64>`+f64 input); Wave 3 generalizes to the two
+/// distinct widths by comparing the input value `fv` (in `F`) against the
+/// threshold cast into `F` (`F::cast_from(threshold[...])`), reproducing
+/// `NextNode<InputT, ThresholdT>`'s usual-arithmetic-conversion promotion
+/// (`predict.cc:99-124`). For the matching-width presets this cast is the
+/// identity, so the spike's behavior is unchanged.
 #[cube]
-pub fn descend<F: Float>(
+pub fn descend<F: Float, T: Float>(
     cleft: &Array<i32>,
     cright: &Array<i32>,
     split_index: &Array<i32>,
-    threshold: &Array<F>,
+    threshold: &Array<T>,
     default_left: &Array<u32>,
     base: u32,
     row_off: u32,
@@ -76,7 +81,10 @@ pub fn descend<F: Float>(
         // equal to itself. Verbatim equivalent of `evaluate_tree`'s
         // `fvalue.is_nan_val()`; avoids the `Float`-trait NaN associated fn whose
         // `WithScalar<bool>` return is an associated type (not plain `bool`) on
-        // generic `F` in cubecl 0.10.0.
+        // generic `F` in cubecl 0.10.0. The self-inequality is intentional (it IS
+        // the cube-frontend NaN check, decided in plan 06-02); clippy's
+        // `eq_op` deny-lint flags it, so it is scoped-allowed here (deferred-items.md).
+        #[allow(clippy::eq_op)]
         if fv != fv {
             // Missing value → default child (predict.cc:158-159). default_left is
             // the u32 0/1 column (Pitfall 4): 1 ⇒ left, else the right default.
@@ -84,8 +92,11 @@ pub fn descend<F: Float>(
                 next = cleft[(base + nid) as usize];
             }
         } else {
-            // XGBoost always kLT: fvalue < threshold ? left : right.
-            if fv < threshold[(base + nid) as usize] {
+            // XGBoost always kLT: fvalue < threshold ? left : right. The
+            // threshold (width `T`) is cast into the input width `F` to compare
+            // (`NextNode<InputT, ThresholdT>`'s promotion, predict.cc:99-124); for
+            // the matching-width presets this is the identity.
+            if fv < F::cast_from(threshold[(base + nid) as usize]) {
                 next = cleft[(base + nid) as usize];
             }
         }

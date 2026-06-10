@@ -83,7 +83,7 @@ fn predict_default_2tree<F: Float>(
         let mut acc = F::new(0.0);
         for tree_id in 0..num_tree {
             let base = node_off[tree_id as usize];
-            let leaf = descend::<F>(
+            let leaf = descend::<F, F>(
                 cleft,
                 cright,
                 split_index,

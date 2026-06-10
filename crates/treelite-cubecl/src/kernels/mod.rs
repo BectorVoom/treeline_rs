@@ -19,8 +19,16 @@ pub mod traversal;
 /// contract, CR-01). Authored in Wave 3 / plan 06-03.
 pub mod postproc;
 
-// Reserved for later waves (kept as empty module declarations so the public
-// module path is stable and Wave 3 only fills bodies, never re-wires the tree):
-//   pub mod default_raw;     // predict_default / predict_raw launch kernels
-//   pub mod leaf_id;         // predict_leaf_id launch kernel
-//   pub mod score_per_tree;  // predict_score_per_tree launch kernel
+/// `#[cube(launch)]` kernels for the `Default` / `Raw` predict kinds (fused
+/// traversal + accumulate + RF-average + f64 base-score; the `Default`
+/// postprocessor is a separate device step selected host-side). Authored in plan
+/// 06-04.
+pub mod default_raw;
+
+/// `#[cube(launch)]` kernel for the `LeafId` predict kind (one leaf node id per
+/// `(row, tree)`). Authored in plan 06-04.
+pub mod leaf_id;
+
+/// `#[cube(launch)]` kernel for the `ScorePerTree` predict kind (raw per-tree
+/// leaf data into a `(num_row, num_tree, lvs)` buffer). Authored in plan 06-04.
+pub mod score_per_tree;
