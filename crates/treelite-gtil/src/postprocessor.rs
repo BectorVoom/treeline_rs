@@ -1,9 +1,13 @@
 //! Post-processing transforms (margin → probability).
 //!
-//! Ports `treelite-mainline/src/gtil/postprocessor.cc:19-37` VERBATIM. Phase 1
-//! supports only the two postprocessors exercised by the `binary:logistic`
-//! fixture: `identity` and `sigmoid`. The remaining upstream postprocessors
-//! (`signed_square`, `hinge`, `exponential`, `softmax`, ...) are deferred.
+//! Ports `treelite-mainline/src/gtil/postprocessor.cc:19-82` VERBATIM. Phase 1
+//! shipped the two postprocessors exercised by the `binary:logistic` fixture
+//! (`identity` and `sigmoid`). Plan 04-02 pulls forward the four postprocessors
+//! the Phase-4 loaders need to verify 1e-5: `exponential`,
+//! `exponential_standard_ratio`, `logarithm_one_plus_exp`, and the row-wise
+//! `softmax`. The remaining upstream postprocessors (`signed_square`, `hinge`,
+//! `identity_multiclass`, `multiclass_ova`) are deferred to Phase 5 (complete
+//! GTIL surface).
 //!
 //! ## The 1e-5 cast-ordering contract
 //!
@@ -32,4 +36,157 @@ pub fn identity(_alpha: f32, v: f32) -> f32 {
 /// double-precision promotion anywhere (the cast-ordering contract).
 pub fn sigmoid(sigmoid_alpha: f32, v: f32) -> f32 {
     1.0_f32 / (1.0_f32 + (-sigmoid_alpha * v).exp())
+}
+
+/// `exponential` postprocessor (`postprocessor.cc:39-42`), ported verbatim:
+///
+/// ```cpp
+/// *elem = std::exp(*elem);
+/// ```
+///
+/// Instantiated with `InputT == float` in GTIL, so `std::exp` runs in `f32` —
+/// the Rust port keeps the operation in `f32` (the cast-ordering contract).
+pub fn exponential(v: f32) -> f32 {
+    v.exp()
+}
+
+/// `exponential_standard_ratio` postprocessor (`postprocessor.cc:44-47`),
+/// ported verbatim:
+///
+/// ```cpp
+/// *elem = std::exp2(-*elem / model.ratio_c);
+/// ```
+///
+/// Note `std::exp2` — base-**2** exponential, NOT `std::exp`. `ratio_c` is a
+/// `float` model field and the entire expression runs in `f32` (no
+/// double-precision promotion). Used by XGBoost `survival:aft` /
+/// `count:poisson`-adjacent objectives whose Phase-4 fixtures need it.
+pub fn exponential_standard_ratio(ratio_c: f32, v: f32) -> f32 {
+    (-v / ratio_c).exp2()
+}
+
+/// `logarithm_one_plus_exp` postprocessor (`postprocessor.cc:49-52`), ported
+/// verbatim:
+///
+/// ```cpp
+/// *elem = std::log1p(std::exp(*elem));
+/// ```
+///
+/// `std::log1p(x)` computes `ln(1 + x)` with improved precision near zero;
+/// Rust's [`f32::ln_1p`] is the exact analog. The intermediate `exp` and the
+/// `ln_1p` both run in `f32` (the cast-ordering contract).
+pub fn logarithm_one_plus_exp(v: f32) -> f32 {
+    v.exp().ln_1p()
+}
+
+/// `softmax` postprocessor (`postprocessor.cc:57-75`), ported VERBATIM with
+/// respect to the mixed f32/f64 reduction order — this ordering IS the 1e-5
+/// contract, do not "simplify":
+///
+/// ```cpp
+/// float max_margin = row[0];
+/// double norm_const = 0.0;
+/// float t;
+/// for (i = 1; i < num_class; ++i) if (row[i] > max_margin) max_margin = row[i];
+/// for (i = 0; i < num_class; ++i) { t = std::exp(row[i] - max_margin);
+///                                   norm_const += t; row[i] = t; }
+/// for (i = 0; i < num_class; ++i) row[i] /= static_cast<float>(norm_const);
+/// ```
+///
+/// Operates in place on one row's `num_class` cells. `max_margin` is `f32`,
+/// each `t = exp(row[i] - max_margin)` is computed in `f32`, the accumulator
+/// `norm_const` is `f64` (the `f32` `t` is promoted on add-into), and the final
+/// divisor is `norm_const` cast back to `f32`. An empty row is a no-op (mirrors
+/// the upstream loops never executing for `num_class == 0`).
+pub fn softmax(row: &mut [f32]) {
+    if row.is_empty() {
+        return;
+    }
+    let mut max_margin: f32 = row[0];
+    let mut norm_const: f64 = 0.0;
+    for &x in row.iter().skip(1) {
+        if x > max_margin {
+            max_margin = x;
+        }
+    }
+    for cell in row.iter_mut() {
+        let t: f32 = (*cell - max_margin).exp();
+        norm_const += t as f64;
+        *cell = t;
+    }
+    let divisor = norm_const as f32;
+    for cell in row.iter_mut() {
+        *cell /= divisor;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exponential_standard_ratio_uses_base2_exp2() {
+        // v = -2.0, ratio_c = 4.0  =>  exp2(-(-2.0)/4.0) = exp2(0.5) = sqrt(2)
+        let got = exponential_standard_ratio(4.0, -2.0);
+        let expected = 2.0_f32.sqrt();
+        assert!(
+            (got - expected).abs() < 1e-7,
+            "exp2 base-2 expected {expected}, got {got}"
+        );
+        // A second pair: v = 3.0, ratio_c = 1.0 => exp2(-3.0) = 0.125
+        let got2 = exponential_standard_ratio(1.0, 3.0);
+        assert!((got2 - 0.125_f32).abs() < 1e-7, "got {got2}");
+    }
+
+    #[test]
+    fn exponential_returns_exp() {
+        let got = exponential(1.0);
+        assert!((got - std::f32::consts::E).abs() < 1e-6, "got {got}");
+        assert!((exponential(0.0) - 1.0).abs() < 1e-7);
+    }
+
+    #[test]
+    fn logarithm_one_plus_exp_returns_log1p_exp() {
+        // ln(1 + exp(0)) = ln(2)
+        let got = logarithm_one_plus_exp(0.0);
+        assert!((got - 2.0_f32.ln()).abs() < 1e-6, "got {got}");
+        // ln(1 + exp(1))
+        let got2 = logarithm_one_plus_exp(1.0);
+        let expected2 = (1.0_f32 + 1.0_f32.exp()).ln();
+        assert!((got2 - expected2).abs() < 1e-6, "got {got2}");
+    }
+
+    #[test]
+    fn softmax_sums_to_one_and_matches_reference() {
+        // Hand reference for [1.0, 2.0, 3.0] with max-subtraction.
+        let mut row = [1.0_f32, 2.0, 3.0];
+        softmax(&mut row);
+        let sum: f32 = row.iter().sum();
+        assert!((sum - 1.0).abs() < 1e-6, "softmax row sums to {sum}");
+
+        // Reference: same f32-exp / f64-accumulate / f32-divide ordering.
+        let m = 3.0_f32;
+        let t: [f32; 3] = [
+            (1.0_f32 - m).exp(),
+            (2.0_f32 - m).exp(),
+            (3.0_f32 - m).exp(),
+        ];
+        let norm = t[0] as f64 + t[1] as f64 + t[2] as f64;
+        let d = norm as f32;
+        for i in 0..3 {
+            let expected = t[i] / d;
+            assert!(
+                (row[i] - expected).abs() < 1e-6,
+                "class {i}: expected {expected}, got {}",
+                row[i]
+            );
+        }
+    }
+
+    #[test]
+    fn softmax_empty_row_is_noop() {
+        let mut row: [f32; 0] = [];
+        softmax(&mut row);
+        assert_eq!(row.len(), 0);
+    }
 }
