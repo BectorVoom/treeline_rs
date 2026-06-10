@@ -177,6 +177,13 @@ dependencies = [
 [[package]]
 name = "treelite-lightgbm"
 version = "0.1.0"
+dependencies = [
+ "approx",
+ "thiserror",
+ "treelite-builder",
+ "treelite-core",
+ "treelite-gtil",
+]
 
 [[package]]
 name = "treelite-sklearn"
