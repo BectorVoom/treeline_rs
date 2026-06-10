@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
+status: executing
 stopped_at: Phase 4 context gathered
-last_updated: "2026-06-10T03:40:49.853Z"
-last_activity: 2026-06-10 -- Phase 04 planning complete
+last_updated: "2026-06-10T03:59:39.423Z"
+last_activity: 2026-06-10 -- Phase 04 execution started
 progress:
   total_phases: 9
   completed_phases: 3
-  total_plans: 14
+  total_plans: 22
   completed_plans: 14
   percent: 33
 ---
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-09)
 
 **Core value:** Predictions match upstream Treelite within 1e-5.
-**Current focus:** Phase 03 — full-xgboost-loaders
+**Current focus:** Phase 04 — lightgbm-scikit-learn-loaders
 
 ## Current Position
 
-Phase: 4 of 4 (lightgbm & scikit learn loaders)
-Plan: Not started
-Status: Phase 03 plans 01-04 all complete; all three XGBoost formats load + predict 1e-5 + byte-identical
-Last activity: 2026-06-10 -- Phase 04 planning complete
+Phase: 04 (lightgbm-scikit-learn-loaders) — EXECUTING
+Plan: 2 of 8
+Status: Executing Phase 04 — Plan 04-01 complete (f64 ModelBuilder mode + bulk_to_model; D-05 gate open)
+Last activity: 2026-06-10 -- Plan 04-01 complete
 
-Progress: [██████████] 100% (Phase 03 plans)
+Progress: [█░░░░░░░] 13% (Phase 04 plans: 1/8)
 
 ## Performance Metrics
 
@@ -67,6 +67,7 @@ Progress: [██████████] 100% (Phase 03 plans)
 | Phase 03 P02 | 18min | 2 tasks | 7 files |
 | Phase 03 P03 | 22min | 2 tasks | 6 files |
 | Phase 03 P04 | 30min | 2 tasks | 6 files |
+| Phase 04 P01 | 12min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -115,6 +116,10 @@ Recent decisions affecting current work:
 - [03-04]: Legacy binary decodes field-by-field via a from_le_bytes Cursor (D-07/D-08) — no native-endian struct reinterpret (grep gate). Converges at build_model_from_parsed via XgbModelJson::from_legacy_fields, producing a Model byte-identical to JSON/UBJSON; sindex bit-unpack (&0x7FFFFFFF / >>31), cleft==-1 leaf, info-union f32 reinterpret ported exactly (Pitfall 6).
 - [03-04]: GBTreeModelParam is 160 BYTES, not 168 (RESEARCH transcription error) — upstream struct is 4×i32+i64+2×i32+i32[32]=160, no trailing padding; confirmed against mushroom.model (header@173 + 160 + 1168 == 1501). Rule-1 fix caught by the mushroom smoke test.
 - [03-04]: Version gate mapped by setting version=[major_version] so the shared path's version[0]>=1 gate reproduces the legacy major_version>=1 gate (XGB-05); mushroom (major_version 0) is the negative case, verified ±.
+- [04-01]: f64 ModelBuilder mode is parallel-staging (RESEARCH Open Q2 option B), NOT generic-over-T — NodeStaging carries both f32 and f64 value fields, end_tree branches on a latched is_f64 flag; the f32 XGBoost path stays byte-identical. leaf_scalar_f64/leaf_vector_f64/numerical_test_f64 store f64 WITHOUT downcast (D-05); commit_model wraps ModelVariant::F64(ModelPreset::new(trees)). A shared fill_common! macro keeps the 25-column Tree shape (CR-01/CR-02) identical across both modes.
+- [04-01]: MixedNumericMode error rejects mixing f32/f64 entry points in one builder (Rule 2) — protects the 1e-5 fidelity gate from silent downcast/discard.
+- [04-01]: bulk_to_model (bulk.rs) wraps Vec<Tree<f64>> + BuilderMetadata into a ModelVariant::F64 Model, hand-setting all 10 header fields (sklearn_bulk.cc:244-330); sigmoid_alpha/ratio_c keep Model::new 1.0 defaults, attributes defaults to {}; no topology re-check (D-09, T-04-02 accepted).
+- [04-01]: treelite-lightgbm/treelite-sklearn registered in root Cargo.toml as PLACEHOLDER crates (Rule 3) — registering non-existent members breaks the whole workspace, so minimal doc-only lib stubs keep cargo valid; real loaders land in Plans 04-04/04-06.
 - [03-04]: DEF-02-01/D-10 CLOSED across all three formats — serialize(load_json)==serialize(load_ubjson)==serialize(load_legacy)==golden_v5_3format.bin; three_format_equivalence + golden_v5 loader assertion promoted to fatal; cargo test --workspace fully green.
 
 ### Pending Todos
