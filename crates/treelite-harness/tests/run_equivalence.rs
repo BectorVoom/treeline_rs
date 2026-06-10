@@ -150,8 +150,8 @@ fn run_equivalence_catches_perturbation_beyond_1e5() {
     // turns that into an `Err`. Either a panic (Err) or a returned `Err` proves
     // the deviation was caught.
     let caught = match result {
-        Err(_) => true,                 // assertion panicked → caught
-        Ok(Err(_)) => true,             // returned an error → caught
+        Err(_) => true,     // assertion panicked → caught
+        Ok(Err(_)) => true, // returned an error → caught
         Ok(Ok(max_dev)) => {
             panic!(
                 "run_equivalence must NOT succeed on a >1e-5 perturbation \

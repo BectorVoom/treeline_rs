@@ -130,8 +130,7 @@ struct HistGbGolden {
 /// standard base64 by the capture script, so only the standard alphabet +
 /// `=` padding is needed.
 fn base64_decode(s: &str) -> anyhow::Result<Vec<u8>> {
-    const ALPHABET: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     // Reverse lookup: byte -> 6-bit value (255 = invalid).
     let mut rev = [255u8; 256];
     for (i, &c) in ALPHABET.iter().enumerate() {
@@ -183,7 +182,11 @@ fn run_histgb_golden(path: &str, label: &str) -> anyhow::Result<f64> {
     // Decode packed nodes + borrow as slice-of-slices for the D-01 signature.
     let nodes_owned = decode_nodes(&h.nodes_b64)?;
     let nodes: Vec<&[u8]> = nodes_owned.iter().map(|v| v.as_slice()).collect();
-    let bitsets: Vec<&[u32]> = h.raw_left_cat_bitsets.iter().map(|v| v.as_slice()).collect();
+    let bitsets: Vec<&[u32]> = h
+        .raw_left_cat_bitsets
+        .iter()
+        .map(|v| v.as_slice())
+        .collect();
 
     // Identity categories_map when the model has no categorical splits.
     let categories_map: Option<&[Vec<i64>]> = if h.categories_map.is_empty() {
@@ -347,10 +350,9 @@ fn assert_within_1e5(rust: &[f32], golden: &[f64], label: &str) -> anyhow::Resul
 #[test]
 fn sklearn_rf() -> anyhow::Result<()> {
     let golden_path = fixture_path("sklearn_rf.golden.json");
-    let raw = std::fs::read_to_string(&golden_path)
-        .with_context(|| format!("reading {golden_path}"))?;
-    let golden: RfGolden =
-        serde_json::from_str(&raw).context("parsing sklearn_rf.golden.json")?;
+    let raw =
+        std::fs::read_to_string(&golden_path).with_context(|| format!("reading {golden_path}"))?;
+    let golden: RfGolden = serde_json::from_str(&raw).context("parsing sklearn_rf.golden.json")?;
     check_manifest(&golden.manifest);
 
     let mut worst: f64 = 0.0;
@@ -401,9 +403,10 @@ fn sklearn_rf() -> anyhow::Result<()> {
             .with_context(|| format!("loading {name}"))?
         };
 
-        let rust = treelite_gtil::predict(&model, &flat, num_row, &treelite_gtil::Config::default())
-            .map_err(|e| anyhow::anyhow!("{e}"))
-            .with_context(|| format!("predicting {name}"))?;
+        let rust =
+            treelite_gtil::predict(&model, &flat, num_row, &treelite_gtil::Config::default())
+                .map_err(|e| anyhow::anyhow!("{e}"))
+                .with_context(|| format!("predicting {name}"))?;
         let dev = assert_within_1e5(&rust, &fam.output, name)?;
         eprintln!("sklearn_rf [{name}]: max |delta| = {dev:e} (< 1e-5)");
         worst = worst.max(dev);
@@ -418,10 +421,9 @@ fn sklearn_rf() -> anyhow::Result<()> {
 #[test]
 fn sklearn_gb() -> anyhow::Result<()> {
     let golden_path = fixture_path("sklearn_gb.golden.json");
-    let raw = std::fs::read_to_string(&golden_path)
-        .with_context(|| format!("reading {golden_path}"))?;
-    let golden: GbGolden =
-        serde_json::from_str(&raw).context("parsing sklearn_gb.golden.json")?;
+    let raw =
+        std::fs::read_to_string(&golden_path).with_context(|| format!("reading {golden_path}"))?;
+    let golden: GbGolden = serde_json::from_str(&raw).context("parsing sklearn_gb.golden.json")?;
     check_manifest(&golden.manifest);
 
     let mut worst: f64 = 0.0;
@@ -468,9 +470,10 @@ fn sklearn_gb() -> anyhow::Result<()> {
             .with_context(|| format!("loading {name}"))?
         };
 
-        let rust = treelite_gtil::predict(&model, &flat, num_row, &treelite_gtil::Config::default())
-            .map_err(|e| anyhow::anyhow!("{e}"))
-            .with_context(|| format!("predicting {name}"))?;
+        let rust =
+            treelite_gtil::predict(&model, &flat, num_row, &treelite_gtil::Config::default())
+                .map_err(|e| anyhow::anyhow!("{e}"))
+                .with_context(|| format!("predicting {name}"))?;
         let dev = assert_within_1e5(&rust, &fam.output, name)?;
         eprintln!("sklearn_gb [{name}]: max |delta| = {dev:e} (< 1e-5)");
         worst = worst.max(dev);
@@ -489,8 +492,8 @@ fn sklearn_gb() -> anyhow::Result<()> {
 #[test]
 fn sklearn_iforest() -> anyhow::Result<()> {
     let golden_path = fixture_path("sklearn_iforest.golden.json");
-    let raw = std::fs::read_to_string(&golden_path)
-        .with_context(|| format!("reading {golden_path}"))?;
+    let raw =
+        std::fs::read_to_string(&golden_path).with_context(|| format!("reading {golden_path}"))?;
     let golden: IForestGolden =
         serde_json::from_str(&raw).context("parsing sklearn_iforest.golden.json")?;
     check_manifest(&golden.manifest);

@@ -30,7 +30,7 @@ use std::path::Path;
 
 use anyhow::Context;
 use treelite_core::Model;
-use treelite_harness::{load_golden, Golden};
+use treelite_harness::{Golden, load_golden};
 
 /// Resolve a path under `fixtures/` relative to the workspace root
 /// (copied from `golden_v5.rs:37-43`).
@@ -142,9 +142,7 @@ fn three_format_predicts_within_1e5() -> anyhow::Result<()> {
     let d_ubj = assert_predicts_within_1e5(&m_ubj, &golden, "ubjson")?;
     let d_legacy = assert_predicts_within_1e5(&m_legacy, &golden, "legacy")?;
 
-    println!(
-        "three-format 1e-5 max|delta|: json={d_json:e} ubjson={d_ubj:e} legacy={d_legacy:e}"
-    );
+    println!("three-format 1e-5 max|delta|: json={d_json:e} ubjson={d_ubj:e} legacy={d_legacy:e}");
     Ok(())
 }
 

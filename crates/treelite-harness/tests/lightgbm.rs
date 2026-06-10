@@ -104,8 +104,8 @@ fn check_manifest(manifest: &LgbManifest) {
 #[test]
 fn lightgbm_numerical() -> anyhow::Result<()> {
     let golden_path = fixture_path("lightgbm_numerical.golden.json");
-    let raw = std::fs::read_to_string(&golden_path)
-        .with_context(|| format!("reading {golden_path}"))?;
+    let raw =
+        std::fs::read_to_string(&golden_path).with_context(|| format!("reading {golden_path}"))?;
     let golden: LgbGolden =
         serde_json::from_str(&raw).context("parsing lightgbm_numerical.golden.json")?;
 
@@ -168,8 +168,8 @@ fn lightgbm_numerical() -> anyhow::Result<()> {
 #[test]
 fn lightgbm_categorical() -> anyhow::Result<()> {
     let golden_path = fixture_path("lightgbm_categorical.golden.json");
-    let raw = std::fs::read_to_string(&golden_path)
-        .with_context(|| format!("reading {golden_path}"))?;
+    let raw =
+        std::fs::read_to_string(&golden_path).with_context(|| format!("reading {golden_path}"))?;
     let golden: LgbGolden =
         serde_json::from_str(&raw).context("parsing lightgbm_categorical.golden.json")?;
 

@@ -24,8 +24,114 @@
 use std::fmt;
 
 use anyhow::Context;
-use serde::de::{Deserializer, Visitor};
 use serde::Deserialize;
+use serde::de::{Deserializer, Visitor};
+
+pub mod manifest;
+
+pub use manifest::{Manifest, check_manifest};
+
+use treelite_core::Model;
+use treelite_gtil::{Config, SparseCsr};
+
+// ----------------------------------------------------------------------------
+// Backend-parameterized seam (D-11, RESEARCH Pattern 4) — DESIGN ONLY this
+// phase. The minimal seam is a small tag enum + a fn-pointer registry, NOT a
+// trait-object hierarchy. Phase 6/7 register a new backend by adding a variant
+// and a `RunnerCase` constructor — the matrix iteration in
+// `tests/gtil_matrix.rs` never changes.
+// ----------------------------------------------------------------------------
+
+/// Which compute runtime produces (and is asserted by) a matrix cell (D-09/D-11).
+///
+/// Phase 5 has exactly one variant — the plain-Rust scalar reference every
+/// later backend is measured against to 1e-5. The future variants
+/// (`CubeclCpu`, `Cuda`, `Wgpu`, `Rocm`) are NOT added yet; they land in Phase
+/// 6/7 as a registration (a new variant + a [`RunnerCase`] constructor), with
+/// NO change to the matrix iteration (RESEARCH Pattern 4 — "avoid
+/// over-engineering into a full trait object hierarchy").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Backend {
+    /// The plain-Rust scalar GTIL engine (`treelite_gtil::predict` /
+    /// `predict_sparse`). The reference/fallback (manifest `backend ==
+    /// "scalar-cpu"`).
+    ScalarCpu,
+    // Phase 6/7: CubeclCpu, Cuda, Wgpu, Rocm — added as registrations.
+}
+
+/// Dense predict over an **f32-input** matrix (D-05). The output element type is
+/// fixed to `f64` so EVERY golden — f32-input and f64-input alike — is compared
+/// on ONE accumulator; only the *input* element type varies per fixture.
+pub type DensePredictF32Fn = fn(&Model, &[f32], usize, &Config) -> anyhow::Result<Vec<f64>>;
+/// Dense predict over an **f64-input** matrix (D-05).
+pub type DensePredictF64Fn = fn(&Model, &[f64], usize, &Config) -> anyhow::Result<Vec<f64>>;
+/// Sparse-CSR predict over an **f32-input** matrix (D-05).
+pub type SparsePredictF32Fn =
+    fn(&Model, SparseCsr<'_, f32>, usize, &Config) -> anyhow::Result<Vec<f64>>;
+/// Sparse-CSR predict over an **f64-input** matrix (D-05).
+pub type SparsePredictF64Fn =
+    fn(&Model, SparseCsr<'_, f64>, usize, &Config) -> anyhow::Result<Vec<f64>>;
+
+/// A registered backend's predict entry points — BOTH input dtypes for both
+/// layouts (D-05, RESEARCH Pitfall 1).
+///
+/// The seam carries four fn pointers, not one: the committed matrix has both
+/// f32-input and f64-input cells, and `predict`/`predict_sparse` are O-generic
+/// over the input element type. An f32-input fixture MUST flow through the f32
+/// entry point with NO f32→f64 pre-cast (casting before predict would erase the
+/// input-dtype axis and hide the InputT-as-accumulator behavior this instrument
+/// exists to verify). The output is uniformly `f64` so all goldens compare on
+/// one accumulator.
+///
+/// Phase 6 registers `Backend::CubeclCpu` by adding a `RunnerCase` whose four
+/// slots point at `cubecl_predict_f32`/`_f64` and `cubecl_predict_sparse_*` —
+/// without touching the matrix iteration.
+#[derive(Clone, Copy)]
+pub struct RunnerCase {
+    /// Which backend these fn pointers belong to.
+    pub backend: Backend,
+    /// Dense f32-input entry point.
+    pub dense_f32: DensePredictF32Fn,
+    /// Dense f64-input entry point.
+    pub dense_f64: DensePredictF64Fn,
+    /// Sparse f32-input entry point.
+    pub sparse_f32: SparsePredictF32Fn,
+    /// Sparse f64-input entry point.
+    pub sparse_f64: SparsePredictF64Fn,
+}
+
+/// The scalar-cpu [`RunnerCase`] (Phase-5 reference). Wires the four
+/// `treelite_gtil` O-generic entry points — `predict::<f32>`/`predict::<f64>`
+/// and `predict_sparse::<f32>`/`predict_sparse::<f64>` — into the four slots,
+/// bridging the typed `GtilError` into `anyhow`.
+pub fn scalar_cpu_case() -> RunnerCase {
+    RunnerCase {
+        backend: Backend::ScalarCpu,
+        dense_f32: |model, data, num_row, cfg| {
+            // f32 input → f32 output, widened to the common f64 accumulator for
+            // comparison. The PREDICT runs in f32 (no pre-cast); only the
+            // already-computed f32 results are lifted to f64 afterwards.
+            let out = treelite_gtil::predict::<f32>(model, data, num_row, cfg)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok(out.into_iter().map(|v| v as f64).collect())
+        },
+        dense_f64: |model, data, num_row, cfg| {
+            let out = treelite_gtil::predict::<f64>(model, data, num_row, cfg)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok(out)
+        },
+        sparse_f32: |model, csr, num_row, cfg| {
+            let out = treelite_gtil::predict_sparse::<f32>(model, csr, num_row, cfg)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok(out.into_iter().map(|v| v as f64).collect())
+        },
+        sparse_f64: |model, csr, num_row, cfg| {
+            let out = treelite_gtil::predict_sparse::<f64>(model, csr, num_row, cfg)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok(out)
+        },
+    }
+}
 
 /// One input feature cell: a finite number, or a missing value (`f32::NAN`).
 ///
@@ -84,29 +190,6 @@ pub struct Golden {
     pub manifest: Manifest,
 }
 
-/// Capture-environment provenance (D-07).
-///
-/// Keys match exactly what `capture_golden.py` writes. `libc` is a
-/// `serde_json::Value` because `platform.libc_ver()` is a Python tuple
-/// (serialized as a JSON array, e.g. `["glibc", "2.39"]`).
-#[derive(Debug, Deserialize)]
-pub struct Manifest {
-    /// Upstream Treelite version the golden was captured against (e.g. `4.7.0`).
-    pub treelite: String,
-    /// XGBoost version used to author the fixture (optional).
-    #[serde(default)]
-    pub xgboost: Option<String>,
-    /// `platform.platform()` string (e.g. `Linux-...-x86_64-with-glibc2.39`).
-    pub os: String,
-    /// `platform.machine()` (e.g. `x86_64`).
-    pub arch: String,
-    /// `platform.libc_ver()` tuple (e.g. `["glibc", "2.39"]`).
-    pub libc: serde_json::Value,
-    /// Python version of the capture environment (optional).
-    #[serde(default)]
-    pub python: Option<String>,
-}
-
 /// Load + parse the frozen golden artifact.
 ///
 /// Reads `path`, normalizes Python's bare `NaN` tokens to JSON `null` (so
@@ -114,11 +197,10 @@ pub struct Manifest {
 /// A read or parse failure surfaces an `anyhow` context chain rather than an
 /// opaque panic (ERR-02, T-04-01).
 pub fn load_golden(path: &str) -> anyhow::Result<Golden> {
-    let raw = std::fs::read_to_string(path)
-        .with_context(|| format!("reading golden.json at {path}"))?;
+    let raw =
+        std::fs::read_to_string(path).with_context(|| format!("reading golden.json at {path}"))?;
     let normalized = normalize_nan_tokens(&raw);
-    let golden: Golden =
-        serde_json::from_str(&normalized).context("parsing golden.json")?;
+    let golden: Golden = serde_json::from_str(&normalized).context("parsing golden.json")?;
     Ok(golden)
 }
 
@@ -230,36 +312,6 @@ pub fn run_equivalence(model_json_path: &str, golden: &Golden) -> anyhow::Result
     }
 
     Ok(max_dev)
-}
-
-/// Warn (never fail) when the running environment differs from the capture
-/// environment recorded in the golden's manifest (D-07, T-04-02).
-///
-/// A `1e-5` failure on a different distro is most often a libm/glibc divergence
-/// (RESEARCH Pitfall 4). Surfacing the drift here makes such a failure
-/// immediately diagnosable, without the manifest itself ever passing/failing the
-/// equivalence gate.
-pub fn check_manifest(manifest: &Manifest) {
-    let running_os = std::env::consts::OS;
-    let running_arch = std::env::consts::ARCH;
-
-    // `manifest.os` is `platform.platform()` (a verbose descriptor), so a
-    // substring check against the coarse `std::env::consts::OS` (e.g. "linux")
-    // is the right granularity here.
-    if !manifest.os.to_lowercase().contains(running_os) {
-        eprintln!(
-            "WARNING: golden captured on OS '{}' but running on '{}' — \
-             a 1e-5 deviation here may be a libm/environment divergence (D-07).",
-            manifest.os, running_os
-        );
-    }
-    if manifest.arch.to_lowercase() != running_arch.to_lowercase() {
-        eprintln!(
-            "WARNING: golden captured on arch '{}' but running on '{}' — \
-             a 1e-5 deviation here may be an environment divergence (D-07).",
-            manifest.arch, running_arch
-        );
-    }
 }
 
 #[cfg(test)]
