@@ -6,6 +6,8 @@ members = [
     "crates/treelite-gtil",
     "crates/treelite-harness",
     "crates/treelite-builder",
+    "crates/treelite-lightgbm",
+    "crates/treelite-sklearn",
 ]
 
 [workspace.package]

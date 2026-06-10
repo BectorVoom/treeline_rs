@@ -175,6 +175,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "treelite-lightgbm"
+version = "0.1.0"
+
+[[package]]
+name = "treelite-sklearn"
+version = "0.1.0"
+
+[[package]]
 name = "treelite-xgboost"
 version = "0.1.0"
 dependencies = [

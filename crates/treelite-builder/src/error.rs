@@ -134,6 +134,19 @@ pub enum BuilderError {
         field: &'static str,
     },
 
+    /// f32 and f64 entry points were mixed within one builder. The numeric mode
+    /// is latched on first f64 use; a builder produces exactly one of
+    /// `ModelVariant::F32` / `ModelVariant::F64`. Mixing would silently downcast
+    /// or discard one type's values, breaking the 1e-5 fidelity gate, so it is
+    /// rejected (Plan 04-01, RESEARCH Open Q2 / Pitfall 1).
+    #[error(
+        "cannot mix f32 and f64 entry points in one builder (this builder is already in {existing} mode)"
+    )]
+    MixedNumericMode {
+        /// The numeric mode already latched on this builder (`"f32"` or `"f64"`).
+        existing: &'static str,
+    },
+
     /// An error bubbled up from `treelite-core`.
     #[error(transparent)]
     Core(#[from] treelite_core::CoreError),

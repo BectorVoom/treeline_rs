@@ -83,6 +83,12 @@ struct NodeStaging {
     default_left: bool,
     leaf_value: f32,
     threshold: f32,
+    // Parallel f64 leaf/threshold staging for the f64 construction mode
+    // (RESEARCH Open Q2). The f32 path writes `leaf_value`/`threshold`; the f64
+    // path writes these. Storing both (rather than a generic-over-T state
+    // machine) keeps the working f32 path byte-identical — it never reads these.
+    leaf_value_f64: f64,
+    threshold_f64: f64,
     cmp: Operator,
     data_count: u64,
     data_count_present: bool,
@@ -103,6 +109,8 @@ impl NodeStaging {
             default_left: false,
             leaf_value: 0.0,
             threshold: 0.0,
+            leaf_value_f64: 0.0,
+            threshold_f64: 0.0,
             cmp: Operator::kNone,
             data_count: 0,
             data_count_present: false,
@@ -131,8 +139,19 @@ pub struct ModelBuilder {
     expected_num_tree: usize,
     expected_leaf_size: usize,
 
-    // accumulated finished trees
+    // accumulated finished f32 trees (the XGBoost path, unchanged)
     trees: Vec<Tree<f32>>,
+
+    // accumulated finished f64 trees (the Phase-4 LightGBM/sklearn path). Empty
+    // unless an f64 entry point has been used. A builder commits to whichever
+    // variant matches the `is_f64` mode latched on first f64-detail use.
+    trees_f64: Vec<Tree<f64>>,
+
+    // Construction mode: `false` ⇒ f32 (default; the XGBoost path), `true` ⇒
+    // f64. Latched the first time an f64 entry point (`leaf_scalar_f64`,
+    // `leaf_vector_f64`, `numerical_test_f64`) is used; mixing f32 and f64
+    // entry points in one builder is rejected (`MixedNumericMode`).
+    is_f64: bool,
 
     // current tree under construction
     // node_id_map: user key -> internal index (declaration order). BTreeMap to
@@ -162,6 +181,8 @@ impl ModelBuilder {
             expected_num_tree: 0,
             expected_leaf_size: 0,
             trees: Vec::new(),
+            trees_f64: Vec::new(),
+            is_f64: false,
             node_id_map: BTreeMap::new(),
             nodes: Vec::new(),
             current_node_key: 0,
@@ -231,6 +252,7 @@ impl ModelBuilder {
             &[BuilderState::ExpectDetail],
             "numerical_test(), categorical_test(), leaf_scalar(), leaf_vector(), gain(), data_count(), or sum_hess()",
         )?;
+        self.guard_f32()?;
         self.validate_test_children(split_index, left_child_key, right_child_key)?;
 
         let node = &mut self.nodes[self.current_node_id as usize];
@@ -262,6 +284,7 @@ impl ModelBuilder {
             &[BuilderState::ExpectDetail],
             "numerical_test(), categorical_test(), leaf_scalar(), leaf_vector(), gain(), data_count(), or sum_hess()",
         )?;
+        self.guard_f32()?;
         self.validate_test_children(split_index, left_child_key, right_child_key)?;
 
         let node = &mut self.nodes[self.current_node_id as usize];
@@ -284,6 +307,7 @@ impl ModelBuilder {
             &[BuilderState::ExpectDetail],
             "numerical_test(), categorical_test(), leaf_scalar(), leaf_vector(), gain(), data_count(), or sum_hess()",
         )?;
+        self.guard_f32()?;
         if self.metadata.is_some() && self.expected_leaf_size != 1 {
             return Err(BuilderError::LeafVectorSizeMismatch {
                 expected: self.expected_leaf_size,
@@ -311,6 +335,96 @@ impl ModelBuilder {
             &[BuilderState::ExpectDetail],
             "numerical_test(), categorical_test(), leaf_scalar(), leaf_vector(), gain(), data_count(), or sum_hess()",
         )?;
+        self.guard_f32()?;
+        if self.metadata.is_some() && self.expected_leaf_size != leaf_vector.len() {
+            return Err(BuilderError::LeafVectorSizeMismatch {
+                expected: self.expected_leaf_size,
+                got: leaf_vector.len(),
+            });
+        }
+        let node = &mut self.nodes[self.current_node_id as usize];
+        node.node_type = TreeNodeType::kLeafNode;
+        node.raw_left = -1;
+        node.raw_right = -1;
+        node.cmp = Operator::kNone;
+        node.is_leaf = true;
+
+        self.state = BuilderState::NodeComplete;
+        Ok(())
+    }
+
+    /// Configure the current node as a numerical test in f64 mode (the f64
+    /// parallel of [`Self::numerical_test`]). Latches the builder into f64 mode
+    /// (RESEARCH Open Q2). The f64 `threshold` is stored WITHOUT downcast.
+    pub fn numerical_test_f64(
+        &mut self,
+        split_index: i32,
+        threshold: f64,
+        default_left: bool,
+        cmp: Operator,
+        left_child_key: i32,
+        right_child_key: i32,
+    ) -> Result<(), BuilderError> {
+        self.check_state(
+            &[BuilderState::ExpectDetail],
+            "numerical_test(), categorical_test(), leaf_scalar(), leaf_vector(), gain(), data_count(), or sum_hess()",
+        )?;
+        self.latch_f64()?;
+        self.validate_test_children(split_index, left_child_key, right_child_key)?;
+
+        let node = &mut self.nodes[self.current_node_id as usize];
+        node.node_type = TreeNodeType::kNumericalTestNode;
+        node.split_index = split_index;
+        node.threshold_f64 = threshold;
+        node.default_left = default_left;
+        node.cmp = cmp;
+        node.raw_left = left_child_key;
+        node.raw_right = right_child_key;
+        node.is_leaf = false;
+
+        self.state = BuilderState::NodeComplete;
+        Ok(())
+    }
+
+    /// Set a scalar leaf output in f64 mode (the f64 parallel of
+    /// [`Self::leaf_scalar`]). Latches the builder into f64 mode. The f64 value
+    /// is stored WITHOUT downcast to f32 (the core requirement of D-05 — see the
+    /// 1e-5 fidelity gate).
+    pub fn leaf_scalar_f64(&mut self, value: f64) -> Result<(), BuilderError> {
+        self.check_state(
+            &[BuilderState::ExpectDetail],
+            "numerical_test(), categorical_test(), leaf_scalar(), leaf_vector(), gain(), data_count(), or sum_hess()",
+        )?;
+        self.latch_f64()?;
+        if self.metadata.is_some() && self.expected_leaf_size != 1 {
+            return Err(BuilderError::LeafVectorSizeMismatch {
+                expected: self.expected_leaf_size,
+                got: 1,
+            });
+        }
+        let node = &mut self.nodes[self.current_node_id as usize];
+        node.node_type = TreeNodeType::kLeafNode;
+        node.raw_left = -1;
+        node.raw_right = -1;
+        node.leaf_value_f64 = value;
+        node.cmp = Operator::kNone;
+        node.is_leaf = true;
+
+        self.state = BuilderState::NodeComplete;
+        Ok(())
+    }
+
+    /// Set a leaf vector in f64 mode (the f64 parallel of [`Self::leaf_vector`]).
+    /// Latches the builder into f64 mode. As with the f32 `leaf_vector`, the
+    /// leaf-vector value columns are not yet wired into the built `Tree` (the
+    /// Phase-4 loaders that need vector leaves use [`bulk::bulk_to_model`]); this
+    /// validates the expected length and marks the node a leaf.
+    pub fn leaf_vector_f64(&mut self, leaf_vector: &[f64]) -> Result<(), BuilderError> {
+        self.check_state(
+            &[BuilderState::ExpectDetail],
+            "numerical_test(), categorical_test(), leaf_scalar(), leaf_vector(), gain(), data_count(), or sum_hess()",
+        )?;
+        self.latch_f64()?;
         if self.metadata.is_some() && self.expected_leaf_size != leaf_vector.len() {
             return Err(BuilderError::LeafVectorSizeMismatch {
                 expected: self.expected_leaf_size,
@@ -433,14 +547,14 @@ impl ModelBuilder {
             });
         }
 
-        // Build the Tree<f32> columns (`xgboost::build_tree` structural template).
+        // Build the structural columns shared by both numeric modes
+        // (`xgboost::build_tree` structural template). Only `leaf_value` /
+        // `threshold` are typed (`T`); they are filled per-mode below.
         let mut node_type = Vec::with_capacity(num_nodes);
         let mut cleft = Vec::with_capacity(num_nodes);
         let mut cright = Vec::with_capacity(num_nodes);
         let mut split_index = Vec::with_capacity(num_nodes);
         let mut default_left = Vec::with_capacity(num_nodes);
-        let mut leaf_value = Vec::with_capacity(num_nodes);
-        let mut threshold = Vec::with_capacity(num_nodes);
         let mut cmp = Vec::with_capacity(num_nodes);
 
         for (n, &(rl, rr)) in self.nodes.iter().zip(resolved.iter()) {
@@ -449,8 +563,6 @@ impl ModelBuilder {
             cright.push(rr);
             split_index.push(n.split_index);
             default_left.push(n.default_left);
-            leaf_value.push(n.leaf_value);
-            threshold.push(n.threshold);
             cmp.push(n.cmp);
         }
 
@@ -474,64 +586,97 @@ impl ModelBuilder {
         let any_data_count = self.nodes.iter().any(|n| n.data_count_present);
         let any_sum_hess = self.nodes.iter().any(|n| n.sum_hess_present);
         let any_gain = self.nodes.iter().any(|n| n.gain_present);
-
-        let mut tree = Tree::<f32>::new();
-        tree.node_type = TreeBuf::from_owned(node_type);
-        tree.cleft = TreeBuf::from_owned(cleft);
-        tree.cright = TreeBuf::from_owned(cright);
-        tree.split_index = TreeBuf::from_owned(split_index);
-        tree.default_left = TreeBuf::from_owned(default_left);
-        tree.leaf_value = TreeBuf::from_owned(leaf_value);
-        tree.threshold = TreeBuf::from_owned(threshold);
-        tree.cmp = TreeBuf::from_owned(cmp);
-        // CR-01 per-node AllocNode columns (tree.h:79-84).
-        tree.category_list_right_child = TreeBuf::from_owned(category_list_right_child);
-        tree.leaf_vector_begin = TreeBuf::from_owned(leaf_vector_begin);
-        tree.leaf_vector_end = TreeBuf::from_owned(leaf_vector_end);
-        tree.category_list_begin = TreeBuf::from_owned(category_list_begin);
-        tree.category_list_end = TreeBuf::from_owned(category_list_end);
-        // CR-02 empty-unless-set stat columns (tree.h:87-98).
-        if any_data_count {
-            tree.data_count =
-                TreeBuf::from_owned(self.nodes.iter().map(|n| n.data_count).collect());
-            tree.data_count_present =
-                TreeBuf::from_owned(self.nodes.iter().map(|n| n.data_count_present).collect());
-        } else {
-            tree.data_count = TreeBuf::empty();
-            tree.data_count_present = TreeBuf::empty();
-        }
-        if any_sum_hess {
-            tree.sum_hess = TreeBuf::from_owned(self.nodes.iter().map(|n| n.sum_hess).collect());
-            tree.sum_hess_present =
-                TreeBuf::from_owned(self.nodes.iter().map(|n| n.sum_hess_present).collect());
-        } else {
-            tree.sum_hess = TreeBuf::empty();
-            tree.sum_hess_present = TreeBuf::empty();
-        }
-        if any_gain {
-            tree.gain = TreeBuf::from_owned(self.nodes.iter().map(|n| n.gain).collect());
-            tree.gain_present =
-                TreeBuf::from_owned(self.nodes.iter().map(|n| n.gain_present).collect());
-        } else {
-            tree.gain = TreeBuf::empty();
-            tree.gain_present = TreeBuf::empty();
-        }
-        tree.has_categorical_split = self
+        let has_categorical_split = self
             .nodes
             .iter()
             .any(|n| n.node_type == TreeNodeType::kCategoricalTestNode);
-        tree.num_nodes = num_nodes as i32;
 
-        self.trees.push(tree);
+        // Fill every column that is identical across `Tree<f32>` and `Tree<f64>`.
+        // The two typed columns (`leaf_value`, `threshold`) and the `Tree<T>`
+        // value are supplied per-mode by the caller of this macro. This keeps the
+        // 25-column shape (and the CR-01/CR-02 emptiness discipline) in ONE place
+        // for both modes, so the f64 path cannot drift from the f32 path.
+        macro_rules! fill_common {
+            ($tree:expr) => {{
+                $tree.node_type = TreeBuf::from_owned(node_type);
+                $tree.cleft = TreeBuf::from_owned(cleft);
+                $tree.cright = TreeBuf::from_owned(cright);
+                $tree.split_index = TreeBuf::from_owned(split_index);
+                $tree.default_left = TreeBuf::from_owned(default_left);
+                $tree.cmp = TreeBuf::from_owned(cmp);
+                // CR-01 per-node AllocNode columns (tree.h:79-84).
+                $tree.category_list_right_child = TreeBuf::from_owned(category_list_right_child);
+                $tree.leaf_vector_begin = TreeBuf::from_owned(leaf_vector_begin);
+                $tree.leaf_vector_end = TreeBuf::from_owned(leaf_vector_end);
+                $tree.category_list_begin = TreeBuf::from_owned(category_list_begin);
+                $tree.category_list_end = TreeBuf::from_owned(category_list_end);
+                // CR-02 empty-unless-set stat columns (tree.h:87-98).
+                if any_data_count {
+                    $tree.data_count =
+                        TreeBuf::from_owned(self.nodes.iter().map(|n| n.data_count).collect());
+                    $tree.data_count_present = TreeBuf::from_owned(
+                        self.nodes.iter().map(|n| n.data_count_present).collect(),
+                    );
+                } else {
+                    $tree.data_count = TreeBuf::empty();
+                    $tree.data_count_present = TreeBuf::empty();
+                }
+                if any_sum_hess {
+                    $tree.sum_hess =
+                        TreeBuf::from_owned(self.nodes.iter().map(|n| n.sum_hess).collect());
+                    $tree.sum_hess_present =
+                        TreeBuf::from_owned(self.nodes.iter().map(|n| n.sum_hess_present).collect());
+                } else {
+                    $tree.sum_hess = TreeBuf::empty();
+                    $tree.sum_hess_present = TreeBuf::empty();
+                }
+                if any_gain {
+                    $tree.gain = TreeBuf::from_owned(self.nodes.iter().map(|n| n.gain).collect());
+                    $tree.gain_present =
+                        TreeBuf::from_owned(self.nodes.iter().map(|n| n.gain_present).collect());
+                } else {
+                    $tree.gain = TreeBuf::empty();
+                    $tree.gain_present = TreeBuf::empty();
+                }
+                $tree.has_categorical_split = has_categorical_split;
+                $tree.num_nodes = num_nodes as i32;
+            }};
+        }
+
+        if self.is_f64 {
+            // f64 mode: leaf/threshold from the f64 staging, NO downcast (D-05).
+            let leaf_value: Vec<f64> = self.nodes.iter().map(|n| n.leaf_value_f64).collect();
+            let threshold: Vec<f64> = self.nodes.iter().map(|n| n.threshold_f64).collect();
+            let mut tree = Tree::<f64>::new();
+            fill_common!(tree);
+            tree.leaf_value = TreeBuf::from_owned(leaf_value);
+            tree.threshold = TreeBuf::from_owned(threshold);
+            self.trees_f64.push(tree);
+        } else {
+            // f32 mode (the XGBoost path, unchanged): leaf/threshold from f32 staging.
+            let leaf_value: Vec<f32> = self.nodes.iter().map(|n| n.leaf_value).collect();
+            let threshold: Vec<f32> = self.nodes.iter().map(|n| n.threshold).collect();
+            let mut tree = Tree::<f32>::new();
+            fill_common!(tree);
+            tree.leaf_value = TreeBuf::from_owned(leaf_value);
+            tree.threshold = TreeBuf::from_owned(threshold);
+            self.trees.push(tree);
+        }
+
         self.node_id_map.clear();
         self.nodes.clear();
         self.state = BuilderState::ExpectTree;
         Ok(())
     }
 
-    /// Number of trees committed so far (`GetNumTree`).
+    /// Number of trees committed so far (`GetNumTree`). Counts whichever numeric
+    /// mode the builder is in (only one is ever non-empty).
     pub fn num_tree(&self) -> usize {
-        self.trees.len()
+        if self.is_f64 {
+            self.trees_f64.len()
+        } else {
+            self.trees.len()
+        }
     }
 
     /// Finalize and produce a `Model` (`model_builder.cc:279-288`).
@@ -546,16 +691,24 @@ impl ModelBuilder {
             .metadata
             .take()
             .ok_or(BuilderError::MetadataNotInitialized)?;
-        if self.trees.len() != self.expected_num_tree {
+        let built = self.num_tree();
+        if built != self.expected_num_tree {
             return Err(BuilderError::CommitTreeCountMismatch {
                 expected: self.expected_num_tree,
-                got: self.trees.len(),
+                got: built,
             });
         }
         self.state = BuilderState::ModelComplete;
 
-        let trees = std::mem::take(&mut self.trees);
-        let mut model = Model::new(ModelVariant::F32(ModelPreset::new(trees)));
+        // Wrap whichever numeric mode the builder latched into the matching
+        // variant. f64 mode produces `ModelVariant::F64` with NO downcast (D-05);
+        // the default f32 mode produces `ModelVariant::F32` exactly as before.
+        let variant = if self.is_f64 {
+            ModelVariant::F64(ModelPreset::new(std::mem::take(&mut self.trees_f64)))
+        } else {
+            ModelVariant::F32(ModelPreset::new(std::mem::take(&mut self.trees)))
+        };
+        let mut model = Model::new(variant);
         model.num_feature = metadata.num_feature;
         model.task_type = metadata.task_type;
         model.average_tree_output = metadata.average_tree_output;
@@ -571,6 +724,25 @@ impl ModelBuilder {
     }
 
     // --- internal helpers ---
+
+    /// Latch this builder into f64 mode, or reject if it is already producing
+    /// f32 trees (an f32 entry point was used first). Idempotent once latched.
+    fn latch_f64(&mut self) -> Result<(), BuilderError> {
+        if !self.is_f64 && !self.trees.is_empty() {
+            return Err(BuilderError::MixedNumericMode { existing: "f32" });
+        }
+        self.is_f64 = true;
+        Ok(())
+    }
+
+    /// Assert this builder is not already in f64 mode before an f32 entry point
+    /// writes f32 staging. Rejects mixing (the f64 path was used first).
+    fn guard_f32(&self) -> Result<(), BuilderError> {
+        if self.is_f64 {
+            return Err(BuilderError::MixedNumericMode { existing: "f64" });
+        }
+        Ok(())
+    }
 
     fn check_state(
         &self,
