@@ -85,13 +85,22 @@ pub struct ObjectivePostproc {
 pub fn map_objective(
     canonical: &str,
     obj_param: &[String],
+    num_class: i32,
 ) -> Result<ObjectivePostproc, LgbError> {
     match canonical {
-        "multiclass" => Ok(ObjectivePostproc {
-            postprocessor: "softmax",
-            sigmoid_alpha: 1.0,
-        }),
+        "multiclass" => {
+            // Validate the embedded num_class parameter against the global
+            // num_class (lightgbm.cc:446-458).
+            require_matching_num_class(canonical, obj_param, num_class)?;
+            Ok(ObjectivePostproc {
+                postprocessor: "softmax",
+                sigmoid_alpha: 1.0,
+            })
+        }
         "multiclassova" => {
+            // Validate the embedded num_class parameter AND the sigmoid alpha
+            // (lightgbm.cc:460-477).
+            require_matching_num_class(canonical, obj_param, num_class)?;
             let alpha = parse_sigmoid_alpha(obj_param);
             require_positive_alpha(canonical, alpha)?;
             Ok(ObjectivePostproc {
@@ -153,6 +162,46 @@ fn parse_sigmoid_alpha(obj_param: &[String]) -> Option<f64> {
     None
 }
 
+/// Parse `num_class:<n>` out of the objective parameter tokens, returning the
+/// value only when present, parseable as an `i32`, and non-negative. Mirrors the
+/// `Split(str, ':')` token loop in `lightgbm.cc:449-455` / `:466-470`, including
+/// the upstream `>= 0` filter on the parsed token (a negative embedded num_class
+/// is treated as "absent", leaving the downstream `== num_class_` check to fail).
+fn parse_num_class(obj_param: &[String]) -> Option<i32> {
+    for token in obj_param {
+        let mut parts = token.splitn(2, ':');
+        let key = parts.next()?;
+        if key == "num_class"
+            && let Some(val) = parts.next()
+            && let Ok(n) = val.parse::<i32>()
+            && n >= 0
+        {
+            return Some(n);
+        }
+    }
+    None
+}
+
+/// Reject a `multiclass` / `multiclassova` objective whose embedded
+/// `num_class:<n>` parameter is missing or disagrees with the global
+/// `num_class` (`lightgbm.cc:457,476`). Ports `TREELITE_CHECK(num_class >= 0 &&
+/// num_class == num_class_)`.
+fn require_matching_num_class(
+    objective: &str,
+    obj_param: &[String],
+    global_num_class: i32,
+) -> Result<(), LgbError> {
+    let param_num_class = parse_num_class(obj_param);
+    match param_num_class {
+        Some(n) if n == global_num_class => Ok(()),
+        _ => Err(LgbError::InvalidNumClass {
+            objective: objective.to_string(),
+            param_num_class,
+            global_num_class,
+        }),
+    }
+}
+
 /// Reject a missing or non-positive `sigmoid_alpha` (`lightgbm.cc:491-492`,
 /// T-04-09).
 fn require_positive_alpha(objective: &str, alpha: Option<f64>) -> Result<(), LgbError> {
@@ -198,13 +247,51 @@ mod tests {
 
     #[test]
     fn multiclass_maps_to_softmax() {
-        let p = map_objective("multiclass", &[]).unwrap();
+        // multiclass requires a matching num_class:<n> parameter (lightgbm.cc:457).
+        let p = map_objective("multiclass", &params(&["num_class:3"]), 3).unwrap();
         assert_eq!(p.postprocessor, "softmax");
     }
 
     #[test]
+    fn multiclass_rejects_mismatched_num_class() {
+        // Embedded num_class disagrees with the global num_class (lightgbm.cc:457).
+        assert!(matches!(
+            map_objective("multiclass", &params(&["num_class:2"]), 3),
+            Err(LgbError::InvalidNumClass { .. })
+        ));
+        // Missing num_class:<n> is also rejected.
+        assert!(matches!(
+            map_objective("multiclass", &[], 3),
+            Err(LgbError::InvalidNumClass { .. })
+        ));
+    }
+
+    #[test]
+    fn multiclassova_rejects_mismatched_num_class() {
+        // multiclassova requires both num_class match AND a positive alpha
+        // (lightgbm.cc:476). A bad num_class is rejected even with a valid alpha.
+        assert!(matches!(
+            map_objective(
+                "multiclassova",
+                &params(&["num_class:2", "sigmoid:1.0"]),
+                3
+            ),
+            Err(LgbError::InvalidNumClass { .. })
+        ));
+        // Matching num_class with a valid alpha succeeds.
+        let p = map_objective(
+            "multiclassova",
+            &params(&["num_class:3", "sigmoid:1.0"]),
+            3,
+        )
+        .unwrap();
+        assert_eq!(p.postprocessor, "multiclass_ova");
+        assert_eq!(p.sigmoid_alpha, 1.0);
+    }
+
+    #[test]
     fn binary_maps_to_sigmoid_with_alpha() {
-        let p = map_objective("binary", &params(&["sigmoid:1.5"])).unwrap();
+        let p = map_objective("binary", &params(&["sigmoid:1.5"]), 1).unwrap();
         assert_eq!(p.postprocessor, "sigmoid");
         assert_eq!(p.sigmoid_alpha, 1.5);
     }
@@ -213,19 +300,19 @@ mod tests {
     fn binary_rejects_nonpositive_alpha() {
         // alpha <= 0 must be rejected (T-04-09).
         assert!(matches!(
-            map_objective("binary", &params(&["sigmoid:0"])),
+            map_objective("binary", &params(&["sigmoid:0"]), 1),
             Err(LgbError::InvalidSigmoidAlpha { .. })
         ));
         // Missing sigmoid:<a> also rejected for binary.
         assert!(matches!(
-            map_objective("binary", &[]),
+            map_objective("binary", &[], 1),
             Err(LgbError::InvalidSigmoidAlpha { .. })
         ));
     }
 
     #[test]
     fn cross_entropy_maps_to_sigmoid_alpha_one() {
-        let p = map_objective("cross_entropy", &[]).unwrap();
+        let p = map_objective("cross_entropy", &[], 1).unwrap();
         assert_eq!(p.postprocessor, "sigmoid");
         assert_eq!(p.sigmoid_alpha, 1.0);
     }
@@ -233,15 +320,18 @@ mod tests {
     #[test]
     fn count_family_maps_to_exponential() {
         for obj in ["poisson", "gamma", "tweedie"] {
-            assert_eq!(map_objective(obj, &[]).unwrap().postprocessor, "exponential");
+            assert_eq!(
+                map_objective(obj, &[], 1).unwrap().postprocessor,
+                "exponential"
+            );
         }
     }
 
     #[test]
     fn regression_maps_to_identity_or_signed_square() {
-        assert_eq!(map_objective("regression", &[]).unwrap().postprocessor, "identity");
+        assert_eq!(map_objective("regression", &[], 1).unwrap().postprocessor, "identity");
         assert_eq!(
-            map_objective("regression", &params(&["sqrt"]))
+            map_objective("regression", &params(&["sqrt"]), 1)
                 .unwrap()
                 .postprocessor,
             "signed_square"

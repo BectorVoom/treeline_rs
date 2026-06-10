@@ -331,7 +331,7 @@ pub fn load_lightgbm(model_str: &str) -> Result<Model, LgbError> {
 
     // Canonicalize the objective FIRST, then resolve the postprocessor.
     let canonical = objective::canonical_objective(&parsed.objective_name)?;
-    let postproc = objective::map_objective(canonical, &parsed.objective_params)?;
+    let postproc = objective::map_objective(canonical, &parsed.objective_params, num_class)?;
     let task_type = task_type_for(num_class, canonical)?;
 
     let num_tree = parsed.trees.len();

@@ -108,6 +108,24 @@ pub enum LgbError {
         detail: String,
     },
 
+    /// A `multiclass` / `multiclassova` objective carried a `num_class:<n>`
+    /// parameter that was missing or disagreed with the global `num_class`.
+    /// Ports the upstream `TREELITE_CHECK(num_class >= 0 && num_class ==
+    /// num_class_)` checks (`lightgbm.cc:457,476`): an inconsistent multiclass
+    /// model is rejected with a typed error rather than silently accepted.
+    #[error(
+        "invalid num_class for objective {objective:?}: the embedded num_class parameter \
+         {param_num_class:?} does not match the global num_class {global_num_class}"
+    )]
+    InvalidNumClass {
+        /// The objective that required a matching `num_class` parameter.
+        objective: String,
+        /// The parsed embedded `num_class:<n>` (None when absent or negative).
+        param_num_class: Option<i32>,
+        /// The global `num_class` declared in the model header.
+        global_num_class: i32,
+    },
+
     /// The objective name is not one of the recognized LightGBM objectives.
     /// Upstream this is a `TREELITE_LOG(FATAL)` (`lightgbm.h:54`); here it is a
     /// typed `Err` per ERR-01.
