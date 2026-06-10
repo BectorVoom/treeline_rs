@@ -53,7 +53,7 @@ Requirements for the initial release. Each maps to a roadmap phase. All are hypo
 ### GTIL Inference
 
 - [x] **GTIL-01**: User can predict over a dense row-major input matrix
-- [ ] **GTIL-02**: User can predict over a sparse CSR input matrix (absent entries treated as NaN)
+- [x] **GTIL-02**: User can predict over a sparse CSR input matrix (absent entries treated as NaN)
 - [x] **GTIL-03**: All four predict kinds are supported (`default`, `raw`, `leaf_id`, `score_per_tree`)
 - [x] **GTIL-04**: All ten postprocessors are ported verbatim, preserving upstream mixed-precision arithmetic
 - [x] **GTIL-05**: Missing-value routing fires on NaN only, via the node default direction
@@ -164,7 +164,7 @@ Which phases cover which requirements.
 | SKL-03 | Phase 4 | Complete |
 | SKL-04 | Phase 4 | Complete |
 | GTIL-01 | Phase 5 | Complete |
-| GTIL-02 | Phase 5 | Pending |
+| GTIL-02 | Phase 5 | Complete |
 | GTIL-03 | Phase 5 | Complete |
 | GTIL-04 | Phase 5 | Complete |
 | GTIL-05 | Phase 5 | Complete |

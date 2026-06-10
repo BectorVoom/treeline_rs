@@ -180,7 +180,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 — same lib.rs)*
 
-- [ ] 05-04-PLAN.md — Sparse CSR accessor (absent=NaN, dense==sparse parity D-04) + `LeafId`/`ScorePerTree` predict kinds; bounds-checked `col_ind`/`row_ptr` → typed errors (GTIL-02/GTIL-03)
+- [x] 05-04-PLAN.md — Sparse CSR accessor (absent=NaN, dense==sparse parity D-04) + `LeafId`/`ScorePerTree` predict kinds; bounds-checked `col_ind`/`row_ptr` → typed errors (GTIL-02/GTIL-03)
 
 **Wave 5** *(blocked on Wave 4 — full GTIL surface)*
 
@@ -256,7 +256,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 2. Builder & Serialization | 6/6 | Complete    | 2026-06-10 |
 | 3. Full XGBoost Loaders | 4/4 | Complete    | 2026-06-10 |
 | 4. LightGBM & scikit-learn Loaders | 8/8 | Complete    | 2026-06-10 |
-| 5. Full Scalar GTIL & Equivalence Harness | 3/5 | In Progress|  |
+| 5. Full Scalar GTIL & Equivalence Harness | 4/5 | In Progress|  |
 | 6. cubecl GTIL Kernels (CPU Backend) | 0/TBD | Not started | - |
 | 7. GPU Backend & Equivalence Report | 0/TBD | Not started | - |
 | 8. PyO3 Python Binding | 0/TBD | Not started | - |

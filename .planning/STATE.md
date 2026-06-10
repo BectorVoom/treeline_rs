@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 05-01-PLAN.md
-last_updated: "2026-06-10T07:17:35.875Z"
+stopped_at: Completed 05-04-PLAN.md
+last_updated: "2026-06-10T07:28:06.019Z"
 last_activity: 2026-06-10 -- Phase 05 execution started
 progress:
   total_phases: 9
   completed_phases: 4
   total_plans: 27
-  completed_plans: 25
+  completed_plans: 26
   percent: 44
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 05 (full-scalar-gtil-equivalence-harness) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-06-10 -- Phase 05 execution started
 
@@ -79,6 +79,7 @@ Progress: [████████] 100% (Phase 04 plans: 8/8)
 | Phase 05 P01 | 12min | 2 tasks | 4 files |
 | Phase 05 P02 | 22min | 2 tasks | 7 files |
 | Phase 05 P03 | ~8min | 2 tasks | 3 files |
+| Phase 05 P04 | ~6min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -160,6 +161,8 @@ Recent decisions affecting current work:
 - [Phase ?]: Plan 05-02: GTIL next_node compares in f64 (exact f32->f64 widening is order-preserving) — bit-faithful routing across all 4 input×preset combos
 - [Phase ?]: Plan 05-02: f64 element-wise postprocessor arithmetic deferred to Plan 05-03; apply_postprocessor uses an f32 boundary so postprocessor.rs intermediates stay f32 (Pitfall 2)
 - [Phase ?]: GTIL PredictOut representability const MANTISSA_BITS (not DIGITS: inherent f32::DIGITS shadows Self::DIGITS to decimal-6)
+- [Phase ?]: RowSource enum gives structural dense==sparse parity (D-04): both paths materialize one reusable scratch row that evaluate_tree walks verbatim
+- [Phase ?]: LeafId/ScorePerTree size output on actual trees.len() (GetNumTree), not the staged num_tree() header field
 
 ### Pending Todos
 
@@ -181,6 +184,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T07:17:20.860Z
-Stopped at: Completed 05-01-PLAN.md
+Last session: 2026-06-10T07:28:06.015Z
+Stopped at: Completed 05-04-PLAN.md
 Resume file: None
