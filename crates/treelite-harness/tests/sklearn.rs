@@ -62,6 +62,28 @@ struct GbFamily {
     output: Vec<f64>,
 }
 
+/// `sklearn_iforest.golden.json` top level (SKL-03).
+///
+/// IsolationForest is a single estimator (not a family map): the golden carries
+/// one `trees` array plus the capture-side `ratio_c` (== `expected_depth(
+/// max_samples_)`, isolation_forest.py) and the upstream `treelite.gtil.predict`
+/// `output`. CRITICAL (D-07): that `output` equals `-clf.score_samples`, NOT the
+/// framework's own `clf.score_samples`/anomaly score — the `cross_check` field
+/// records the capture's own verification that the two agree.
+#[derive(Debug, Deserialize)]
+struct IForestGolden {
+    input: Vec<Vec<f64>>,
+    n_features_in: i32,
+    n_estimators: i32,
+    /// `expected_depth(max_samples_)` (isolation_forest.py); threaded into the
+    /// `exponential_standard_ratio` postprocessor. Consumed AS-IS by the loader
+    /// (the loader does NOT recompute it).
+    ratio_c: f64,
+    trees: Vec<SklTree>,
+    output: Vec<f64>,
+    manifest: SklManifest,
+}
+
 /// `sklearn_rf.golden.json` top level.
 #[derive(Debug, Deserialize)]
 struct RfGolden {
@@ -321,5 +343,52 @@ fn sklearn_gb() -> anyhow::Result<()> {
         worst = worst.max(dev);
     }
     eprintln!("sklearn_gb: worst family max |delta| = {worst:e} (< 1e-5)");
+    Ok(())
+}
+
+/// SKL-03: IsolationForest loads via the MixIn path (with the capture-side
+/// `ratio_c` + `exponential_standard_ratio` postprocessor) → predicts → matches
+/// the upstream treelite-GTIL golden within 1e-5.
+///
+/// The golden `output` is `treelite.gtil.predict` (== `-clf.score_samples`,
+/// D-07) — the canonical "Treelite ≠ framework" case. We assert against THAT,
+/// never the framework's own anomaly score.
+#[test]
+fn sklearn_iforest() -> anyhow::Result<()> {
+    let golden_path = fixture_path("sklearn_iforest.golden.json");
+    let raw = std::fs::read_to_string(&golden_path)
+        .with_context(|| format!("reading {golden_path}"))?;
+    let golden: IForestGolden =
+        serde_json::from_str(&raw).context("parsing sklearn_iforest.golden.json")?;
+    check_manifest(&golden.manifest);
+
+    let n_features = golden.n_features_in as usize;
+    let (flat, num_row) = flatten_input(&golden.input, n_features)?;
+    let c = columns(&golden.trees);
+
+    let model = treelite_sklearn::load_isolation_forest(
+        golden.n_estimators,
+        golden.n_features_in,
+        &c.node_count,
+        &c.children_left,
+        &c.children_right,
+        &c.feature,
+        &c.threshold,
+        &c.value,
+        &c.n_node_samples,
+        &c.weighted_n_node_samples,
+        &c.impurity,
+        golden.ratio_c,
+    )
+    .map_err(|e| anyhow::anyhow!("{e}"))
+    .context("loading isolation_forest")?;
+
+    let rust = treelite_gtil::predict(&model, &flat, num_row)
+        .map_err(|e| anyhow::anyhow!("{e}"))
+        .context("predicting isolation_forest")?;
+    let dev = assert_within_1e5(&rust, &golden.output, "isolation_forest")?;
+    eprintln!(
+        "sklearn_iforest: max |delta| = {dev:e} (< 1e-5) vs treelite.gtil.predict (== -score_samples)"
+    );
     Ok(())
 }
