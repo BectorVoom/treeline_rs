@@ -1,0 +1,19 @@
+{
+  "xgboost_write_json_ubj": "3.2.0",
+  "xgboost_write_legacy": "1.7.6",
+  "treelite": "4.7.0",
+  "os": "Linux-6.17.0-35-generic-x86_64-with-glibc2.39",
+  "arch": "x86_64",
+  "libc": [
+    "glibc",
+    "2.39"
+  ],
+  "python": "3.13.13",
+  "sha256": "ae53fbf84874b91826a1a9852e1b7f1c22156d6ce62fea9fc5da3a92255ffd60",
+  "nbytes": 7775,
+  "source_fixtures": [
+    "xgb_3format.json",
+    "xgb_3format.ubj",
+    "xgb_3format.model"
+  ]
+}

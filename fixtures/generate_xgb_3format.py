@@ -125,12 +125,8 @@ def _assert_legacy_header(path):
     (base_score f32 LE @0, num_feature u32 LE @4) with sane values.
     """
     with open(path, "rb") as f:
-        head = f.read(136)
-    assert len(head) >= 136, (
-        f"legacy fixture {path} is only {len(head)} bytes; a genuine "
-        "LearnerModelParam header is 136 bytes — this is not legacy binary."
-    )
-    first = head[0:1]
+        raw = f.read(4 + 136)
+    first = raw[0:1]
     assert first != b"{", (
         f"legacy fixture {path} starts with '{{' — current xgboost silently wrote "
         "JSON/UBJSON (Pitfall 7). Use an OLDER pinned xgboost (retry 1.6.2 / 0.90)."
@@ -138,6 +134,18 @@ def _assert_legacy_header(path):
     assert first != b"N", (
         f"legacy fixture {path} starts with 'N' (UBJSON no-op marker) — this is "
         "UBJSON, not legacy binary. Use an OLDER pinned xgboost."
+    )
+    # Optional 4-byte "binf" magic precedes the 136-byte LearnerModelParam
+    # (RESEARCH Legacy Binary Layout step 1 / xgboost_legacy.cc:328-336). xgboost
+    # 1.7.6 emits it; mushroom.model does not. Skip it if present before decoding.
+    offset = 4 if raw[0:4] == b"binf" else 0
+    assert raw[0:4] != b"bs64", (
+        f"legacy fixture {path} uses base64 framing (bs64) — unsupported upstream."
+    )
+    head = raw[offset:offset + 136]
+    assert len(head) >= 136, (
+        f"legacy fixture {path} is only {len(head)} header bytes after magic; a "
+        "genuine LearnerModelParam header is 136 bytes — this is not legacy binary."
     )
     base_score = struct.unpack_from("<f", head, 0)[0]
     num_feature = struct.unpack_from("<I", head, 4)[0]
@@ -250,11 +258,22 @@ def phase_modern():
     #     Treelite wheel, serialize each, and assert all three == the single v5
     #     blob. This proves the single-golden invariant at generation time,
     #     before the Rust loaders exist.
+    # JSON/UBJSON go through load_xgboost_model; legacy binary has its OWN entry
+    # point (load_xgboost_model_legacy_binary) — load_xgboost_model only handles
+    # JSON/UBJSON and would mis-sniff the `binf`-prefixed legacy file as UBJSON.
+    # This mirrors upstream's API split (D-09: legacy is a separate explicit call).
+    def _load_any(p):
+        if p == MODEL_JSON:
+            return treelite.frontend.load_xgboost_model(p, format_choice="json")
+        if p == MODEL_UBJ:
+            return treelite.frontend.load_xgboost_model(p, format_choice="ubjson")
+        return treelite.frontend.load_xgboost_model_legacy_binary(p)
+
     for fmt_path in (MODEL_JSON, MODEL_UBJ, MODEL_LEGACY):
         assert os.path.exists(fmt_path), (
             f"missing {fmt_path} — run the 'legacy' phase before 'modern'."
         )
-        m = treelite.frontend.load_xgboost_model(fmt_path)
+        m = _load_any(fmt_path)
         other = bytes(m.serialize_bytes())
         assert other == blob, (
             f"A2 FAILED: {os.path.basename(fmt_path)} serializes to a DIFFERENT v5 "
