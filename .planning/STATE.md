@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Completed 05-04-PLAN.md
+status: gap_closure
+stopped_at: Phase 05 plans built; CR-01 blocker found in code review — routing to gap closure
 last_updated: "2026-06-10T07:41:18.592Z"
-last_activity: 2026-06-10 -- Phase 05 execution started
+last_activity: 2026-06-10 -- Phase 05 code review found CR-01 (f64 postprocessor precision); gap closure pending
 progress:
   total_phases: 9
-  completed_phases: 5
+  completed_phases: 4
   total_plans: 27
   completed_plans: 27
-  percent: 56
+  percent: 44
 ---
 
 # Project State
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 
 ## Current Position
 
-Phase: 05 (full-scalar-gtil-equivalence-harness) — EXECUTING
-Plan: 5 of 5
-Status: Phase complete — ready for verification
-Last activity: 2026-06-10 -- Phase 05 execution started
+Phase: 05 (full-scalar-gtil-equivalence-harness) — GAP CLOSURE
+Plan: 5 of 5 built (not yet verified)
+Status: Pending CR-01 gap closure — f64-input postprocessors run at f32 (upstream runs in f64); see 05-REVIEW.md
+Last activity: 2026-06-10 -- Phase 05 code review found CR-01; gap closure planned
 
 Progress: [████████] 100% (Phase 04 plans: 8/8)
 
@@ -176,6 +176,7 @@ None yet.
 - [Phase 3] ~~serde_json rejects NaN/Inf by default; XGBoost JSON uses them~~ — RESOLVED in 03-02 via the string-safe replace_nonfinite pre-lexer + de_f32 sentinel adapter (D-02).
 - [Phase 5/6] cubecl control-flow constraints (`continue` unsupported, helpers must be `#[cube]`) and CPU-backend op gaps — spike a minimal kernel before the full port.
 - [Phase 5] Golden-vector reproducibility — store actual input matrices + a toolchain/libm/framework manifest, not just seeds.
+- [Phase 5] **CR-01 (BLOCKER, OPEN)** — `apply_postprocessor` (gtil/src/lib.rs:1138) narrows every f64 output cell to f32, runs the postprocessor in f32, then widens back. Upstream `postprocessor.cc` templates sigmoid/exponential/exponential_standard_ratio/logarithm_one_plus_exp/signed_square/multiclass_ova/hinge on `InputT`, so they run in **f64** for f64 input (only `softmax` hardcodes f32). The f64×non-identity/non-softmax postprocessor surface therefore runs at wrong precision — a latent 1e-5 violation masked only because current f64 sigmoid goldens sit ~1e-7 inside band. Known deferral from 05-02 that 05-03 claimed to close but did NOT wire. Fix = make postprocessors O-generic (softmax stays f32) + capture an f64 fixture that actually stresses the path. Also open: WR-01 (sparse harness re-derives CSR from NaN-presence, never asserts a real captured CSR), WR-03 (evaluate_tree no node-0 bounds check → panic on 0-node tree, violates ERR-01), WR-02 (predict_score_by_tree lvs.max(1) vs output_shape disagree), WR-04/WR-05 (silent fallbacks mask wrong predictions). See 05-REVIEW.md.
 
 ## Deferred Items
 
