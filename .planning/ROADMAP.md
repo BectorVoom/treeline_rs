@@ -19,7 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: LightGBM & scikit-learn Loaders** - LightGBM text + RF/ET/GBM/IsolationForest + HistGradientBoosting (completed 2026-06-10)
 - [ ] **Phase 5: Full Scalar GTIL & Equivalence Harness** - All 4 predict kinds, 10 postprocessors, sparse CSR, categoricals, output shaping, seeded golden harness at 1e-5
 - [ ] **Phase 6: cubecl GTIL Kernels (CPU Backend)** - Traversal + postprocessor kernels; CPU backend default, validated to 1e-5 with zero-copy SoA upload
-- [ ] **Phase 7: GPU Backend & Equivalence Report** - Runtime-selectable GPU backend (CUDA/wgpu) with a documented per-model-class deviation report
+- [ ] **Phase 7: GPU Backend & Equivalence Report** - Runtime-selectable GPU backend (CUDA/wgpu/ROCm) with a documented per-model-class deviation report
 - [ ] **Phase 8: PyO3 Python Binding** - load/predict/serialize/dump from Python with zero-copy numpy I/O and abi3 wheel
 - [ ] **Phase 9: Memory-Efficiency Hardening** - bytemuck zero-copy recast, smallvec/compact_str, custom global allocator
 
@@ -190,7 +190,7 @@ Plans:
 **Requirements**: GPU-03, GPU-04
 **Success Criteria** (what must be TRUE):
 
-  1. At least one GPU backend (CUDA or wgpu) is selectable at runtime via Cargo feature + `Backend` enum and produces predictions for the harness model set.
+  1. At least one GPU backend (CUDA, wgpu, or ROCm) is selectable at runtime via Cargo feature + `Backend` enum and produces predictions for the harness model set.
   2. A committed GPU equivalence report documents the observed max deviation per model class against an accepted tolerance, noting where f64 postprocessor fallback is needed to stay in budget.
   3. CPU remains the default backend and small inputs do not pay GPU transfer/launch overhead (documented crossover heuristic).
 

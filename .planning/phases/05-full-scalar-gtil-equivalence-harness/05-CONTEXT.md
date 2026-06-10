@@ -124,7 +124,7 @@ Out of scope: any cubecl kernel work (Phase 6); GPU backends (Phase 7); PyO3 bin
 
 - **cubecl GTIL kernels (traversal + postprocessors) generic over `R: Runtime`, CPU backend default** — Phase 6 (GPU-01/02/05). Phase 5 ships the plain-Rust scalar reference + the backend-parameterized harness seam they plug into.
 - **Runtime-selectable GPU backends + per-model-class equivalence report** — Phase 7 (GPU-03/04).
-- **ROCm as a v1 user-selectable backend (roadmap reconciliation).** The user wants `{scalar-cpu, cubecl-cpu, cuda, wgpu, rocm}` all runtime-selectable (D-10). Today ROCm sits in **v2 (PERF-v2-02)** while wgpu+CUDA are v1 (GPU-03). Action: reconcile at the **roadmap level** — either pull ROCm into v1 GPU-03 or confirm v2 with the generic `R: Runtime` seam kept ROCm-ready. Not a Phase-5 decision; recorded so it isn't lost. Because everything routes through generic `R: Runtime`, adding `cubecl-rocm` later is a backend registration, not a refactor.
+- **ROCm as a v1 user-selectable backend — RESOLVED 2026-06-10.** The user pulled ROCm into v1: GPU-03 now reads "at least one GPU backend (CUDA, wgpu, or ROCm)", ROCm removed from v2 PERF-v2-02, ROADMAP Phase 7 + PROJECT.md updated to match. Implementation still lands Phase 6/7; because everything routes through generic `R: Runtime`, adding `cubecl-rocm` is a backend registration, not a refactor. Recorded here for lineage.
 - **PyO3 JSON-config compatibility shim** (if upstream's JSON `Configuration` string is ever needed) — lives at the Phase-8 PyO3 edge, not the compute crate (D-06).
 - **Memory-efficiency (bytemuck zero-copy recast of SoA columns for input buffers, smallvec/compact_str)** — Phase 9.
 

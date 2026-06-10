@@ -65,7 +65,7 @@ Requirements for the initial release. Each maps to a roadmap phase. All are hypo
 
 - [ ] **GPU-01**: The GTIL inference hot path (traversal + postprocessors) is implemented as cubecl kernels
 - [ ] **GPU-02**: The cubecl CPU backend is the default and is validated to 1e-5
-- [ ] **GPU-03**: At least one GPU backend (CUDA or wgpu) is runtime-selectable and produces predictions
+- [ ] **GPU-03**: At least one GPU backend (CUDA, wgpu, or ROCm) is runtime-selectable and produces predictions
 - [ ] **GPU-04**: A GPU equivalence report documents observed deviation per model class within an accepted tolerance
 - [ ] **GPU-05**: SoA model buffers upload host→device zero-copy
 
@@ -115,7 +115,7 @@ Deferred to a future release. Tracked but not in the current roadmap.
 ### Performance
 
 - **PERF-v2-01**: f16/bf16 half-precision inference opt-in fast path (off the 1e-5 equivalence path)
-- **PERF-v2-02**: Autotuned / optimized GPU kernels and additional GPU backends (ROCm, Metal, Vulkan)
+- **PERF-v2-02**: Autotuned / optimized GPU kernels and additional GPU backends (Metal, Vulkan) — ROCm promoted to v1 GPU-03
 - **PERF-v2-03**: Dedicated memory-efficiency hardening sweep with regression budgets
 
 ## Out of Scope

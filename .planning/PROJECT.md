@@ -29,7 +29,7 @@ A from-scratch Rust rewrite of [Treelite](https://github.com/dmlc/treelite) — 
 - [ ] In-memory struct-of-arrays `Model` / `Tree` representation parameterized over float32/float64
 - [ ] GTIL inference: dense + sparse CSR input, the 4 predict kinds, full postprocessor set (sigmoid, softmax, etc.)
 - [ ] GTIL inference hot path (tree traversal + postprocessors) implemented as `cubecl` kernels
-- [ ] cubecl CPU backend by default; at least one GPU backend (CUDA or wgpu) working and runtime-selectable in v1, with a GPU equivalence report
+- [ ] cubecl CPU backend by default; at least one GPU backend (CUDA, wgpu, or ROCm) working and runtime-selectable in v1, with a GPU equivalence report
 - [ ] PyO3 Python binding exposing load → predict → serialize directly over the Rust core
 - [ ] Equivalence harness: random seeded input matrices → golden output vectors captured from C++ Treelite → assert Rust within 1e-5
 - [ ] `thiserror`-based typed errors in library crates; `anyhow` in binaries/tests
@@ -78,6 +78,7 @@ A from-scratch Rust rewrite of [Treelite](https://github.com/dmlc/treelite) — 
 | `thiserror` (libs) + `anyhow` (bins/tests) | Typed recoverable errors at API boundaries; ergonomic context at the top level | — Pending |
 | HistGradientBoosting included in v1 sklearn scope | User chose full sklearn parity over deferring the most complex loader | — Pending |
 | At least one GPU backend validated in v1 (not deferred to v1.x) | User wants GPU acceleration proven in v1, not just CPU cubecl | — Pending |
+| ROCm promoted to v1 GPU-03 (with CUDA + wgpu) | User wants end-user runtime backend switching across {scalar-cpu, cubecl-cpu, cuda, wgpu, rocm} via generic `R: Runtime`; ROCm moved out of v2 PERF-v2-02 (2026-06-10) | — Pending |
 
 ## Evolution
 
