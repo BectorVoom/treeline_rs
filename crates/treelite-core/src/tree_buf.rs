@@ -83,6 +83,27 @@ impl<T: Copy> TreeBuf<T> {
     }
 }
 
+/// Zero-copy byte-view accessor, gated on the NARROWER `T: bytemuck::Pod`
+/// bound (GPU-05 / SC3).
+///
+/// This is an ADDITIVE second `impl` block: it does NOT widen the enum's
+/// primary `T: Copy` bound (the broad `bytemuck::Pod` seam on the whole API is
+/// Phase 9 — module note at the top of this file). It exposes the bytes of a
+/// numeric POD column so the Phase 6 cubecl SoA upload can feed
+/// `bytemuck::cast_slice` → `cubecl::bytes::Bytes` → the device handle without
+/// a copy. Only numeric POD columns qualify; bool/enum columns are excluded
+/// (the host materializes them to numeric before upload, T-06-02).
+impl<T: Copy + bytemuck::Pod> TreeBuf<T> {
+    /// View the buffer's contents as raw bytes (zero-copy).
+    ///
+    /// Uses [`bytemuck::cast_slice`], which validates size/alignment and is
+    /// never a hand-rolled `transmute` (T-06-02). The returned slice borrows
+    /// `self` and has length `self.len() * size_of::<T>()`.
+    pub fn as_bytes(&self) -> &[u8] {
+        bytemuck::cast_slice(self.as_slice())
+    }
+}
+
 impl<T: Copy> Index<usize> for TreeBuf<T> {
     type Output = T;
 
@@ -94,5 +115,34 @@ impl<T: Copy> Index<usize> for TreeBuf<T> {
 impl<T: Copy> Default for TreeBuf<T> {
     fn default() -> Self {
         TreeBuf::empty()
+    }
+}
+
+#[cfg(test)]
+mod tree_buf_as_bytes_tests {
+    use super::TreeBuf;
+
+    #[test]
+    fn as_bytes_f32_roundtrip() {
+        let buf = TreeBuf::<f32>::from_owned(vec![1.0_f32, 2.0]);
+        // 2 elements × 4 bytes each.
+        assert_eq!(buf.as_bytes().len(), 8);
+        // Round-trip exact: bytes → f32 reproduces the source values.
+        let back: &[f32] = bytemuck::cast_slice(buf.as_bytes());
+        assert_eq!(back, &[1.0_f32, 2.0]);
+    }
+
+    #[test]
+    fn as_bytes_i32_len() {
+        let buf = TreeBuf::<i32>::from_owned(vec![5_i32]);
+        assert_eq!(buf.as_bytes().len(), 4);
+        let back: &[i32] = bytemuck::cast_slice(buf.as_bytes());
+        assert_eq!(back, &[5_i32]);
+    }
+
+    #[test]
+    fn as_bytes_empty() {
+        let buf = TreeBuf::<f64>::empty();
+        assert_eq!(buf.as_bytes().len(), 0);
     }
 }
