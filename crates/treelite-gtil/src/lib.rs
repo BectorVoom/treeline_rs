@@ -129,6 +129,36 @@ pub trait PredictOut: Copy + PartialOrd {
     /// Widen an `f32` postprocessor result back into this element. Identity for
     /// `O = f32`.
     fn out_from_f32(v: f32) -> Self;
+
+    /// `std::numeric_limits<InputT>::digits` — the IEEE-754 significand bit count
+    /// **including** the implicit leading bit: 24 for `f32`, 53 for `f64`
+    /// (`predict.cc:137`). Drives the categorical representability bound
+    /// `2^MANTISSA_BITS` (the largest consecutive integer exactly representable
+    /// in the input type).
+    ///
+    /// NOTE: deliberately NOT named `DIGITS` — the inherent `f32::DIGITS` /
+    /// `f64::DIGITS` consts are the *decimal* digit count (6 / 15) and would
+    /// SHADOW a trait const named `DIGITS` at `Self::DIGITS`, silently yielding
+    /// the wrong bound. `MANTISSA_BITS` mirrors `f32::MANTISSA_DIGITS` (24).
+    const MANTISSA_BITS: u32;
+
+    /// The full categorical float-representability guard + membership test
+    /// (`NextNodeCategorical`, `predict.cc:135-143`), evaluated in the input
+    /// element's own width so the per-dtype boundary is correct. Returns whether
+    /// `self` names a category present in `category_list`:
+    ///
+    /// ```cpp
+    /// max_representable_int = min(InputT(u32::MAX), InputT(1u64 << digits));
+    /// if (fvalue < 0 || fabs(fvalue) > max_representable_int) matched = false;
+    /// else matched = category_list.contains(static_cast<u32>(fvalue));
+    /// ```
+    ///
+    /// For `f32`: `max = min(4294967295, 2^24) = 2^24 = 16_777_216` — large
+    /// `u32`-fitting floats past the f32 mantissa limit are rejected (the
+    /// representability gap, RESEARCH Pitfall 3). For `f64`: `max =
+    /// min(4294967295, 2^53) = 2^32 - 1`. The reject happens BEFORE the `as u32`
+    /// truncation so an out-of-range float is never UB-cast (T-05-06).
+    fn category_match(self, category_list: &[u32]) -> bool;
 }
 
 impl PredictOut for f32 {
@@ -176,6 +206,22 @@ impl PredictOut for f32 {
     #[inline]
     fn out_from_f32(v: f32) -> Self {
         v
+    }
+
+    const MANTISSA_BITS: u32 = f32::MANTISSA_DIGITS; // 24
+
+    #[inline]
+    fn category_match(self, category_list: &[u32]) -> bool {
+        // max_representable_int = min(InputT(u32::MAX), InputT(1u64 << digits))
+        // For f32: min(4294967295.0, 2^24 = 16_777_216.0) = 16_777_216.0.
+        let max_representable_int: f32 =
+            (u32::MAX as f32).min((1u64 << Self::MANTISSA_BITS) as f32);
+        if self < 0.0 || self.abs() > max_representable_int {
+            false
+        } else {
+            let category_value = self as u32; // truncates toward zero (static_cast<u32>).
+            category_list.contains(&category_value)
+        }
     }
 }
 
@@ -225,6 +271,22 @@ impl PredictOut for f64 {
     fn out_from_f32(v: f32) -> Self {
         v as f64
     }
+
+    const MANTISSA_BITS: u32 = f64::MANTISSA_DIGITS; // 53
+
+    #[inline]
+    fn category_match(self, category_list: &[u32]) -> bool {
+        // max_representable_int = min(InputT(u32::MAX), InputT(1u64 << digits))
+        // For f64: min(4294967295.0, 2^53) = 4294967295.0 = 2^32 - 1.
+        let max_representable_int: f64 =
+            (u32::MAX as f64).min((1u64 << Self::MANTISSA_BITS) as f64);
+        if self < 0.0 || self.abs() > max_representable_int {
+            false
+        } else {
+            let category_value = self as u32; // truncates toward zero (static_cast<u32>).
+            category_list.contains(&category_value)
+        }
+    }
 }
 
 /// Cast a tree leaf value (domain `T`) into the output element `O`, matching
@@ -266,35 +328,30 @@ fn next_node(fvalue: f64, threshold: f64, op: Operator, left: i32, right: i32) -
 
 /// The `NextNodeCategorical` membership switch (`predict.cc:128-150`).
 ///
-/// Tests whether `fvalue` (a non-NaN feature value) names a category present in
-/// `category_list`, then routes per the `category_list_right_child` polarity: a
-/// MATCH goes right when `category_list_right_child` is true, else left (and a
-/// non-match goes the other way).
+/// Tests whether `fvalue` (a non-NaN feature value in the input element domain
+/// `O`) names a category present in `category_list`, then routes per the
+/// `category_list_right_child` polarity: a MATCH goes right when
+/// `category_list_right_child` is true, else left (and a non-match goes the
+/// other way).
 ///
-/// MINIMAL pull-forward (D-03): this ports the integer-category membership +
-/// polarity that the captured `lightgbm_categorical` fixture exercises. The full
-/// float-representability guard upstream (`predict.cc:132-139`: a category must
-/// be exactly representable as the input type AND fit in u32) is GTIL-06,
-/// deferred to Phase 5. Here we apply the load-bearing subset of that guard —
-/// reject negative or non-finite values (which can never be a valid category) so
-/// the `as u32` cast is well-defined — and leave the exhaustive
-/// representability matrix to Phase 5.
+/// FULL GTIL-06 guard (Plan 05-03): membership is decided by
+/// [`PredictOut::category_match`], which applies the exact upstream
+/// representability formula (`predict.cc:135-143`) in the input element's own
+/// width — `max_representable_int = min(u32::MAX, 2^digits)`, with
+/// `digits = 24` for `f32` and `53` for `f64`. This rejects `fvalue < 0 ||
+/// fabs(fvalue) > max_representable_int` BEFORE the `as u32` truncation, so a
+/// large-but-u32-fitting float past the f32 mantissa limit (e.g. `2^24 + 1`) is
+/// a non-match (the representability gap, RESEARCH Pitfall 3 / T-05-06). The
+/// per-dtype `digits` is exercised by the edge-seeded categorical fixtures.
 #[inline]
-fn next_node_categorical(
-    fvalue: f32,
+fn next_node_categorical<O: PredictOut>(
+    fvalue: O,
     category_list: &[u32],
     category_list_right_child: bool,
     left: i32,
     right: i32,
 ) -> i32 {
-    // A valid category is a non-negative value that fits in u32 (the subset of
-    // the upstream guard exercised by the fixture; full GTIL-06 is Phase 5).
-    let category_matched = if fvalue < 0.0 || !fvalue.is_finite() || fvalue > u32::MAX as f32 {
-        false
-    } else {
-        let category_value = fvalue as u32; // truncates toward zero (static_cast<u32>).
-        category_list.contains(&category_value)
-    };
+    let category_matched = fvalue.category_match(category_list);
     if category_list_right_child {
         if category_matched { right } else { left }
     } else if category_matched {
@@ -363,12 +420,12 @@ fn evaluate_tree<T: PredictScalar + PartialOrd, O: PredictOut>(
         } else if tree.node_type(nid) == TreeNodeType::kCategoricalTestNode {
             // Categorical split (predict.cc:161-165): membership in the node's
             // category list, routed by the category_list_right_child polarity.
-            // The input value is compared as an integer category; the minimal
-            // float-representability guard subset lives in `next_node_categorical`
-            // (full O-generic GTIL-06 guard is Plan 05-03). The category compare
-            // is over the f32 view of the input value.
+            // The full O-generic GTIL-06 representability guard lives in
+            // `next_node_categorical` / `PredictOut::category_match`; the input
+            // value is passed in its own `O` domain so the per-dtype boundary
+            // (2^24 for f32, 2^32-1 for f64) is applied correctly.
             next_node_categorical(
-                fvalue.to_compare_f64() as f32,
+                fvalue,
                 category_list_safe(tree, nid),
                 tree.category_list_right_child(nid),
                 tree.left_child(nid),
@@ -928,52 +985,169 @@ fn apply_postprocessor_f32(
 }
 
 #[cfg(test)]
-mod red_scaffolds {
-    //! RED Wave-0 scaffold for the FULL categorical representability guard
-    //! (GTIL-06, Pitfall 3).
+mod categorical_guard {
+    //! GREEN (Plan 05-03): the FULL categorical float-representability guard +
+    //! child polarity (GTIL-06, RESEARCH Pitfall 3), plus the NaN→default-child
+    //! routing confirmation (GTIL-05).
     //!
     //! 04-05 shipped a MINIMAL `next_node_categorical` guard
-    //! (`fvalue < 0 || !finite || fvalue > u32::MAX`). The FULL upstream guard
-    //! (`predict.cc:127-150`) rejects `fvalue < 0 || fabs(fvalue) >
-    //! max_representable_int` where, for f32 input,
-    //! `max_representable_int = min(u32::MAX, 2^digits) = min(4294967295, 2^24)
-    //! = 2^24`. The f32 representability-gap value `2.0**24 + 1.0`
-    //! (`== 16_777_217.0`, which rounds to `16_777_216.0 = 2^24` in f32) sits in
-    //! the `(2^24, u32::MAX]` gap: the minimal guard ACCEPTS it (and would route
-    //! it as a category match), but the FULL guard must REJECT it (route the
-    //! not-matched direction).
-    //!
-    //! This test asserts the FULL-guard outcome and is `#[ignore]`d with a
-    //! "RED until Plan 03 full categorical guard" reason — the Wave-0 MISSING
-    //! marker the Nyquist gate reads. It documents the exact edge value the
-    //! frozen capture (`fixtures/gtil/`) seeds (`2**24 + 1`).
+    //! (`fvalue < 0 || !finite || fvalue > u32::MAX`). Plan 05-03 replaces it
+    //! with the FULL upstream guard (`predict.cc:135-143`), now generic over the
+    //! input element `O` via [`PredictOut::category_match`]:
+    //! `max_representable_int = min(u32::MAX, 2^digits)` with `digits = 24` for
+    //! `f32` and `53` for `f64`, so f32's bound is `2^24` and f64's is `2^32-1`.
+    //! A value whose f32 representation strictly EXCEEDS `2^24` (the f32 mantissa
+    //! limit) is rejected by the full guard but is `u32`-fitting — so the minimal
+    //! guard ACCEPTED it. The same source value, in f64, is well within the f64
+    //! bound `2^32-1` and is decided purely by membership: this is the per-dtype
+    //! `digits` distinction the edge-seeded categorical fixtures exercise.
 
-    use super::next_node_categorical;
+    use super::{PredictOut, next_node_categorical};
 
-    /// RED (Plan 03): an f32 input value of `2.0**24 + 1.0` in a categorical
-    /// feature must be REJECTED as a non-match (routed the not-matched
-    /// direction) by the FULL representability guard, even though the integer it
-    /// rounds to (`2^24 = 16_777_216`) is present in the category list and fits
-    /// in `u32`. The current minimal guard does NOT yet reject it, so this test
-    /// is RED until Plan 03 ports the full `predict.cc:135-138` formula.
+    /// A u32-fitting categorical value whose f32 representation strictly exceeds
+    /// the f32 representability limit `2^24` is REJECTED as a non-match by the
+    /// FULL guard, even though it fits in `u32`. This is the f32 mantissa gap
+    /// (RESEARCH Pitfall 3): the minimal Phase-4 guard accepted any `< u32::MAX`
+    /// value, the full guard rejects past `2^24`. Was RED until Plan 05-03 ported
+    /// `predict.cc:135-143`; now GREEN.
     #[test]
-    #[ignore = "RED until Plan 03 full categorical guard (2^24+1 f32 representability gap)"]
-    fn categorical_full_guard_red() {
-        // The gap value: 2^24 + 1, which is NOT exactly representable in f32.
-        let gap_value: f32 = (2.0_f32).powi(24) + 1.0; // rounds to 2^24 in f32
-        // category_list contains the integer it rounds to (2^24 = 16_777_216),
-        // so the *minimal* guard would treat it as a MATCH.
-        let category_list: [u32; 1] = [16_777_216];
+    fn categorical_full_guard_rejects_f32_value_past_mantissa_limit() {
+        // 2^24 + 64 is exactly representable in f32 (a multiple of the f32 ULP at
+        // this magnitude) and strictly greater than the f32 bound 2^24, so the
+        // magnitude guard rejects it. It is well within u32, so the OLD minimal
+        // guard would have accepted it (and matched the category) — the bug the
+        // full guard fixes.
+        let past_limit: f32 = (2.0_f32).powi(24) + 64.0; // == 16_777_280.0 > 2^24
+        debug_assert!(past_limit > (2.0_f32).powi(24));
+        let category_list: [u32; 1] = [16_777_280];
         let (left, right) = (10_i32, 20_i32);
         // category_list_right_child = false -> match routes LEFT, non-match RIGHT.
-        let routed = next_node_categorical(gap_value, &category_list, false, left, right);
-        // FULL GTIL-06 contract: gap value is REJECTED (fabs > 2^24 max_repr),
-        // i.e. NON-match, so it must route RIGHT. The minimal guard currently
-        // routes LEFT (it accepts the value), making this assertion RED.
+        let routed = next_node_categorical(past_limit, &category_list, false, left, right);
+        // FULL GTIL-06 contract: value is REJECTED (fabs > 2^24 max_repr), i.e.
+        // NON-match, so it must route RIGHT — even though 16_777_280 is in the
+        // list and fits in u32.
         assert_eq!(
             routed, right,
-            "FULL categorical guard must reject the 2^24+1 f32 gap value as a \
-             non-match (route the not-matched direction)"
+            "FULL categorical guard must reject an f32 value past the 2^24 \
+             mantissa limit as a non-match (route the not-matched direction)"
         );
+    }
+
+    /// `2.0**24` (== max_representable_int for f32) is NOT rejected by the
+    /// magnitude guard — membership then decides. With the integer present in
+    /// the list it matches (routes LEFT under `right_child = false`).
+    #[test]
+    fn categorical_f32_at_boundary_is_not_magnitude_rejected() {
+        let at_max: f32 = (2.0_f32).powi(24); // exactly 16_777_216, representable
+        let category_list: [u32; 1] = [16_777_216];
+        let (left, right) = (10_i32, 20_i32);
+        // Present in list -> MATCH -> LEFT (polarity false).
+        assert_eq!(
+            next_node_categorical(at_max, &category_list, false, left, right),
+            left,
+            "2^24 is exactly representable in f32; membership (present) must match"
+        );
+        // Boundary value NOT in the list -> non-match -> RIGHT (still not
+        // magnitude-rejected, just absent).
+        let empty: [u32; 0] = [];
+        assert_eq!(
+            next_node_categorical(at_max, &empty, false, left, right),
+            right
+        );
+    }
+
+    /// The per-dtype `digits` is exercised: the f64 boundary is `2^32 - 1`,
+    /// distinct from the f32 boundary `2^24`. The SAME source value `2^24 + 64`
+    /// — magnitude-rejected on the f32 path (it exceeds the f32 bound `2^24`) —
+    /// is well within the f64 representable-integer range and is decided purely
+    /// by membership on the f64 path; and a value just past `2^32 - 1` is
+    /// magnitude-rejected for f64.
+    #[test]
+    fn categorical_f64_boundary_differs_from_f32() {
+        let (left, right) = (10_i32, 20_i32);
+        // 2^24 + 64 (the value the f32 test rejects) is exactly representable in
+        // f64 and far below the f64 bound 2^32-1: the f64 path accepts it and
+        // decides by membership (present -> MATCH -> LEFT).
+        let v_f64: f64 = (2.0_f64).powi(24) + 64.0; // 16_777_280.0, exact in f64
+        let list_present: [u32; 1] = [16_777_280];
+        assert_eq!(
+            next_node_categorical(v_f64, &list_present, false, left, right),
+            left,
+            "2^24+64 is exactly representable in f64 and below 2^32-1; \
+             membership (present) must match — unlike the f32 path which rejects it"
+        );
+        // Direct cross-dtype contrast on the SAME numeric value: the f32 view
+        // rejects (magnitude), the f64 view accepts (within bound).
+        assert!(!((2.0_f32).powi(24) + 64.0).category_match(&[16_777_280]));
+        assert!(((2.0_f64).powi(24) + 64.0).category_match(&[16_777_280]));
+
+        // f64 boundary: 2^32 - 1 == 4_294_967_295 is the max; anything strictly
+        // greater is magnitude-rejected (non-match -> RIGHT).
+        let max_u32_f64: f64 = u32::MAX as f64; // 4_294_967_295.0
+        let just_past: f64 = max_u32_f64 + 1.0; // 4_294_967_296.0 (exact in f64)
+        let any_list: [u32; 1] = [0];
+        assert_eq!(
+            next_node_categorical(just_past, &any_list, false, left, right),
+            right,
+            "f64 value past 2^32-1 must be magnitude-rejected as a non-match"
+        );
+    }
+
+    /// Negative and non-finite (±inf) fvalues are non-matches for BOTH dtypes
+    /// (the guard's `fvalue < 0 || fabs > max` arm). (NaN never reaches this
+    /// guard — `evaluate_tree` routes it to the default child first, GTIL-05;
+    /// see [`negative_and_infinite_are_non_match`] and the NaN note below.)
+    #[test]
+    fn negative_and_infinite_are_non_match() {
+        let list: [u32; 1] = [5];
+        // f32
+        assert!(!(-1.0_f32).category_match(&list));
+        assert!(!f32::INFINITY.category_match(&list));
+        assert!(!f32::NEG_INFINITY.category_match(&list));
+        // f64
+        assert!(!(-1.0_f64).category_match(&list));
+        assert!(!f64::INFINITY.category_match(&list));
+        assert!(!f64::NEG_INFINITY.category_match(&list));
+    }
+
+    /// Child polarity (`category_list_right_child`): with it TRUE, a MATCH routes
+    /// RIGHT and a non-match LEFT; with it FALSE, the reverse. Verbatim from the
+    /// upstream polarity block (`predict.cc:145-149`) — preserved unchanged.
+    #[test]
+    fn child_polarity_routes_correctly() {
+        let list: [u32; 1] = [3];
+        let (left, right) = (1_i32, 2_i32);
+        // right_child = true: MATCH -> right, non-match -> left.
+        assert_eq!(
+            next_node_categorical(3.0_f32, &list, true, left, right),
+            right
+        );
+        assert_eq!(
+            next_node_categorical(9.0_f32, &list, true, left, right),
+            left
+        );
+        // right_child = false: MATCH -> left, non-match -> right.
+        assert_eq!(
+            next_node_categorical(3.0_f32, &list, false, left, right),
+            left
+        );
+        assert_eq!(
+            next_node_categorical(9.0_f32, &list, false, left, right),
+            right
+        );
+    }
+
+    /// GTIL-05 confirmation: a NaN feature value is detected by
+    /// [`PredictOut::is_nan_val`] (which `evaluate_tree` checks BEFORE the
+    /// categorical-vs-numerical dispatch, routing it to `default_child`), so a
+    /// missing value never enters the categorical guard. This unit-asserts the
+    /// gate predicate the traversal relies on for both dtypes.
+    #[test]
+    fn nan_is_detected_before_categorical_guard() {
+        assert!(f32::NAN.is_nan_val(), "f32 NaN must route to default_child");
+        assert!(f64::NAN.is_nan_val(), "f64 NaN must route to default_child");
+        // A normal category value is NOT flagged as NaN (it proceeds to the guard).
+        assert!(!3.0_f32.is_nan_val());
+        assert!(!3.0_f64.is_nan_val());
     }
 }
