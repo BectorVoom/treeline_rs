@@ -206,8 +206,27 @@ Plans:
   2. The cubecl CPU backend is the default and the full equivalence harness passes within 1e-5 on it in CI, with output bit-identical across two runs of the same input (determinism check).
   3. SoA model buffers upload host→device via `TreeBuf::as_bytes()` + `client.create_from_slice` with per-column ragged-SoA concatenation across the forest (no per-tree handle explosion), and a plain-Rust fallback exists for any unimplemented cubecl op.
 
-**Plans**: TBD
-**Research flag:** Needs research-phase — data-dependent branching kernel shape; ragged-SoA concatenation design; kernel spike before full port.
+**Plans**: 5 plans
+Plans:
+**Wave 1** *(Wave 0 — crate scaffold + as_bytes + RED scaffolds; gates everything)*
+
+- [ ] 06-01-PLAN.md — treelite-cubecl crate scaffold + cubecl 0.10.0/bytemuck pin + TreeBuf::as_bytes() + RED test scaffolds (spike/upload/determinism/matrix sibling) (Wave 1)
+
+**Wave 2** *(blocked on Wave 1 — the mandatory spike)*
+
+- [ ] 06-02-PLAN.md — D-04 spike: break-free #[cube] descent + 2-tree default kernel + softmax_f64/exp2 micro-kernels vs scalar twins to 1e-5 (retires A1–A4) (Wave 2)
+
+**Wave 3** *(blocked on Wave 2 — building blocks)*
+
+- [ ] 06-03-PLAN.md — Per-column ragged-SoA upload (one handle/column, SC3/GPU-05) + all 10 #[cube] postprocessors verbatim cast order to 1e-5 (D-03) (Wave 3)
+
+**Wave 4** *(blocked on Wave 3 — the dense kernel slice)*
+
+- [ ] 06-04-PLAN.md — #[cube(launch)] kernels for all 4 predict kinds + leaf-vector broadcast (D-01) + predict_cpu host launcher with categorical/sparse scalar fallback (D-02), f32+f64 to 1e-5 (Wave 4)
+
+**Wave 5** *(blocked on Wave 4 — registration capstone)*
+
+- [ ] 06-05-PLAN.md — Backend::CubeclCpu + cubecl_cpu_case() registration + gtil_matrix_cubecl sibling gate (frozen goldens to 1e-5 + per-cell provenance D-06) + SC2 determinism (Wave 5)
 
 ### Phase 7: GPU Backend & Equivalence Report
 
