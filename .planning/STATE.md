@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 7 context gathered
-last_updated: "2026-06-10T21:39:00.463Z"
-last_activity: 2026-06-10 -- Phase 07 execution started
+stopped_at: Completed 07-02-PLAN.md
+last_updated: "2026-06-10T21:48:00.000Z"
+last_activity: 2026-06-10 -- Plan 07-02 complete (runtime-generic predict::<R,F>)
 progress:
   total_phases: 9
   completed_phases: 6
   total_plans: 40
-  completed_plans: 37
-  percent: 67
+  completed_plans: 38
+  percent: 68
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 07 (gpu-backend-equivalence-report) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
-Last activity: 2026-06-10 -- Phase 07 execution started
+Last activity: 2026-06-10 -- Plan 07-02 complete (runtime-generic predict::<R,F>)
 
 Progress: [██████████] Phase 06 complete (7/7 plans) — milestone 6/9 phases
 
@@ -93,6 +93,7 @@ Progress: [██████████] Phase 06 complete (7/7 plans) — mil
 | Phase 06 P06 | 9min | 3 tasks | 7 files |
 | Phase 06-cubecl-gtil-kernels-cpu-backend P07 | 6min | 2 tasks | 67 files |
 | Phase 07 P01 | 8min | 2 tasks | 5 files |
+| Phase 07 P02 | ~9min | 2 tasks | 1 file |
 
 ## Accumulated Context
 
@@ -198,6 +199,8 @@ Recent decisions affecting current work:
 - [Phase ?]: [06-06]: CR-03 closed — validate_leaf_vectors (host-side, called from upload_forest before any device op) rejects out-of-range leaf-vector spans with CubeclError::MalformedLeafVector (begin<=end, end<=segment_len, begin+broadcast<=segment_len); absent/short CSR columns treated as scalar leaves. malformed.rs locks the T-06-09 no-OOB contract.
 - [Phase ?]: [07-01]: A3 SETTLED — a missing CUDA device surfaces as a catchable Rust panic (cudarc dlopen(libcuda.so) failure) trapped by catch_unwind in device::client::<R>() -> DeviceUnavailable, NOT an FFI abort. Plan 03 needs NO pre-construction probe; *_case() may construct GPU clients directly, treating DeviceUnavailable as skip-not-fail.
 - [Phase ?]: [07-01]: GPU backends are crate-local additive cargo features (rocm/cuda/wgpu) forwarding to cubecl/* (cubecl table: rocm=[hip]); workspace root stays cubecl=features=[cpu] so default builds need no GPU libs (D-04/Pitfall 5). device.rs uses generic <R::Device>::default() — HipRuntime::Device is AmdDevice not HipDevice.
+- [07-02]: Phase-7's central code change is exactly ONE file — treelite_cubecl::lib.rs. predict::<R: Runtime, F> is the runtime-generic launcher (six ComputeClient<R> sigs, three launch::<F,T,R> sites, three upload_forest::<R,T> calls); kernels/* and upload.rs were ALREADY R-generic and stay untouched (the smell guard: git diff --stat = 0). Verified the generic path compiles under --features cuda → Plan 03 calls predict::<HipRuntime/CudaRuntime/WgpuRuntime, F> directly.
+- [07-02]: predict::<R> wires Plan-01's device::client::<R>(tag)? — DeviceUnavailable propagates via ?, NO silent CPU fallback (D-05/D-09). Tag = std::any::type_name::<R>() (the implemented client() signature needs a &'static str arg, unlike RESEARCH's no-arg device_and_client sketch). The model_routes_to_scalar_fallback (D-02) gate stays BEFORE client construction, so a categorical/non-kLT model on a device-less backend still returns via scalar. predict_cpu is now a one-line shim over predict::<CpuRuntime, F>; harness + gtil_matrix_cubecl 1e-5 gate byte-identical (untouched).
 
 ### Pending Todos
 
@@ -220,6 +223,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T21:38:51.081Z
-Stopped at: Phase 7 context gathered
-Resume file: .planning/phases/07-gpu-backend-equivalence-report/07-CONTEXT.md
+Last session: 2026-06-10T21:48:00.000Z
+Stopped at: Completed 07-02-PLAN.md
+Resume file: None

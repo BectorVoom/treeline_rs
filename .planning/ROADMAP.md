@@ -256,7 +256,7 @@ Plans:
 
 **Wave 1** *(blocked on Wave 0 — same treelite-cubecl lib.rs/device.rs)*
 
-- [ ] 07-02-PLAN.md — Generalize host launcher predict_cpu → predict::<R> + predict_cpu shim; CPU 1e-5 gate byte-identical (GPU-03) (Wave 1)
+- [x] 07-02-PLAN.md — Generalize host launcher predict_cpu → predict::<R> + predict_cpu shim; CPU 1e-5 gate byte-identical (GPU-03) (Wave 1)
 
 **Wave 2** *(blocked on Wave 1 — needs predict::<R>)*
 
