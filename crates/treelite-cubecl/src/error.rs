@@ -92,6 +92,24 @@ pub enum CubeclError {
         backend: &'static str,
     },
 
+    /// Client construction for a compiled-in backend unwound with a panic whose
+    /// payload did NOT match the known device-absence signature (WR-01). This is
+    /// a GENUINE initialization fault — a driver error, OOM, an internal cubecl
+    /// assertion, or any other bug that unwinds through `R::client(...)` — NOT a
+    /// benign "no device" skip. The caller MUST treat this as a real failure
+    /// (never a skip), so a true GPU init bug on a device-present machine is
+    /// surfaced rather than silently masquerading as device absence. The `detail`
+    /// carries the panic message so the fault is not discarded. Produced by
+    /// [`crate::device::client`] when the trapped panic is not device-absence.
+    #[error("client init failed for the {backend} backend: {detail}")]
+    ClientInit {
+        /// The selected backend's feature name (`"rocm"` / `"cuda"` / `"wgpu"`).
+        backend: &'static str,
+        /// The trapped panic message (or an empty / `"<non-string panic payload>"`
+        /// marker when the payload was neither `String` nor `&str`).
+        detail: String,
+    },
+
     /// A model construct is not yet supported on the cubecl path (sparse CSR,
     /// categorical splits, or — until Wave 3 — the launcher itself). Routed to
     /// the scalar fallback by the host, never a panic. Catch-all so the

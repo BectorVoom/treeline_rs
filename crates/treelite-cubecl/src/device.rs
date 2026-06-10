@@ -49,7 +49,74 @@ where
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         R::client(&<R::Device as Default>::default())
     }))
-    .map_err(|_| CubeclError::DeviceUnavailable { backend })
+    .map_err(|payload| classify_client_panic(backend, payload))
+}
+
+/// Substrings that identify a *device-absent* construction panic (WR-01).
+///
+/// The A3 spike established that a missing HIP/CUDA/wgpu device surfaces as a
+/// catchable Rust panic whose payload message reports the dlopen / driver-init /
+/// adapter-enumeration failure. We classify a trapped panic as the benign
+/// [`CubeclError::DeviceUnavailable`] skip ONLY when its message matches one of
+/// these known device-absence signatures; ANY other panic (a real driver fault,
+/// OOM, or an internal cubecl assertion) is preserved as a genuine
+/// [`CubeclError::ClientInit`] failure with its message carried in `detail`,
+/// rather than silently swallowed as a skip.
+///
+/// Conservative-by-design: matching is case-insensitive and substring-based so a
+/// minor driver wording change still classifies a true absence as a skip, while
+/// an unrelated fault — which will not contain any of these phrases — is
+/// surfaced. If a future runtime reports absence with wording absent from this
+/// list, it degrades to a (loud) `ClientInit` failure, never a false skip.
+const DEVICE_ABSENT_SIGNATURES: &[&str] = &[
+    // cubecl/HIP/CUDA dlopen failure when the driver shared object is missing.
+    "unable to dynamically load",
+    // generic "no device / no adapter present" phrasings across backends.
+    "no device available",
+    "no available device",
+    "no compatible adapter",
+    "no suitable adapter",
+    "failed to find an appropriate adapter",
+    "no devices found",
+];
+
+/// Classify a trapped client-construction panic payload (WR-01).
+///
+/// Extracts the panic message (`String` then `&str` payloads), lower-cases it,
+/// and returns [`CubeclError::DeviceUnavailable`] only when it matches a known
+/// device-absence signature; otherwise returns [`CubeclError::ClientInit`] with
+/// the original message preserved in `detail` so a genuine init fault is never
+/// discarded. A non-string payload (neither `String` nor `&str`) cannot be a
+/// recognized absence signature, so it is conservatively treated as a real
+/// `ClientInit` fault with a marker detail rather than a silent skip.
+fn classify_client_panic(
+    backend: &'static str,
+    payload: Box<dyn std::any::Any + Send>,
+) -> CubeclError {
+    let msg = payload
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| payload.downcast_ref::<&str>().copied());
+    match msg {
+        Some(m) => {
+            let lower = m.to_ascii_lowercase();
+            if DEVICE_ABSENT_SIGNATURES
+                .iter()
+                .any(|sig| lower.contains(sig))
+            {
+                CubeclError::DeviceUnavailable { backend }
+            } else {
+                CubeclError::ClientInit {
+                    backend,
+                    detail: m.to_string(),
+                }
+            }
+        }
+        None => CubeclError::ClientInit {
+            backend,
+            detail: "<non-string panic payload>".to_string(),
+        },
+    }
 }
 
 /// ROCm (AMD HIP) client. Returns [`CubeclError::DeviceUnavailable`] when no
