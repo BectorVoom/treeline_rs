@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: End-to-End Spine** - Workspace + enums + minimal core + minimal XGBoost-JSON load → scalar predict → 1e-5 golden verify (completed 2026-06-09)
 - [x] **Phase 2: Builder & Serialization** - Validated `ModelBuilder` + bulk path + v5 binary/PyBuffer/JSON round-trip and field accessors (completed 2026-06-10)
 - [x] **Phase 3: Full XGBoost Loaders** - JSON + UBJSON + legacy binary with auto-detect and version-gated base_score margin transform (completed 2026-06-10)
-- [ ] **Phase 4: LightGBM & scikit-learn Loaders** - LightGBM text + RF/ET/GBM/IsolationForest + HistGradientBoosting
+- [x] **Phase 4: LightGBM & scikit-learn Loaders** - LightGBM text + RF/ET/GBM/IsolationForest + HistGradientBoosting (completed 2026-06-10)
 - [ ] **Phase 5: Full Scalar GTIL & Equivalence Harness** - All 4 predict kinds, 10 postprocessors, sparse CSR, categoricals, output shaping, seeded golden harness at 1e-5
 - [ ] **Phase 6: cubecl GTIL Kernels (CPU Backend)** - Traversal + postprocessor kernels; CPU backend default, validated to 1e-5 with zero-copy SoA upload
 - [ ] **Phase 7: GPU Backend & Equivalence Report** - Runtime-selectable GPU backend (CUDA/wgpu) with a documented per-model-class deviation report
@@ -149,7 +149,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 — the HistGB tentpole)*
 
-- [ ] 04-08-PLAN.md — HistGradientBoosting packed-node decode (52/56) + features_map + categories_map; numerical then categorical, 1e-5 goldens (SKL-04) (Wave 4)
+- [x] 04-08-PLAN.md — HistGradientBoosting packed-node decode (52/56) + features_map + categories_map; numerical then categorical, 1e-5 goldens (SKL-04) (Wave 4)
 
 ### Phase 5: Full Scalar GTIL & Equivalence Harness
 
@@ -236,7 +236,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. End-to-End Spine | 4/4 | Complete    | 2026-06-09 |
 | 2. Builder & Serialization | 6/6 | Complete    | 2026-06-10 |
 | 3. Full XGBoost Loaders | 4/4 | Complete    | 2026-06-10 |
-| 4. LightGBM & scikit-learn Loaders | 7/8 | In Progress|  |
+| 4. LightGBM & scikit-learn Loaders | 8/8 | Complete   | 2026-06-10 |
 | 5. Full Scalar GTIL & Equivalence Harness | 0/TBD | Not started | - |
 | 6. cubecl GTIL Kernels (CPU Backend) | 0/TBD | Not started | - |
 | 7. GPU Backend & Equivalence Report | 0/TBD | Not started | - |

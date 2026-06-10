@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
+status: verifying
 stopped_at: Completed 04-06-PLAN.md
-last_updated: "2026-06-10T05:08:36.347Z"
+last_updated: "2026-06-10T05:18:44.121Z"
 last_activity: 2026-06-10 -- Plan 04-05 complete
 progress:
   total_phases: 9
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 22
-  completed_plans: 21
-  percent: 33
+  completed_plans: 22
+  percent: 44
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 
 Phase: 04 (lightgbm-scikit-learn-loaders) — EXECUTING
 Plan: 8 of 8
-Status: Ready to execute
-Last activity: 2026-06-10 -- Plan 04-05 complete
+Status: Phase complete — ready for verification
+Last activity: 2026-06-10 -- Plan 04-08 complete (HistGB SKL-04, Phase 4 done)
 
-Progress: [███████░] 88% (Phase 04 plans: 7/8)
+Progress: [████████] 100% (Phase 04 plans: 8/8)
 
 ## Performance Metrics
 
@@ -74,6 +74,7 @@ Progress: [███████░] 88% (Phase 04 plans: 7/8)
 | Phase 04 P06 | 13min | 2 tasks | 11 files |
 | Phase Phase 04 PP05 | 5min | 2 tasks tasks | 8 files files |
 | Phase 04 P07 | ~2min | 1 tasks | 3 files |
+| Phase 04 P08 | ~8min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -146,6 +147,10 @@ Recent decisions affecting current work:
 - [Phase ?]: [04-05]: Minimal NextNodeCategorical GTIL branch (D-03): integer membership + polarity (predict.cc:128-150); load-bearing subset of the float-representability guard applied, exhaustive matrix (GTIL-06) deferred to Phase 5. category_list_safe wrapper returns empty on OOB CSR slice (T-04-12). lightgbm_categorical golden max |delta|=9.54e-7 < 1e-5; workspace green.
 - [Phase ?]: 04-07: IsolationForest ratio_c assigned post-commit (Model field, not BuilderMetadata), mirroring upstream PostProcessorFunc config
 - [Phase ?]: 04-07: IsolationForest leaf isolation depths consumed AS-IS via shared GB build_tree (no loader-side recomputation, D-07); zero ratio_c rejected (T-04-17)
+- [04-08]: HistGB packed HistGradientBoostingNode decoded field-by-field via from_le_bytes at a NodeLayout offset table parameterized by itemsize (52 = i32 feature_idx, 56 = i64); NO transmute/bytemuck (Phase-3 D-08, grep-clean). itemsize ∉ {52,56}, short nodes buffer, OOB feature_idx, and OOB categorical bitset row all rejected with typed SklError::HistGbDecode BEFORE any field read (T-04-18/19/20/21).
+- [04-08]: leaf detection is left==0 (HistGB missing-child marker, NOT the sklearn-tree ==-1 rule); split_index = features_map[feature_idx] ALWAYS applied (Pitfall 4); num_threshold read DIRECTLY (Pitfall 5, no _bin_mapper recon); known_cat_bitsets UNUSED in v4.7.0 (A3) so omitted from the Rust signatures.
+- [04-08]: HistGB categorical check(bitmap,val,row)=(bitmap[8*row+val/32]>>(val%32))&1 ported verbatim — the 8*row (8 uint32 = one 256-bit row) stride is a SEPARATE function from LightGBM's bitset_to_list (different layout, RESEARCH No-Analog). cat_transform = categories_map[fid][cat] when present else identity.
+- [04-08]: sklearn_histgb_numerical max |delta| = 0e0; sklearn_histgb_categorical max |delta| = 1.19e-7 (f32-quant floor) — both « 1e-5. SKL-04 closed; Phase 4 complete. Harness uses a self-contained base64 decoder (no new dependency).
 
 ### Pending Todos
 
@@ -167,6 +172,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T05:08:18.142Z
-Stopped at: Completed 04-06-PLAN.md
+Last session: 2026-06-10T05:17:31Z
+Stopped at: Completed 04-08-PLAN.md (Phase 4 complete — ready for verification)
 Resume file: None
