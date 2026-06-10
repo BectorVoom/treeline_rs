@@ -50,12 +50,19 @@ use serde::de;
 /// BEFORE `Infinity` BEFORE `NaN`.
 pub fn replace_nonfinite(input: &str) -> String {
     let b = input.as_bytes();
-    let mut out = String::with_capacity(input.len());
+    // Build the output as raw BYTES, never re-slicing the `&str` (which would
+    // panic on a non-char-boundary) and never going through `c as char` (which
+    // would re-encode any byte >= 0x80 as a 2-byte UTF-8 sequence and corrupt
+    // non-ASCII string contents). The NaN/Inf sentinel tokens are pure ASCII,
+    // so byte-level matching against `b"..."` literals is sound, and every other
+    // byte — including multi-byte UTF-8 in string contents — is copied verbatim
+    // (CR-01 / CR-02: no panic, string contents byte-for-byte unchanged).
+    let mut out: Vec<u8> = Vec::with_capacity(b.len());
     let (mut i, mut in_str, mut escaped) = (0usize, false, false);
     while i < b.len() {
         let c = b[i];
         if in_str {
-            out.push(c as char);
+            out.push(c);
             if escaped {
                 escaped = false;
             } else if c == b'\\' {
@@ -69,28 +76,30 @@ pub fn replace_nonfinite(input: &str) -> String {
         match c {
             b'"' => {
                 in_str = true;
-                out.push('"');
+                out.push(b'"');
                 i += 1;
             }
-            _ if input[i..].starts_with("-Infinity") => {
-                out.push_str("\"@-Inf@\"");
+            _ if b[i..].starts_with(b"-Infinity") => {
+                out.extend_from_slice(b"\"@-Inf@\"");
                 i += 9;
             }
-            _ if input[i..].starts_with("Infinity") => {
-                out.push_str("\"@Inf@\"");
+            _ if b[i..].starts_with(b"Infinity") => {
+                out.extend_from_slice(b"\"@Inf@\"");
                 i += 8;
             }
-            _ if input[i..].starts_with("NaN") => {
-                out.push_str("\"@NaN@\"");
+            _ if b[i..].starts_with(b"NaN") => {
+                out.extend_from_slice(b"\"@NaN@\"");
                 i += 3;
             }
             _ => {
-                out.push(c as char);
+                out.push(c);
                 i += 1;
             }
         }
     }
-    out
+    // The input was valid UTF-8 and only ASCII sentinel bytes were inserted, so
+    // the result is always valid UTF-8.
+    String::from_utf8(out).expect("input was valid UTF-8; only ASCII sentinels inserted")
 }
 
 /// Deserialize a single `f32`, recovering the D-02 sentinel strings.

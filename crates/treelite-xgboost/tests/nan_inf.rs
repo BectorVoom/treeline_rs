@@ -28,6 +28,35 @@ fn nan_inf_string_contents_are_byte_unchanged() {
 }
 
 #[test]
+fn nan_inf_non_ascii_string_contents_round_trip_byte_unchanged() {
+    // CR-02 regression: a UTF-8 feature name with bytes >= 0x80 inside a string
+    // must pass through byte-for-byte. The old `c as char` path re-encoded each
+    // 0x80..=0xFF byte as two UTF-8 bytes, mangling names like "température".
+    let input = r#"{"name":"température","unit":"°C — naïve"}"#;
+    let out = replace_nonfinite(input);
+    assert_eq!(
+        out.as_bytes(),
+        input.as_bytes(),
+        "non-ASCII UTF-8 string contents must be byte-for-byte unchanged"
+    );
+}
+
+#[test]
+fn nan_inf_non_ascii_byte_in_value_position_does_not_panic() {
+    // CR-01 regression: a non-ASCII byte OUTSIDE a string (value position) used
+    // to make the scanner re-slice the `&str` at a non-char-boundary and panic.
+    // The byte-level scanner must copy it through verbatim with no panic.
+    let input = "[1.5, \"é\", NaN, é]"; // a stray `é` (2-byte UTF-8) in value pos
+    let out = replace_nonfinite(input);
+    // The NaN sentinel is still rewritten, and the stray bytes are preserved.
+    assert!(out.contains("\"@NaN@\""), "NaN must still be rewritten");
+    // Every original non-ASCII byte survives (count of 0xC3 lead bytes preserved).
+    let lead_c3_in = input.as_bytes().iter().filter(|&&x| x == 0xC3).count();
+    let lead_c3_out = out.as_bytes().iter().filter(|&&x| x == 0xC3).count();
+    assert_eq!(lead_c3_in, lead_c3_out, "non-ASCII bytes must be preserved");
+}
+
+#[test]
 fn nan_inf_sentinels_deserialize_into_f32_nonfinite() {
     // The three sentinel strings round-trip into f32::NAN / INFINITY / NEG_INF
     // via the de_vec_f32 adapter (the shared D-02 recovery point).
