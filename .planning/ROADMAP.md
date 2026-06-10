@@ -82,6 +82,10 @@ Plans:
 - [x] 02-04-PLAN.md — DumpAsJSON (SER-03) + Model/Tree field accessors (SER-04) (Wave 3) ✅
 - [x] 02-05-PLAN.md — Rewire XGBoost loader through ModelBuilder (D-11) + 1e-5 regression gate (Wave 3) ✅
 
+**Gap closure** *(post-verification)*
+
+- [x] 02-06-PLAN.md — Builder byte-fidelity: end_tree emits AllocNode per-node columns (CR-01) + empty-unless-set stats (CR-02), closing 02-VERIFICATION criterion 3 PARTIAL ✅
+
 ### Phase 3: Full XGBoost Loaders
 
 **Goal**: Widen the loader layer to the full XGBoost surface — all three formats with auto-detection and the version-gated base_score margin transform — proven across formats against the richest fixture set.

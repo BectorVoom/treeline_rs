@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: 02-05 complete — Phase 2 plans 5/5 done; next is phase verification
-last_updated: "2026-06-10T00:30:00.000Z"
-last_activity: 2026-06-10 -- 02-05 complete; load_xgboost_json rewired through ModelBuilder (D-11), equivalence max |delta| = 0e0 < 1e-5, workspace green
+stopped_at: 02-06 complete — Phase 2 gap-closure done (CR-01 + CR-02); next is Phase 2 re-verification then Phase 3
+last_updated: "2026-06-10T00:40:00.000Z"
+last_activity: 2026-06-10 -- 02-06 complete; end_tree now emits AllocNode per-node columns + empty-unless-set stats, byte-fidelity gap (02-VERIFICATION criterion 3 PARTIAL) closed, workspace green
 progress:
   total_phases: 9
   completed_phases: 1
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 
 ## Current Position
 
-Phase: 02 (builder-serialization) — 5/5 PLANS COMPLETE (ready for phase verification)
-Plan: 5 of 5 — COMPLETE
-Status: Plan 02-05 COMPLETE — load_xgboost_json rewired through treelite_builder::ModelBuilder (D-11) at 5cfa84e; validators preserved ahead of builder emission, builder errors propagate as XgbError::Builder; 1e-5 regression gate green (max |delta| = 0e0); workspace green; next: Phase 2 verification then Phase 3 (Full XGBoost Loaders)
-Last activity: 2026-06-10 -- 02-05 complete; treelite-xgboost gains treelite-builder dep, loader emits 11 ModelBuilder calls / 0 TreeBuf::from_owned in build path, workspace green
+Phase: 02 (builder-serialization) — 5/5 PLANS + 02-06 gap-closure COMPLETE
+Plan: 02-06 (gap-closure) — COMPLETE
+Status: Plan 02-06 COMPLETE — end_tree now ports upstream AllocNode column emission: five per-node CSR/category columns at length num_nodes (CR-01) and empty-unless-set stat columns gated per-column (CR-02); new tests/column_fidelity.rs guards both invariants; 02-VERIFICATION criterion 3 PARTIAL closed; golden round-trip + 1e-5 equivalence NOT regressed; workspace green; next: Phase 2 re-verification then Phase 3 (Full XGBoost Loaders)
+Last activity: 2026-06-10 -- 02-06 complete; builder byte-fidelity gap closed, workspace green (golden round-trip + 1e-5 equivalence intact)
 
 Progress: [██████░░░░] 56%
 
@@ -60,6 +60,7 @@ Progress: [██████░░░░] 56%
 | Phase 02 P03 | 75min | 2 tasks | 10 files |
 | Phase 02 P04 | 6min | 2 tasks | 9 files |
 | Phase 02 P05 | 10min | 2 tasks | 3 files |
+| Phase 02 P06 | 6min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -91,6 +92,8 @@ Recent decisions affecting current work:
 - [02-04]: Model v5 bookkeeping readers promoted pub(crate)→pub (read-only, NO setter) as the SER-04 inspection surface, preserving field_accessor.cc Set-rejection fidelity (T-02-J02).
 - [02-05]: load_xgboost_json rewired through treelite_builder::ModelBuilder (D-11) — 11 builder calls, 0 TreeBuf::from_owned in build path; loader validators (require_non_negative/check_dim) run BEFORE builder emission; builder errors propagate as XgbError::Builder (thiserror transparent, no panic, no anyhow).
 - [02-05]: 1e-5 regression gate proves the rewiring is bit-identical — equivalence max |delta| = 0e0 < 1e-5 (Phase 2 success criterion 1, second half); objective→postprocessor map, f64 base_score margin transform, and F32-only variant all unchanged.
+- [02-06]: end_tree ports upstream AllocNode (detail/tree.h:70-101) verbatim — the five per-node CSR/category columns (category_list_right_child, leaf_vector_begin/end, category_list_begin/end) are length num_nodes (CR-01); begin/end default to 0 because the builder leaves leaf_vector_/category_list_ value buffers empty.
+- [02-06]: stat columns (data_count/sum_hess/gain + _present) are empty-unless-set per-column (CR-02), gating TreeBuf::empty() vs from_owned on any_* flags — mirrors upstream's if(!_present_.Empty()) guards; deserializer reads by column length so serialize→deserialize stays self-consistent (no regression to golden round-trip or 1e-5 equivalence).
 
 ### Pending Todos
 
@@ -112,6 +115,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T00:30:00.000Z
-Stopped at: 02-05 complete — Phase 2 plans 5/5 done; next is Phase 2 verification
-Resume file: .planning/phases/02-builder-serialization/ (phase verification)
+Last session: 2026-06-10T00:40:00.000Z
+Stopped at: 02-06 complete — Phase 2 gap-closure done (CR-01 + CR-02); next is Phase 2 re-verification
+Resume file: .planning/phases/02-builder-serialization/ (phase re-verification)
