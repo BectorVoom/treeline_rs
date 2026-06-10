@@ -102,7 +102,7 @@ Plans:
 Plans:
 **Wave 0**
 
-- [ ] 03-01-PLAN.md — Three-format fixtures + shared prediction golden + single v5 byte-fidelity golden + frozen manifest (A1/A2 generation spike) + RED 3-format test scaffold (Wave 0)
+- [x] 03-01-PLAN.md — Three-format fixtures + shared prediction golden + single v5 byte-fidelity golden + frozen manifest (A1/A2 generation spike) + RED 3-format test scaffold (Wave 0) — DONE (3/3 tasks, A1=xgboost 1.7.6)
 
 **Wave 1** *(blocked on Wave 0)*
 

@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Phase 3 context gathered
-last_updated: "2026-06-10T01:16:32.501Z"
-last_activity: 2026-06-10
+status: executing
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-06-10T10:52:00.000Z"
+last_activity: 2026-06-10 -- Completed Phase 03 Plan 01 (3-format fixtures + RED scaffold)
 progress:
   total_phases: 9
   completed_phases: 2
-  total_plans: 10
-  completed_plans: 10
-  percent: 22
+  total_plans: 14
+  completed_plans: 11
+  percent: 24
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-09)
 
 **Core value:** Predictions match upstream Treelite within 1e-5.
-**Current focus:** Phase 02 — builder-serialization
+**Current focus:** Phase 03 — full-xgboost-loaders
 
 ## Current Position
 
-Phase: 3
-Plan: Not started
-Status: Plan 02-06 COMPLETE — end_tree now ports upstream AllocNode column emission: five per-node CSR/category columns at length num_nodes (CR-01) and empty-unless-set stat columns gated per-column (CR-02); new tests/column_fidelity.rs guards both invariants; 02-VERIFICATION criterion 3 PARTIAL closed; golden round-trip + 1e-5 equivalence NOT regressed; workspace green; next: Phase 2 re-verification then Phase 3 (Full XGBoost Loaders)
-Last activity: 2026-06-10
+Phase: 03 (full-xgboost-loaders) — EXECUTING
+Plan: 2 of 4
+Status: Executing Phase 03 (Plan 01 complete)
+Last activity: 2026-06-10 -- Completed Phase 03 Plan 01 (3-format fixtures + RED scaffold)
 
-Progress: [██████░░░░] 56%
+Progress: [██████░░░░] 58%
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Progress: [██████░░░░] 56%
 | Phase 02 P04 | 6min | 2 tasks | 9 files |
 | Phase 02 P05 | 10min | 2 tasks | 3 files |
 | Phase 02 P06 | 6min | 2 tasks | 2 files |
+| Phase 03 P01 | 12min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,9 @@ Recent decisions affecting current work:
 - [02-05]: 1e-5 regression gate proves the rewiring is bit-identical — equivalence max |delta| = 0e0 < 1e-5 (Phase 2 success criterion 1, second half); objective→postprocessor map, f64 base_score margin transform, and F32-only variant all unchanged.
 - [02-06]: end_tree ports upstream AllocNode (detail/tree.h:70-101) verbatim — the five per-node CSR/category columns (category_list_right_child, leaf_vector_begin/end, category_list_begin/end) are length num_nodes (CR-01); begin/end default to 0 because the builder leaves leaf_vector_/category_list_ value buffers empty.
 - [02-06]: stat columns (data_count/sum_hess/gain + _present) are empty-unless-set per-column (CR-02), gating TreeBuf::empty() vs from_owned on any_* flags — mirrors upstream's if(!_present_.Empty()) guards; deserializer reads by column length so serialize→deserialize stays self-consistent (no regression to golden round-trip or 1e-5 equivalence).
+- [03-01]: A1 settled empirically — xgboost 1.7.6 writes genuine legacy binary (a 4-byte `binf` magic prefix + 136-byte LearnerModelParam; base_score=0.5 @0, num_feature=4 @4). Spike resolved autonomously, no human checkpoint; 1.6.2/0.90 fallbacks not needed.
+- [03-01]: base_score=0.5 (A2) makes the version-gated sigmoid margin transform a no-op, so all three XGBoost formats serialize to ONE identical v5 blob (golden_v5_3format.bin, 7775 bytes, sha256 ae53fbf8…) — proven at generation time by the A2 cross-format same-blob assert.
+- [03-01]: Legacy binary uses treelite's separate load_xgboost_model_legacy_binary entry point (not load_xgboost_model, which only handles JSON/UBJSON and mis-sniffs the binf-prefixed legacy file) — mirrors upstream's D-09 API split; the Rust load_xgboost_legacy must handle the binf magic per D-07.
 
 ### Pending Todos
 
@@ -116,6 +120,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T01:16:32.497Z
-Stopped at: Phase 3 context gathered
-Resume file: .planning/phases/03-full-xgboost-loaders/03-CONTEXT.md
+Last session: 2026-06-10T10:52:00.000Z
+Stopped at: Completed 03-01-PLAN.md
+Resume file: None
