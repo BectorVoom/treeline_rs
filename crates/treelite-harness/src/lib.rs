@@ -28,6 +28,7 @@ use serde::Deserialize;
 use serde::de::{Deserializer, Visitor};
 
 pub mod manifest;
+pub mod report;
 
 pub use manifest::{Manifest, check_manifest};
 
