@@ -49,17 +49,17 @@ fn binary_metadata(m: &mut Model) {
 }
 
 fn f32_model() -> Model {
-    let mut m = Model::new(ModelVariant::F32(ModelPreset::new(vec![split_tree::<f32>(
-        0.5, 1.25, -1.5,
-    )])));
+    let mut m = Model::new(ModelVariant::F32(ModelPreset::new(vec![
+        split_tree::<f32>(0.5, 1.25, -1.5),
+    ])));
     binary_metadata(&mut m);
     m
 }
 
 fn f64_model() -> Model {
-    let mut m = Model::new(ModelVariant::F64(ModelPreset::new(vec![split_tree::<f64>(
-        0.5, 1.25, -1.5,
-    )])));
+    let mut m = Model::new(ModelVariant::F64(ModelPreset::new(vec![
+        split_tree::<f64>(0.5, 1.25, -1.5),
+    ])));
     binary_metadata(&mut m);
     m
 }
@@ -111,7 +111,11 @@ fn cross_domain_comparison_is_order_preserving() {
     let left = predict(&m, &[0.4999_f32], 1, &Config::default()).unwrap();
     let right = predict(&m, &[0.5_f32], 1, &Config::default()).unwrap();
     assert!((left[0] - 1.25_f32).abs() < 1e-6, "left route: {}", left[0]);
-    assert!((right[0] - (-1.5_f32)).abs() < 1e-6, "right route: {}", right[0]);
+    assert!(
+        (right[0] - (-1.5_f32)).abs() < 1e-6,
+        "right route: {}",
+        right[0]
+    );
 }
 
 #[test]

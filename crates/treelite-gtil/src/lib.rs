@@ -34,6 +34,14 @@ pub trait PredictScalar: Copy {
     fn from_f32(v: f32) -> Self;
     /// Narrow this leaf value to the `f32` output accumulator type.
     fn to_f32(self) -> f32;
+    /// Widen this threshold to `f64` for the cross-domain comparison in
+    /// [`next_node`]. f32→f64 and f64→f64 are both exact (lossless), so the
+    /// comparison is order-preserving with respect to the original domain
+    /// (`NextNode<InputT,ThresholdT>`, `predict.cc:99-124`).
+    fn threshold_to_f64(self) -> f64;
+    /// Cast this leaf value to `f64` (`static_cast<double>(LeafValue)`), the
+    /// widening used when the output element `O` is `f64` (`predict.cc:228`).
+    fn to_f64(self) -> f64;
 }
 
 impl PredictScalar for f32 {
@@ -44,6 +52,14 @@ impl PredictScalar for f32 {
     #[inline]
     fn to_f32(self) -> f32 {
         self
+    }
+    #[inline]
+    fn threshold_to_f64(self) -> f64 {
+        self as f64
+    }
+    #[inline]
+    fn to_f64(self) -> f64 {
+        self as f64
     }
 }
 
@@ -56,16 +72,184 @@ impl PredictScalar for f64 {
     fn to_f32(self) -> f32 {
         self as f32
     }
+    #[inline]
+    fn threshold_to_f64(self) -> f64 {
+        self
+    }
+    #[inline]
+    fn to_f64(self) -> f64 {
+        self
+    }
+}
+
+/// The input/output/accumulator element `O` of a prediction (D-05).
+///
+/// Orthogonal to [`PredictScalar`] (the model's threshold/leaf domain `T`): the
+/// output buffer and accumulator element equals the INPUT element type, NOT the
+/// leaf type. Upstream instantiates `Predict<float>` and `Predict<double>` and
+/// the output pointer is the same type as the input pointer (`predict.cc:236`
+/// `Array3DView<InputT>`; `c_api/gtil.cc:50-55`). All four `(input × preset)`
+/// combinations are therefore valid: f32 input always yields `Vec<f32>`, f64
+/// input always yields `Vec<f64>`, independent of the model preset.
+pub trait PredictOut: Copy + PartialOrd {
+    /// The quiet-NaN of this element (`std::numeric_limits<InputT>::quiet_NaN()`,
+    /// `predict.cc:81`) — the "absent feature" sentinel for the sparse path.
+    fn nan() -> Self;
+    /// The additive identity (`InputT{}`, `predict.cc:238` `std::fill_n`).
+    fn zero() -> Self;
+    /// Widen this input value to `f64` for the cross-domain comparison in
+    /// [`next_node`] (C++ usual arithmetic conversions promote the narrower
+    /// operand to the wider). f32→f64 is exact, so routing is bit-faithful.
+    fn to_compare_f64(self) -> f64;
+    /// `true` iff this input value is NaN (routes to the default child,
+    /// `predict.cc:158-159`).
+    fn is_nan_val(self) -> bool;
+    /// Cast an `f32` leaf value into this output element
+    /// (`static_cast<InputT>(tree.LeafValue(leaf))`, `predict.cc:228`).
+    fn from_leaf_f32(v: f32) -> Self;
+    /// Cast an `f64` leaf value into this output element
+    /// (`static_cast<InputT>(tree.LeafValue(leaf))`, `predict.cc:228`).
+    fn from_leaf_f64(v: f64) -> Self;
+    /// Add a leaf value (already cast to `Self`) into an accumulator cell
+    /// (`output += static_cast<InputT>(LeafValue)`, `predict.cc:228`).
+    fn add_assign_leaf(&mut self, leaf: Self);
+    /// Divide a cell by an integer tree count for RF averaging
+    /// (`output[...] /= factor`, `predict.cc:285`). The factor is cast into the
+    /// `O` domain, matching the upstream `float /= float` / `double /= double`.
+    fn div_by_count(self, factor: usize) -> Self;
+    /// Add the `f64` base score into this cell with the exact upstream promotion
+    /// (`InputT_view += double_view` ⇒ `(self as f64 + base) as Self`,
+    /// `predict.cc:294-304`).
+    fn add_base_score(self, base: f64) -> Self;
+    /// Narrow this element to `f32` for the postprocessor boundary. For `O =
+    /// f32` this is the identity; for `O = f64` it narrows. (See
+    /// [`apply_postprocessor`] — the f32-intermediate postprocessors are wired
+    /// fully O-generic in Plan 05-03; here the f32 path is byte-identical.)
+    fn out_to_f32(self) -> f32;
+    /// Widen an `f32` postprocessor result back into this element. Identity for
+    /// `O = f32`.
+    fn out_from_f32(v: f32) -> Self;
+}
+
+impl PredictOut for f32 {
+    #[inline]
+    fn nan() -> Self {
+        f32::NAN
+    }
+    #[inline]
+    fn zero() -> Self {
+        0.0_f32
+    }
+    #[inline]
+    fn to_compare_f64(self) -> f64 {
+        self as f64
+    }
+    #[inline]
+    fn is_nan_val(self) -> bool {
+        self.is_nan()
+    }
+    #[inline]
+    fn from_leaf_f32(v: f32) -> Self {
+        v
+    }
+    #[inline]
+    fn from_leaf_f64(v: f64) -> Self {
+        v as f32
+    }
+    #[inline]
+    fn add_assign_leaf(&mut self, leaf: Self) {
+        *self += leaf;
+    }
+    #[inline]
+    fn div_by_count(self, factor: usize) -> Self {
+        self / factor as f32
+    }
+    #[inline]
+    fn add_base_score(self, base: f64) -> Self {
+        // float += double: promote f32→f64, add, narrow back to f32.
+        (self as f64 + base) as f32
+    }
+    #[inline]
+    fn out_to_f32(self) -> f32 {
+        self
+    }
+    #[inline]
+    fn out_from_f32(v: f32) -> Self {
+        v
+    }
+}
+
+impl PredictOut for f64 {
+    #[inline]
+    fn nan() -> Self {
+        f64::NAN
+    }
+    #[inline]
+    fn zero() -> Self {
+        0.0_f64
+    }
+    #[inline]
+    fn to_compare_f64(self) -> f64 {
+        self
+    }
+    #[inline]
+    fn is_nan_val(self) -> bool {
+        self.is_nan()
+    }
+    #[inline]
+    fn from_leaf_f32(v: f32) -> Self {
+        v as f64
+    }
+    #[inline]
+    fn from_leaf_f64(v: f64) -> Self {
+        v
+    }
+    #[inline]
+    fn add_assign_leaf(&mut self, leaf: Self) {
+        *self += leaf;
+    }
+    #[inline]
+    fn div_by_count(self, factor: usize) -> Self {
+        self / factor as f64
+    }
+    #[inline]
+    fn add_base_score(self, base: f64) -> Self {
+        // double += double.
+        self + base
+    }
+    #[inline]
+    fn out_to_f32(self) -> f32 {
+        self as f32
+    }
+    #[inline]
+    fn out_from_f32(v: f32) -> Self {
+        v as f64
+    }
+}
+
+/// Cast a tree leaf value (domain `T`) into the output element `O`, matching
+/// `static_cast<InputT>(tree.LeafValue(leaf))` (`predict.cc:228`). The cast goes
+/// through the `T`'s natural f32/f64 view so no precision is lost beyond the
+/// upstream single `static_cast`.
+#[inline]
+fn leaf_as_out<T: PredictScalar, O: PredictOut>(v: T) -> O {
+    // Route f32-domain leaves through `from_leaf_f32` and f64-domain leaves
+    // through `from_leaf_f64`, so e.g. an f64 leaf into an f32 output narrows
+    // exactly once (double→float), and an f32 leaf into an f64 output widens
+    // exactly once (float→double).
+    O::from_leaf_f64(v.to_f64())
 }
 
 /// The `NextNode` comparison switch (`predict.cc:99-124`).
 ///
-/// `fvalue` (already lifted into the threshold domain `T`) is compared against
-/// `threshold` with `op`; returns `left` if the condition holds, else `right`.
-/// XGBoost always emits `kLT`. The categorical branch (`NextNodeCategorical`)
-/// is intentionally NOT ported in Phase 1 (deferred to Phase 5).
+/// Both `fvalue` (the input value, widened from `O`) and `threshold` (widened
+/// from the threshold domain `T`) are compared in `f64`. Per C++ usual
+/// arithmetic conversions, `NextNode<InputT,ThresholdT>` promotes the narrower
+/// operand to the wider; f32→f64 and f64→f64 are both exact (lossless) and
+/// order-preserving, so comparing in `f64` yields the bit-identical routing of
+/// every `(InputT, ThresholdT)` combination. XGBoost always emits `kLT`.
 #[inline]
-fn next_node<T: PartialOrd>(fvalue: T, threshold: T, op: Operator, left: i32, right: i32) -> i32 {
+fn next_node(fvalue: f64, threshold: f64, op: Operator, left: i32, right: i32) -> i32 {
     let cond = match op {
         Operator::kLT => fvalue < threshold,
         Operator::kLE => fvalue <= threshold,
@@ -153,9 +337,9 @@ fn category_list_safe<T: Copy>(tree: &Tree<T>, nid: usize) -> &[u32] {
 /// default child and otherwise dispatching through [`next_node`]. Returns the
 /// leaf node id. Out-of-bounds `split_index` returns a typed
 /// [`GtilError::FeatureIndexOutOfBounds`] rather than panicking (T-03-01).
-fn evaluate_tree<T: PredictScalar + PartialOrd>(
+fn evaluate_tree<T: PredictScalar + PartialOrd, O: PredictOut>(
     tree: &Tree<T>,
-    row: &[f32],
+    row: &[O],
 ) -> Result<usize, GtilError> {
     // Upper bound on valid node ids; `num_nodes` is the loader-produced count
     // (`tree.h:158`). A child id outside `[0, num_nodes)` is a malformed
@@ -173,25 +357,28 @@ fn evaluate_tree<T: PredictScalar + PartialOrd>(
             });
         }
         let fvalue = row[fi as usize];
-        let next: i32 = if fvalue.is_nan() {
+        let next: i32 = if fvalue.is_nan_val() {
             // Missing value → default direction (predict.cc:158-159).
             tree.default_child(nid)
         } else if tree.node_type(nid) == TreeNodeType::kCategoricalTestNode {
             // Categorical split (predict.cc:161-165): membership in the node's
             // category list, routed by the category_list_right_child polarity.
-            // `fvalue` is compared as an integer category (the float-
-            // representability guard subset lives in `next_node_categorical`).
+            // The input value is compared as an integer category; the minimal
+            // float-representability guard subset lives in `next_node_categorical`
+            // (full O-generic GTIL-06 guard is Plan 05-03). The category compare
+            // is over the f32 view of the input value.
             next_node_categorical(
-                fvalue,
+                fvalue.to_compare_f64() as f32,
                 category_list_safe(tree, nid),
                 tree.category_list_right_child(nid),
                 tree.left_child(nid),
                 tree.right_child(nid),
             )
         } else {
+            // Compare in f64 (order-preserving across all (O, T) combinations).
             next_node(
-                T::from_f32(fvalue),
-                tree.threshold(nid),
+                fvalue.to_compare_f64(),
+                tree.threshold(nid).threshold_to_f64(),
                 tree.comparison_op(nid),
                 tree.left_child(nid),
                 tree.right_child(nid),
@@ -294,15 +481,15 @@ fn has_leaf_vector<T: Copy>(tree: &Tree<T>, leaf: usize) -> bool {
 /// binary `(num_row, 1, 1)` case is a degenerate path of this same code: with
 /// `num_target == 1`, `max_num_class == 1`, every tree `target_id == 0`,
 /// `class_id == 0`, it reduces to the Phase-1 serial sum into cell 0.
-fn predict_preset<T: PredictScalar + PartialOrd>(
+fn predict_preset<T: PredictScalar + PartialOrd, O: PredictOut>(
     trees: &[Tree<T>],
     shape: &OutputLayout<'_>,
-    data: &[f32],
+    data: &[O],
     num_row: usize,
     num_feature: usize,
-) -> Result<Vec<f32>, GtilError> {
+) -> Result<Vec<O>, GtilError> {
     let cells_per_row = shape.cells_per_row();
-    let mut output = vec![0.0_f32; num_row * cells_per_row];
+    let mut output = vec![O::zero(); num_row * cells_per_row];
     let num_tree = trees.len();
 
     for r in 0..num_row {
@@ -358,7 +545,8 @@ fn predict_preset<T: PredictScalar + PartialOrd>(
                     let factor =
                         average_factor[t as usize * shape.max_num_class as usize + c as usize];
                     if factor != 0 {
-                        output[shape.idx(r, t, c)] /= factor as f32;
+                        let cell = shape.idx(r, t, c);
+                        output[cell] = output[cell].div_by_count(factor);
                     }
                 }
             }
@@ -367,14 +555,16 @@ fn predict_preset<T: PredictScalar + PartialOrd>(
 
     // Base scores: 2D f64 add per (target, class) cell, broadcast over rows
     // (predict.cc:294-304). base_scores is f64; mirror upstream
-    // `float_view += double_view` (promote f32→f64, add, narrow back to f32).
+    // `InputT_view += double_view` — for f32 output this promotes f32→f64, adds,
+    // and narrows back to f32; for f64 output it is a plain f64 add (PredictOut::
+    // add_base_score encodes each).
     for r in 0..num_row {
         for t in 0..shape.num_target {
             for c in 0..shape.num_class_of(t) {
                 let bi = t as usize * shape.max_num_class as usize + c as usize;
                 if let Some(&base) = shape.base_scores.get(bi) {
                     let cell = shape.idx(r, t, c);
-                    output[cell] = (output[cell] as f64 + base) as f32;
+                    output[cell] = output[cell].add_base_score(base);
                 }
             }
         }
@@ -387,8 +577,8 @@ fn predict_preset<T: PredictScalar + PartialOrd>(
 /// (`OutputLeafValue`, `predict.cc:218-229`). Both ids must be `>= 0` for a
 /// scalar leaf; bounds-checked against `num_target`/`max_num_class` so an
 /// out-of-range route surfaces as a typed error, never an OOB write (T-04-03).
-fn output_leaf_value<T: PredictScalar + PartialOrd>(
-    output: &mut [f32],
+fn output_leaf_value<T: PredictScalar + PartialOrd, O: PredictOut>(
+    output: &mut [O],
     shape: &OutputLayout<'_>,
     tree: &Tree<T>,
     leaf: usize,
@@ -408,8 +598,9 @@ fn output_leaf_value<T: PredictScalar + PartialOrd>(
             max_num_class: shape.max_num_class,
         });
     }
-    // static_cast<InputT>(tree.LeafValue(leaf)) then f32 += f32.
-    output[shape.idx(row_id, target_id, class_id)] += tree.leaf_value(leaf).to_f32();
+    // static_cast<InputT>(tree.LeafValue(leaf)) then O += O.
+    let v: O = leaf_as_out(tree.leaf_value(leaf));
+    output[shape.idx(row_id, target_id, class_id)].add_assign_leaf(v);
     Ok(())
 }
 
@@ -425,8 +616,8 @@ fn output_leaf_value<T: PredictScalar + PartialOrd>(
 ///
 /// Leaf-vector index access is bounds-checked; an out-of-range route or a
 /// short leaf vector surfaces as a typed error, never an OOB read/write.
-fn output_leaf_vector<T: PredictScalar + PartialOrd>(
-    output: &mut [f32],
+fn output_leaf_vector<T: PredictScalar + PartialOrd, O: PredictOut>(
+    output: &mut [O],
     shape: &OutputLayout<'_>,
     tree: &Tree<T>,
     leaf: usize,
@@ -447,7 +638,7 @@ fn output_leaf_vector<T: PredictScalar + PartialOrd>(
                         needed: li + 1,
                         got: leaf_out.len(),
                     })?;
-                output[shape.idx(row_id, t, c)] += v.to_f32();
+                output[shape.idx(row_id, t, c)].add_assign_leaf(leaf_as_out(v));
             }
         }
     } else if target_id == -1 {
@@ -468,7 +659,7 @@ fn output_leaf_vector<T: PredictScalar + PartialOrd>(
                     needed: t as usize + 1,
                     got: leaf_out.len(),
                 })?;
-            output[shape.idx(row_id, t, class_id)] += v.to_f32();
+            output[shape.idx(row_id, t, class_id)].add_assign_leaf(leaf_as_out(v));
         }
     } else if class_id == -1 {
         // leaf_view is (1, max_num_class); route into target_id.
@@ -488,7 +679,7 @@ fn output_leaf_vector<T: PredictScalar + PartialOrd>(
                     needed: c as usize + 1,
                     got: leaf_out.len(),
                 })?;
-            output[shape.idx(row_id, target_id, c)] += v.to_f32();
+            output[shape.idx(row_id, target_id, c)].add_assign_leaf(leaf_as_out(v));
         }
     } else {
         // leaf_view is (1, 1); route into the single cell.
@@ -507,7 +698,7 @@ fn output_leaf_vector<T: PredictScalar + PartialOrd>(
                 needed: 1,
                 got: leaf_out.len(),
             })?;
-        output[shape.idx(row_id, target_id, class_id)] += v.to_f32();
+        output[shape.idx(row_id, target_id, class_id)].add_assign_leaf(leaf_as_out(v));
     }
     Ok(())
 }
@@ -531,12 +722,12 @@ fn output_leaf_vector<T: PredictScalar + PartialOrd>(
 ///   routes outside the output buffer (T-04-03);
 /// - [`GtilError::UnsupportedPostprocessor`] for any postprocessor name not in
 ///   the supported set.
-pub fn predict(
+pub fn predict<O: PredictOut>(
     model: &Model,
-    data: &[f32],
+    data: &[O],
     num_row: usize,
     config: &Config,
-) -> Result<Vec<f32>, GtilError> {
+) -> Result<Vec<O>, GtilError> {
     // Per-kind dispatch (PredictImpl, predict.cc:380-396). Default/Raw share the
     // sum-over-trees body and differ only in whether the postprocessor runs;
     // LeafId/ScorePerTree are wired in Plan 05-04 and return a typed error here.
@@ -627,7 +818,31 @@ pub fn predict(
 /// cell. `softmax` is row-wise: for each `(row, target)` it operates over that
 /// target's `num_class` contiguous cells (upstream `submdspan(..full_extent)`
 /// with `model.num_class[target_id]`).
-fn apply_postprocessor(
+fn apply_postprocessor<O: PredictOut>(
+    model: &Model,
+    shape: &OutputLayout<'_>,
+    output: &mut [O],
+    num_row: usize,
+) -> Result<(), GtilError> {
+    // The postprocessor functions run with the upstream-literal `f32`
+    // intermediates (softmax `max_margin`/`t`, `sigmoid_alpha`/`ratio_c`) — they
+    // must NOT be promoted to `O` (Pitfall 2). For `O = f32` this f32 view is the
+    // identity (byte-identical Phase-1 path). For `O = f64` the cells are narrowed
+    // to f32 here and widened back; the fully O-generic postprocessor element
+    // arithmetic (e.g. f64 sigmoid) is wired in Plan 05-03 — the goldens this plan
+    // validates use the precision-exact `identity` postprocessor.
+    let mut buf: Vec<f32> = output.iter().map(|v| v.out_to_f32()).collect();
+    apply_postprocessor_f32(model, shape, &mut buf, num_row)?;
+    for (dst, src) in output.iter_mut().zip(buf) {
+        *dst = O::out_from_f32(src);
+    }
+    Ok(())
+}
+
+/// f32-buffer postprocessor application (the upstream-literal precision body).
+/// Kept as a monomorphic `f32` function so the postprocessor float intermediates
+/// (`postprocessor.rs`) are untouched by the O-generic widening (Pitfall 2).
+fn apply_postprocessor_f32(
     model: &Model,
     shape: &OutputLayout<'_>,
     output: &mut [f32],
