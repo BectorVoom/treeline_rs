@@ -342,9 +342,13 @@ pub fn load_lightgbm(model_str: &str) -> Result<Model, LgbError> {
     let class_id: Vec<i32> = (0..num_tree as i32).map(|i| i % modulus).collect();
     let target_id: Vec<i32> = vec![0; num_tree];
 
-    // base_scores: num_class zeros (lightgbm.cc:523). num_target is 1 for
-    // LightGBM (lightgbm.cc:518).
-    let base_scores: Vec<f64> = vec![0.0; num_class.max(1) as usize];
+    // base_scores: exactly num_class zeros (lightgbm.cc:523), with NO clamp —
+    // upstream builds `std::vector<double>(num_class_, 0.0)`. Tracking num_class
+    // exactly (rather than `num_class.max(1)`) keeps base_scores.len() consistent
+    // with `metadata.num_class == [num_class]` even for the degenerate
+    // `num_class == 0` case, so the GTIL base-score add loop cannot desync from
+    // the per-target class count. num_target is 1 for LightGBM (lightgbm.cc:518).
+    let base_scores: Vec<f64> = vec![0.0; num_class as usize];
 
     let metadata = BuilderMetadata {
         num_feature,
