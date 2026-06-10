@@ -96,33 +96,46 @@ impl<'a> Cursor<'a> {
     }
 }
 
+/// Maximum array/object nesting depth before the decoder rejects the stream
+/// with a typed error. A stream of `[`/`{` openers recurses once per level, so
+/// without this cap a small hostile file would overflow the native stack and
+/// abort the process (CR-04). 128 matches serde_json's `RECURSION_LIMIT`, so the
+/// UBJSON path is no more permissive than the JSON path it converges with.
+const MAX_DEPTH: usize = 128;
+
 /// Decode a complete UBJSON byte stream into a `serde_json::Value` (D-03).
 ///
-/// Returns `XgbError::Ubjson` on an unknown tag, a truncated read, or a `$`/`#`
-/// container count that exceeds the remaining stream length. Skips leading `N`
-/// no-op markers (the byte D-09 keys on for UBJSON detection).
+/// Returns `XgbError::Ubjson` on an unknown tag, a truncated read, a `$`/`#`
+/// container count that exceeds the remaining stream length, or nesting deeper
+/// than [`MAX_DEPTH`]. Skips leading `N` no-op markers (the byte D-09 keys on
+/// for UBJSON detection).
 pub fn decode_ubjson(bytes: &[u8]) -> Result<Value, XgbError> {
     let mut c = Cursor::new(bytes);
-    decode_value(&mut c)
+    decode_value(&mut c, 0)
 }
 
-/// Decode one value at the cursor (reads its leading type tag).
-fn decode_value(c: &mut Cursor) -> Result<Value, XgbError> {
+/// Decode one value at the cursor (reads its leading type tag). `depth` is the
+/// current array/object nesting level, checked against [`MAX_DEPTH`] to bound
+/// recursion (CR-04).
+fn decode_value(c: &mut Cursor, depth: usize) -> Result<Value, XgbError> {
+    if depth > MAX_DEPTH {
+        return Err(c.err(format!("UBJSON nesting too deep (> {MAX_DEPTH})")));
+    }
     let tag = c.take_u8()?;
-    decode_with_tag(c, tag)
+    decode_with_tag(c, tag, depth)
 }
 
 /// Decode one value given an already-consumed type `tag`. Shared by the
 /// per-element path and the `$`-typed-container fast path (which reads the type
-/// tag once, up front).
-fn decode_with_tag(c: &mut Cursor, tag: u8) -> Result<Value, XgbError> {
+/// tag once, up front). `depth` is threaded through to bound recursion (CR-04).
+fn decode_with_tag(c: &mut Cursor, tag: u8, depth: usize) -> Result<Value, XgbError> {
     match tag {
         b'Z' => Ok(Value::Null),
         b'T' => Ok(Value::Bool(true)),
         b'F' => Ok(Value::Bool(false)),
         b'N' => {
-            // No-op: skip and decode the next real value.
-            decode_value(c)
+            // No-op: skip and decode the next real value (same nesting level).
+            decode_value(c, depth)
         }
         // Integer tags → Value::Number (i64/u64).
         b'i' => {
@@ -165,8 +178,8 @@ fn decode_with_tag(c: &mut Cursor, tag: u8) -> Result<Value, XgbError> {
             Ok(Value::String((v as char).to_string()))
         }
         b'S' => Ok(Value::String(decode_string(c)?)),
-        b'[' => decode_array(c),
-        b'{' => decode_object(c),
+        b'[' => decode_array(c, depth),
+        b'{' => decode_object(c, depth),
         other => Err(c.err(format!(
             "unknown UBJSON type tag {:#x} ({:?})",
             other, other as char
@@ -246,7 +259,9 @@ fn checked_capacity(c: &Cursor, count: usize) -> Result<usize, XgbError> {
 /// Decode an array body (the `[` opener already consumed), handling the
 /// `$`type / `#`count optimized form (Pitfall 4) and the unoptimized
 /// per-element-tag form (terminated by `]`).
-fn decode_array(c: &mut Cursor) -> Result<Value, XgbError> {
+fn decode_array(c: &mut Cursor, depth: usize) -> Result<Value, XgbError> {
+    // Each element decode is one nesting level deeper (CR-04).
+    let child_depth = depth + 1;
     // Optimized: `$<type>` (optional) then `#<count>`.
     let elem_type = if c.peek() == Some(b'$') {
         c.take_u8()?; // consume '$'
@@ -263,12 +278,12 @@ fn decode_array(c: &mut Cursor) -> Result<Value, XgbError> {
         if let Some(t) = elem_type {
             // All elements share `t`; per-element tags omitted.
             for _ in 0..count {
-                arr.push(decode_with_tag(c, t)?);
+                arr.push(decode_with_tag(c, t, child_depth)?);
             }
         } else {
             // `#`count without `$`type: each element still carries its own tag.
             for _ in 0..count {
-                arr.push(decode_value(c)?);
+                arr.push(decode_value(c, child_depth)?);
             }
         }
         return Ok(Value::Array(arr));
@@ -288,7 +303,7 @@ fn decode_array(c: &mut Cursor) -> Result<Value, XgbError> {
                 break;
             }
             None => return Err(c.err("unterminated array (missing ']')")),
-            Some(_) => arr.push(decode_value(c)?),
+            Some(_) => arr.push(decode_value(c, child_depth)?),
         }
     }
     Ok(Value::Array(arr))
@@ -297,7 +312,9 @@ fn decode_array(c: &mut Cursor) -> Result<Value, XgbError> {
 /// Decode an object body (the `{` opener already consumed), handling the
 /// `$`type / `#`count optimized form and the unoptimized form (terminated by
 /// `}`). Object keys are bare UBJSON strings (length-tag + UTF-8, NO `S` tag).
-fn decode_object(c: &mut Cursor) -> Result<Value, XgbError> {
+fn decode_object(c: &mut Cursor, depth: usize) -> Result<Value, XgbError> {
+    // Each member value decode is one nesting level deeper (CR-04).
+    let child_depth = depth + 1;
     let elem_type = if c.peek() == Some(b'$') {
         c.take_u8()?;
         Some(c.take_u8()?)
@@ -315,8 +332,8 @@ fn decode_object(c: &mut Cursor) -> Result<Value, XgbError> {
         for _ in 0..count {
             let key = decode_string(c)?; // object key: bare length-prefixed string
             let val = match elem_type {
-                Some(t) => decode_with_tag(c, t)?,
-                None => decode_value(c)?,
+                Some(t) => decode_with_tag(c, t, child_depth)?,
+                None => decode_value(c, child_depth)?,
             };
             map.insert(key, val);
         }
@@ -337,7 +354,7 @@ fn decode_object(c: &mut Cursor) -> Result<Value, XgbError> {
             None => return Err(c.err("unterminated object (missing '}')")),
             Some(_) => {
                 let key = decode_string(c)?;
-                let val = decode_value(c)?;
+                let val = decode_value(c, child_depth)?;
                 map.insert(key, val);
             }
         }

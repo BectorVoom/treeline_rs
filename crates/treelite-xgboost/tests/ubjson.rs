@@ -160,6 +160,32 @@ fn ubjson_oversized_count_returns_typed_err_not_panic() {
 }
 
 #[test]
+fn ubjson_deeply_nested_input_returns_typed_err_not_stack_overflow() {
+    // CR-04 regression: a stream of many `[` openers recurses once per level.
+    // Without a depth cap this overflows the native stack and aborts the process
+    // (SIGSEGV) — uncatchable. With the cap it must return a typed
+    // XgbError::Ubjson. 100_000 openers is far past any legitimate model and
+    // well past the MAX_DEPTH cap.
+    let bytes = vec![b'['; 100_000];
+    match decode_ubjson(&bytes) {
+        Err(XgbError::Ubjson { .. }) => {}
+        Err(other) => panic!("expected XgbError::Ubjson, got {other:?}"),
+        Ok(v) => panic!("expected a depth error, got Ok({v:?})"),
+    }
+}
+
+#[test]
+fn ubjson_modestly_nested_input_still_decodes() {
+    // A nesting depth comfortably under the cap must still decode successfully,
+    // so the CR-04 guard does not reject legitimate (shallow) nested arrays.
+    // 10 nested arrays, innermost terminated by matching `]` closers.
+    let mut bytes = vec![b'['; 10];
+    bytes.extend(std::iter::repeat_n(b']', 10));
+    let value = decode_ubjson(&bytes).expect("10-deep nesting must decode");
+    assert!(value.is_array(), "outermost value is an array");
+}
+
+#[test]
 fn ubjson_truncated_mid_tag_returns_typed_err_not_panic() {
     // A truncated stream (a `d` tag with fewer than 4 trailing bytes) must
     // return a typed error, never an out-of-bounds panic (T-03-U02).
