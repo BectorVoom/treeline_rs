@@ -49,13 +49,19 @@ pub fn output_shape(model: &Model, num_row: u64, config: &Config) -> Shape {
             dims: vec![num_row, num_tree],
         },
         PredictKind::ScorePerTree => {
-            // leaf_vector_shape[0] * leaf_vector_shape[1]; read defensively so a
-            // short/malformed shape vector yields 0 rather than panicking
-            // (threat T-05-04). Upstream sizes it to exactly 2.
-            let a = model.leaf_vector_shape.first().copied().unwrap_or(0) as u64;
-            let b = model.leaf_vector_shape.get(1).copied().unwrap_or(0) as u64;
+            // leaf_vector_shape[0] * leaf_vector_shape[1], clamped to >= 1 so the
+            // PUBLISHED shape's third dim agrees ELEMENT-FOR-ELEMENT with the
+            // buffer `predict_score_by_tree` actually produces (WR-02). The
+            // defaulting MUST match `predict_score_by_tree`'s `lvs`
+            // (`lib.rs`): `unwrap_or(1).max(0)` per factor, then `(a*b).max(1)`.
+            // Upstream sizes `leaf_vector_shape` to exactly 2; the clamp only
+            // diverges on a scalar-leaf model (shape [1,1]) or a short/malformed
+            // shape vector, where both shape and predict report third dim >= 1,
+            // never 0 (threat T-05-04 / Pitfall 5).
+            let a = model.leaf_vector_shape.first().copied().unwrap_or(1).max(0) as u64;
+            let b = model.leaf_vector_shape.get(1).copied().unwrap_or(1).max(0) as u64;
             Shape {
-                dims: vec![num_row, num_tree, a * b],
+                dims: vec![num_row, num_tree, (a * b).max(1)],
             }
         }
     }

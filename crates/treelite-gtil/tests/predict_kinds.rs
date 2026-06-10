@@ -10,7 +10,7 @@
 //! - neither kind applies postprocess / averaging / base-score (raw leaf data).
 
 use treelite_core::{Model, ModelPreset, ModelVariant, Operator, Tree, TreeBuf, TreeNodeType};
-use treelite_gtil::{Config, PredictKind, predict};
+use treelite_gtil::{Config, GtilError, PredictKind, output_shape, predict};
 
 /// Single-split `Tree<f32>`: node 0 numerical test (`kLT`, default-left), node 1
 /// = left leaf, node 2 = right leaf. So the reached leaf NODE id is 1 (left) or
@@ -240,4 +240,97 @@ fn leaf_id_f64_input() {
     };
     let out = predict(&m, &data, 1, &cfg).unwrap();
     assert_eq!(out, vec![1.0_f64], "node id 1 cast into f64 buffer");
+}
+
+// ------------------------------------------------------------------------- //
+// WR-02 (Plan 05-06): output_shape(ScorePerTree) and predict_score_by_tree must
+// agree ELEMENT-FOR-ELEMENT on the third dim for every leaf_vector_shape — both
+// clamp the product to >= 1 with the same `unwrap_or(1).max(0)` defaulting, so a
+// scalar-leaf [1,1] model and a degenerate/short shape both report third dim 1.
+// ------------------------------------------------------------------------- //
+
+/// Run ScorePerTree and assert the produced buffer length equals
+/// `num_row * num_tree * output_shape(...).dims.last()` — i.e. the published
+/// shape's third dim factor IS the buffer's actual third dim.
+fn assert_score_per_tree_third_dim_agrees(m: &Model, num_row: usize) {
+    let num_tree = match &m.variant {
+        ModelVariant::F32(p) => p.trees.len(),
+        ModelVariant::F64(p) => p.trees.len(),
+    };
+    let cfg = Config {
+        kind: PredictKind::ScorePerTree,
+        nthread: 0,
+    };
+    let data = vec![0.0_f32; num_row * m.num_feature.max(0) as usize];
+    let out = predict(m, &data, num_row, &cfg).unwrap();
+    let shape = output_shape(m, num_row as u64, &cfg);
+    let third = *shape.dims.last().unwrap();
+    assert!(
+        third >= 1,
+        "ScorePerTree third dim must be >= 1, got {third}"
+    );
+    assert_eq!(
+        out.len() as u64,
+        num_row as u64 * num_tree as u64 * third,
+        "predict buffer length must equal num_row * num_tree * output_shape third dim \
+         (shape dims {:?})",
+        shape.dims
+    );
+}
+
+#[test]
+fn score_per_tree_shape_agrees_with_predict_scalar_leaf() {
+    // Scalar-leaf model: leaf_vector_shape = [1, 1] → third dim (1*1).max(1) = 1.
+    let m = scalar_model(vec![split_tree(0, 0.5, 1.0, -1.0)], 2, "identity", 0.0);
+    assert_eq!(m.leaf_vector_shape, vec![1, 1]);
+    assert_score_per_tree_third_dim_agrees(&m, 1);
+}
+
+#[test]
+fn score_per_tree_shape_agrees_with_predict_degenerate_shape() {
+    // Degenerate/short leaf_vector_shape: an EMPTY shape vector. Both shape.rs
+    // and predict default each factor to 1 and clamp the product to >= 1, so the
+    // third dim is 1 (NOT 0) and the two agree. Before WR-02, shape.rs used
+    // unwrap_or(0) → third dim 0, disagreeing with predict's lvs.max(1) == 1.
+    let mut m = scalar_model(vec![split_tree(0, 0.5, 1.0, -1.0)], 2, "identity", 0.0);
+    m.leaf_vector_shape = vec![]; // malformed/short
+    assert_score_per_tree_third_dim_agrees(&m, 2);
+}
+
+// ------------------------------------------------------------------------- //
+// WR-03 (Plan 05-06): a 0-node tree (empty node columns) must return a typed
+// GtilError::NodeIndexOutOfBounds { node: 0 }, never an OOB panic (ERR-01).
+// ------------------------------------------------------------------------- //
+
+/// A degenerate `Tree<f32>` with ZERO nodes (every column empty).
+fn empty_tree() -> Tree<f32> {
+    let mut t = Tree::<f32>::new();
+    t.num_nodes = 0;
+    t.cleft = TreeBuf::from_owned(vec![]);
+    t.cright = TreeBuf::from_owned(vec![]);
+    t.split_index = TreeBuf::from_owned(vec![]);
+    t.default_left = TreeBuf::from_owned(vec![]);
+    t.threshold = TreeBuf::from_owned(vec![]);
+    t.cmp = TreeBuf::from_owned(vec![]);
+    t.leaf_value = TreeBuf::from_owned(vec![]);
+    t.node_type = TreeBuf::from_owned(vec![]);
+    t.leaf_vector_begin = TreeBuf::from_owned(vec![]);
+    t.leaf_vector_end = TreeBuf::from_owned(vec![]);
+    t
+}
+
+#[test]
+fn zero_node_tree_returns_typed_node_index_oob_not_panic() {
+    let m = scalar_model(vec![empty_tree()], 2, "identity", 0.0);
+    let data = [0.0_f32, 0.0];
+    let cfg = Config {
+        kind: PredictKind::Default,
+        nthread: 0,
+    };
+    let err = predict(&m, &data, 1, &cfg).expect_err("0-node tree must error, not panic");
+    assert_eq!(
+        err,
+        GtilError::NodeIndexOutOfBounds { node: 0 },
+        "0-node tree must return the declared typed error (WR-03)"
+    );
 }

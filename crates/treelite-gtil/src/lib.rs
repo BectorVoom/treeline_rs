@@ -446,6 +446,14 @@ fn evaluate_tree<T: PredictScalar + PartialOrd, O: PredictOut>(
     // `cleft`/`cright` and must become a typed error, not an OOB slice panic
     // (T-03-01: a malformed `Model` must never index out of bounds).
     let num_nodes = tree.num_nodes.max(0) as usize;
+    // A 0-node tree (empty `cleft`/`split_index` columns) has no node 0 to read;
+    // the first `tree.is_leaf(0)` accessor below would slice out of bounds and
+    // panic. Reject it up front with the declared typed error (WR-03 / ERR-01:
+    // a malformed `Model` must never OOB-panic). Reuse `NodeIndexOutOfBounds`
+    // with `node: 0` (node 0 does not exist).
+    if num_nodes == 0 {
+        return Err(GtilError::NodeIndexOutOfBounds { node: 0 });
+    }
     let mut nid: usize = 0;
     while !tree.is_leaf(nid) {
         let fi = tree.split_index(nid);
