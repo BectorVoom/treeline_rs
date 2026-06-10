@@ -33,14 +33,20 @@ fn split_tree(feature: i32, threshold: f32, left_leaf: f32, right_leaf: f32) -> 
 }
 
 /// Wrap trees in an F32 `Model` with the given postprocessor and base score.
+///
+/// The binary scalar shape `(num_row, 1, 1)`: one target, one class, every tree
+/// routed to `(target_id=0, class_id=0)`. `target_id`/`class_id` are sized to
+/// the tree count so a multi-tree model routes every tree into cell 0 (the
+/// serial-sum path), not the leaf-vector broadcast default.
 fn model_of(trees: Vec<Tree<f32>>, postprocessor: &str, base_score: f64) -> Model {
+    let num_tree = trees.len();
     let mut m = Model::new(ModelVariant::F32(ModelPreset::new(trees)));
     m.num_feature = 2;
     m.num_target = 1;
     m.num_class = vec![1];
     m.leaf_vector_shape = vec![1, 1];
-    m.target_id = vec![0];
-    m.class_id = vec![0];
+    m.target_id = vec![0; num_tree];
+    m.class_id = vec![0; num_tree];
     m.postprocessor = postprocessor.to_string();
     m.sigmoid_alpha = 1.0;
     m.base_scores = vec![base_score];
@@ -195,11 +201,12 @@ fn negative_child_node_id_other_than_leaf_sentinel_is_typed_error() {
 
 #[test]
 fn unsupported_postprocessor_is_typed_error() {
-    let m = model_of(vec![split_tree(0, 0.5, 1.0, -1.0)], "softmax", 0.0);
+    // `hinge` is a real upstream postprocessor not yet ported (deferred to
+    // Phase 5); it must surface as a typed error, not panic. (Plan 04-02 added
+    // softmax/exponential/exp_standard_ratio/log1p_exp, so those are now
+    // supported and no longer valid "unsupported" probes.)
+    let m = model_of(vec![split_tree(0, 0.5, 1.0, -1.0)], "hinge", 0.0);
     let data = [0.0_f32, 0.0];
     let err = predict(&m, &data, 1).unwrap_err();
-    assert_eq!(
-        err,
-        GtilError::UnsupportedPostprocessor("softmax".to_string())
-    );
+    assert_eq!(err, GtilError::UnsupportedPostprocessor("hinge".to_string()));
 }

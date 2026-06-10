@@ -52,9 +52,38 @@ pub enum GtilError {
         got: usize,
     },
 
-    /// The model's `postprocessor` name is not supported in Phase 1
-    /// (only `identity` and `sigmoid`). Upstream silently maps unknown names;
-    /// here it is a typed error (T-03-02).
+    /// A tree's `target_id`/`class_id` routes an output cell outside the
+    /// `(num_target, max_num_class)` buffer (T-04-03). Upstream indexes the
+    /// `Array3DView` unchecked; here a malformed route is a typed error so it
+    /// never produces an out-of-bounds write.
+    #[error(
+        "output route (target_id = {target_id}, class_id = {class_id}) is out of bounds \
+         (num_target = {num_target}, max_num_class = {max_num_class})"
+    )]
+    OutputRouteOutOfBounds {
+        /// The routing `target_id` read from `model.target_id[tree]`.
+        target_id: i32,
+        /// The routing `class_id` read from `model.class_id[tree]`.
+        class_id: i32,
+        /// The model's `num_target`.
+        num_target: i32,
+        /// The model's `max_num_class` (max over `num_class`).
+        max_num_class: i32,
+    },
+
+    /// A leaf vector is shorter than the `(target, class)` slots its routing
+    /// requires (a malformed `leaf_vector_shape`). Upstream reads the leaf view
+    /// unchecked; here it is a typed error rather than an OOB read.
+    #[error("leaf vector too short: needed {needed} elements, got {got}")]
+    LeafVectorTooShort {
+        /// Minimum leaf-vector length the routing requires.
+        needed: usize,
+        /// Actual leaf-vector length.
+        got: usize,
+    },
+
+    /// The model's `postprocessor` name is not supported by this GTIL surface.
+    /// Upstream silently maps unknown names; here it is a typed error (T-03-02).
     #[error("unsupported postprocessor: {0:?}")]
     UnsupportedPostprocessor(String),
 
