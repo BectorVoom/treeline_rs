@@ -18,9 +18,8 @@ pub use objective::{
 };
 
 use serde::Deserialize;
-use treelite_core::{
-    Model, ModelPreset, ModelVariant, Operator, TaskType, Tree, TreeBuf, TreeNodeType,
-};
+use treelite_builder::{BuilderMetadata, ModelBuilder};
+use treelite_core::{Model, Operator, TaskType};
 
 // ---------------------------------------------------------------------------
 // serde intermediate structs — the recognized XGBoost-JSON key subset.
@@ -142,13 +141,22 @@ fn check_dim(
     Ok(())
 }
 
-/// Build a single [`Tree<f32>`] from one parsed XGBoost-JSON tree.
+/// Build a single tree by driving the [`ModelBuilder`] (D-11).
 ///
-/// Ports the per-node build loop (`delegated_handler.cc:435-479`): a node with
-/// `left_children[i] == -1` is a scalar leaf (`size_leaf_vector <= 1`); every
-/// other node is a numerical test (`Operator::kLT` always — XGBoost never uses
-/// another operator). Leaf-vector and category columns stay empty.
-fn build_tree(tree_idx: usize, t: &RegTreeJson) -> Result<Tree<f32>, XgbError> {
+/// Ports the per-node build loop (`delegated_handler.cc:435-479`) onto the
+/// validated builder's fluent API instead of hand-assembling `Tree` columns: a
+/// node with `left_children[i] == -1` is a scalar leaf (`leaf_scalar`, since
+/// `size_leaf_vector <= 1` in Phase 1); every other node is a numerical test
+/// (`numerical_test` with `Operator::kLT` always — XGBoost never uses another
+/// operator). The loader's `check_dim` validators still run BEFORE emitting any
+/// builder call; the builder then re-validates topology (negative/dangling/
+/// orphan keys) as defense-in-depth. Node `i` is keyed by `i` itself, so the
+/// XGBoost child indices map 1:1 onto builder child keys.
+fn build_tree(
+    builder: &mut ModelBuilder,
+    tree_idx: usize,
+    t: &RegTreeJson,
+) -> Result<(), XgbError> {
     let num_nodes: usize = parse_scalar("tree_param.num_nodes", &t.tree_param.num_nodes)?;
 
     // Validate every parallel array length == num_nodes before building.
@@ -159,51 +167,27 @@ fn build_tree(tree_idx: usize, t: &RegTreeJson) -> Result<Tree<f32>, XgbError> {
     check_dim(tree_idx, "split_conditions", num_nodes, t.split_conditions.len())?;
     check_dim(tree_idx, "default_left", num_nodes, t.default_left.len())?;
 
-    let mut node_type = Vec::with_capacity(num_nodes);
-    let mut cleft = Vec::with_capacity(num_nodes);
-    let mut cright = Vec::with_capacity(num_nodes);
-    let mut split_index = Vec::with_capacity(num_nodes);
-    let mut default_left = Vec::with_capacity(num_nodes);
-    let mut leaf_value = Vec::with_capacity(num_nodes);
-    let mut threshold = Vec::with_capacity(num_nodes);
-    let mut cmp = Vec::with_capacity(num_nodes);
-
+    builder.start_tree()?;
     for i in 0..num_nodes {
+        builder.start_node(i as i32)?;
         if t.left_children[i] == -1 {
             // Scalar leaf output (size_leaf_vector <= 1 in Phase 1).
-            node_type.push(TreeNodeType::kLeafNode);
-            cleft.push(-1);
-            cright.push(-1);
-            split_index.push(0);
-            default_left.push(false);
-            leaf_value.push(t.split_conditions[i]);
-            threshold.push(0.0_f32);
-            cmp.push(Operator::kNone);
+            builder.leaf_scalar(t.split_conditions[i])?;
         } else {
             // Numerical internal node (XGBoost always uses kLT).
-            node_type.push(TreeNodeType::kNumericalTestNode);
-            cleft.push(t.left_children[i]);
-            cright.push(t.right_children[i]);
-            split_index.push(t.split_indices[i]);
-            default_left.push(t.default_left[i] != 0);
-            leaf_value.push(0.0_f32);
-            threshold.push(t.split_conditions[i]);
-            cmp.push(Operator::kLT);
+            builder.numerical_test(
+                t.split_indices[i],
+                t.split_conditions[i],
+                t.default_left[i] != 0,
+                Operator::kLT,
+                t.left_children[i],
+                t.right_children[i],
+            )?;
         }
+        builder.end_node()?;
     }
-
-    let mut tree = Tree::<f32>::new();
-    tree.node_type = TreeBuf::from_owned(node_type);
-    tree.cleft = TreeBuf::from_owned(cleft);
-    tree.cright = TreeBuf::from_owned(cright);
-    tree.split_index = TreeBuf::from_owned(split_index);
-    tree.default_left = TreeBuf::from_owned(default_left);
-    tree.leaf_value = TreeBuf::from_owned(leaf_value);
-    tree.threshold = TreeBuf::from_owned(threshold);
-    tree.cmp = TreeBuf::from_owned(cmp);
-    tree.has_categorical_split = false;
-    tree.num_nodes = num_nodes as i32;
-    Ok(tree)
+    builder.end_tree()?;
+    Ok(())
 }
 
 /// Load one XGBoost-JSON model into a [`treelite_core::Model`] (F32 variant).
@@ -232,45 +216,35 @@ pub fn load_xgboost_json(json: &str) -> Result<Model, XgbError> {
     let booster = &parsed.learner.gradient_booster.model;
     let num_tree = booster.trees.len();
 
-    // Build the trees (F32 — XGBoost-JSON only ever yields <f32, f32>).
-    let mut trees: Vec<Tree<f32>> = Vec::with_capacity(num_tree);
-    for (i, t) in booster.trees.iter().enumerate() {
-        trees.push(build_tree(i, t)?);
-    }
-    let variant = ModelVariant::F32(ModelPreset::new(trees));
-
-    let mut model = Model::new(variant);
-    model.num_feature = num_feature;
-    model.num_target = num_target;
-    model.average_tree_output = false; // hardcoded upstream (delegated_handler.cc:814).
-    model.postprocessor = postprocessor.clone();
-    model.sigmoid_alpha = 1.0;
-    model.ratio_c = 1.0;
-    model.attributes = String::new();
-    model.leaf_vector_shape = vec![1, 1];
-
     // Header metadata finalize (delegated_handler.cc:847-872 — binary/regressor
-    // branch, since num_class <= 1 for binary:logistic).
-    if num_class_param > 1 {
+    // branch, since num_class <= 1 for binary:logistic). Computed up front so it
+    // can seed the builder metadata; values are byte-for-byte the same as the
+    // previous hand-assembled finalize, so predictions are unchanged.
+    let (task_type, num_class, target_id, class_id) = if num_class_param > 1 {
         // Multi-class — not exercised by the Phase 1 fixture, but ported for
         // completeness of the branch (delegated_handler.cc:824-846).
-        model.task_type = TaskType::kMultiClf;
-        model.num_class = vec![num_class_param];
-        model.target_id = vec![0; num_tree];
-        model.class_id = booster.tree_info.clone();
+        (
+            TaskType::kMultiClf,
+            vec![num_class_param],
+            vec![0; num_tree],
+            booster.tree_info.clone(),
+        )
     } else {
-        model.task_type = if objective.starts_with("binary:") {
+        let task_type = if objective.starts_with("binary:") {
             TaskType::kBinaryClf
         } else if objective.starts_with("rank:") {
             TaskType::kLearningToRank
         } else {
             TaskType::kRegressor
         };
-        model.num_class = vec![1; num_target as usize];
-        model.class_id = vec![0; num_tree];
-        // Grove per target: target_id[i] = tree_info[i].
-        model.target_id = booster.tree_info.clone();
-    }
+        (
+            task_type,
+            vec![1; num_target as usize],
+            // Grove per target: target_id[i] = tree_info[i].
+            booster.tree_info.clone(),
+            vec![0; num_tree],
+        )
+    };
 
     // Base scores in f64, then version-gated margin transform
     // (delegated_handler.cc:874-897). The transform fires when the version is
@@ -282,7 +256,38 @@ pub fn load_xgboost_json(json: &str) -> Result<Model, XgbError> {
             *e = transform_base_score_to_margin(&postprocessor, *e);
         }
     }
-    model.base_scores = base_scores;
+
+    // Drive the validated builder (D-11). Metadata carries the exact header
+    // values the previous finalize set; `attributes: Some(String::new())`
+    // preserves the prior empty `model.attributes` (the builder otherwise
+    // defaults absent attributes to `"{}"`). `sigmoid_alpha`/`ratio_c` are set
+    // after `commit_model` since the builder metadata API does not cover them;
+    // they keep their previous `1.0` values so predictions are unchanged.
+    let metadata = BuilderMetadata {
+        num_feature,
+        task_type,
+        average_tree_output: false, // hardcoded upstream (delegated_handler.cc:814).
+        num_target,
+        num_class,
+        leaf_vector_shape: vec![1, 1],
+        target_id,
+        class_id,
+        postprocessor,
+        base_scores,
+        attributes: Some(String::new()),
+    };
+
+    let mut builder = ModelBuilder::new(metadata)?;
+    // Build the trees (F32 — XGBoost-JSON only ever yields <f32, f32>).
+    for (i, t) in booster.trees.iter().enumerate() {
+        build_tree(&mut builder, i, t)?;
+    }
+    let mut model = builder.commit_model()?;
+
+    // Header fields the builder metadata API does not carry, preserved verbatim
+    // from the previous finalize (delegated_handler.cc:814,818).
+    model.sigmoid_alpha = 1.0;
+    model.ratio_c = 1.0;
 
     Ok(model)
 }

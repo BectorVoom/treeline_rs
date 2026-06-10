@@ -181,6 +181,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "treelite-builder",
  "treelite-core",
 ]
 

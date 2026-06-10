@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 treelite-core = { path = "../treelite-core" }
+treelite-builder = { path = "../treelite-builder" }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

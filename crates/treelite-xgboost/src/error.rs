@@ -70,4 +70,13 @@ pub enum XgbError {
     /// An error bubbled up from `treelite-core` (e.g. an unknown enum string).
     #[error(transparent)]
     Core(#[from] treelite_core::CoreError),
+
+    /// An error bubbled up from the `treelite-builder` `ModelBuilder` while the
+    /// loader emitted node/tree calls (e.g. a dangling child key, an orphaned
+    /// node, or a split index out of range). The builder's strict validation
+    /// runs after the loader's own `require_non_negative`/`check_dim` checks as
+    /// defense-in-depth; its failures surface here as a typed loader error
+    /// rather than a panic crossing the loader boundary (ERR-01, D-11).
+    #[error(transparent)]
+    Builder(#[from] treelite_builder::BuilderError),
 }
