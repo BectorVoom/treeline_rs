@@ -1,0 +1,23 @@
+[build-system]
+requires = ["maturin>=1.13,<2"]
+build-backend = "maturin"
+
+[project]
+name = "treelite_rs"
+version = "0.1.0"
+description = "PyO3 binding for treelite-rs: a from-scratch Rust rewrite of Treelite."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+
+[tool.maturin]
+# The compiled cdylib (Cargo [lib] name = "_treelite_rs") is installed INTO the
+# pure-Python `treelite_rs` package as the private `_treelite_rs` submodule.
+module-name = "treelite_rs._treelite_rs"
+# python-source layout: the importable `treelite_rs/` package lives under python/
+# and is shipped verbatim; maturin drops the compiled module beside __init__.py.
+python-source = "python"
+manifest-path = "Cargo.toml"
+bindings = "pyo3"
+# abi3 forward-compat wheel for CPython >= 3.10 (D-09); mirrors the Cargo feature.
+features = ["pyo3/abi3-py310"]

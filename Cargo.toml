@@ -9,6 +9,7 @@ members = [
     "crates/treelite-lightgbm",
     "crates/treelite-sklearn",
     "crates/treelite-cubecl",
+    "crates/treelite-py",
 ]
 
 [workspace.package]

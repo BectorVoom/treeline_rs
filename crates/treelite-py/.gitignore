@@ -1,0 +1,11 @@
+# maturin develop editable-install artifacts dropped into python-source
+*.so
+*.pyd
+__pycache__/
+*.py[cod]
+
+# stray local lockfile if `uv run` is invoked from this dir
+uv.lock
+
+# local virtualenv if one is accidentally created here
+.venv/

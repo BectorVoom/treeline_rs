@@ -1,0 +1,41 @@
+[package]
+name = "treelite-py"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# The compiled extension module is named `_treelite_rs` (D-02): module-name ==
+# lib name. It is imported by the pure-Python `treelite_rs` package (python-source
+# layout, see pyproject.toml) as `treelite_rs._treelite_rs`.
+[lib]
+name = "_treelite_rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+# pyo3/numpy are the PyO3-org canonical bridge pair (RESEARCH Package Legitimacy
+# Audit: 3 OK). `extension-module` defers Python symbol resolution to the host
+# interpreter at load time; `abi3-py310` produces ONE wheel for CPython >= 3.10 (D-09).
+pyo3 = { version = "0.28.3", features = ["abi3-py310", "extension-module"] }
+numpy = "0.28.0"
+thiserror = { workspace = true }
+
+# Pure-Rust path deps (all already 1e-5-green). Default features keep cubecl on
+# its cpu-only path; GPU backends are opt-in via the per-backend features below.
+treelite-core = { path = "../treelite-core" }
+treelite-xgboost = { path = "../treelite-xgboost" }
+treelite-lightgbm = { path = "../treelite-lightgbm" }
+treelite-sklearn = { path = "../treelite-sklearn" }
+treelite-gtil = { path = "../treelite-gtil" }
+treelite-builder = { path = "../treelite-builder" }
+treelite-cubecl = { path = "../treelite-cubecl" }
+
+# Per-backend wheel features forward verbatim to treelite-cubecl (the same
+# forwarding shape that crate uses for cubecl/*). default = cpu so a plain
+# `cargo build -p treelite-py` and the default `maturin develop` wheel never
+# require ROCm/CUDA system libs.
+[features]
+default = ["cpu"]
+cpu = []
+rocm = ["treelite-cubecl/rocm"]
+cuda = ["treelite-cubecl/cuda"]
+wgpu = ["treelite-cubecl/wgpu"]
