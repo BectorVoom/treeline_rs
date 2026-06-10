@@ -56,7 +56,13 @@ pub enum Backend {
     /// `predict_sparse`). The reference/fallback (manifest `backend ==
     /// "scalar-cpu"`).
     ScalarCpu,
-    // Phase 6/7: CubeclCpu, Cuda, Wgpu, Rocm — added as registrations.
+    /// The cubecl CPU-backend GTIL engine (`treelite_cubecl::predict_cpu`) for
+    /// the dense numerical path; sparse/categorical cells fall back to the
+    /// scalar `treelite_gtil::predict_sparse`/`predict` (D-02). Registered
+    /// additively in Phase 6 (a new variant + the [`cubecl_cpu_case`]
+    /// constructor) with NO change to the matrix iteration (D-11).
+    CubeclCpu,
+    // Phase 7: Cuda, Wgpu, Rocm — added as further registrations.
 }
 
 /// Dense predict over an **f32-input** matrix (D-05). The output element type is
@@ -120,6 +126,53 @@ pub fn scalar_cpu_case() -> RunnerCase {
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
             Ok(out)
         },
+        sparse_f32: |model, csr, num_row, cfg| {
+            let out = treelite_gtil::predict_sparse::<f32>(model, csr, num_row, cfg)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok(out.into_iter().map(|v| v as f64).collect())
+        },
+        sparse_f64: |model, csr, num_row, cfg| {
+            let out = treelite_gtil::predict_sparse::<f64>(model, csr, num_row, cfg)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok(out)
+        },
+    }
+}
+
+/// The cubecl-cpu [`RunnerCase`] (Phase-6 registration, D-11). Mirrors
+/// [`scalar_cpu_case`] EXACTLY except the dense slots route through the cubecl
+/// CPU kernels ([`treelite_cubecl::predict_cpu`], D-01/D-05) and the sparse
+/// slots keep the scalar [`treelite_gtil::predict_sparse`] fallback (D-02 — the
+/// cubecl kernels are dense-numerical only this phase). Adding this constructor
+/// together with the [`Backend::CubeclCpu`] variant is the WHOLE registration.
+/// The `RunnerCase` struct, the slot type aliases, and the matrix iteration in
+/// `tests/gtil_matrix.rs` all stay untouched (D-11 registration-not-refactor).
+///
+/// Provenance (D-06) is RECORDED at assertion time by the matrix sibling
+/// (`tests/gtil_matrix_cubecl.rs`): a dense numerical cell that actually ran the
+/// kernel is tagged `"cubecl-kernel"`; a sparse cell (or a categorical model
+/// that `predict_cpu` itself routes to the scalar fallback) is tagged
+/// `"scalar-fallback"`. The `"1e-5 on cubecl-cpu"` claim can therefore never
+/// silently mean `"validated on scalar fallback"`.
+pub fn cubecl_cpu_case() -> RunnerCase {
+    RunnerCase {
+        backend: Backend::CubeclCpu,
+        dense_f32: |model, data, num_row, cfg| {
+            // f32 input → f32 output, widened to the common f64 accumulator for
+            // comparison. The PREDICT runs in f32 (no pre-cast — Pitfall 6);
+            // only the already-computed f32 RESULT is lifted to f64 afterwards.
+            let out = treelite_cubecl::predict_cpu::<f32>(model, data, num_row, cfg)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok(out.into_iter().map(|v| v as f64).collect())
+        },
+        dense_f64: |model, data, num_row, cfg| {
+            let out = treelite_cubecl::predict_cpu::<f64>(model, data, num_row, cfg)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            Ok(out)
+        },
+        // Sparse rides the scalar fallback (D-02): the cubecl kernels are
+        // dense-numerical only this phase, so the sparse slots point at the SAME
+        // `treelite_gtil::predict_sparse` entry the scalar reference uses.
         sparse_f32: |model, csr, num_row, cfg| {
             let out = treelite_gtil::predict_sparse::<f32>(model, csr, num_row, cfg)
                 .map_err(|e| anyhow::anyhow!("{e}"))?;

@@ -8,6 +8,11 @@ license.workspace = true
 treelite-core = { path = "../treelite-core" }
 treelite-xgboost = { path = "../treelite-xgboost" }
 treelite-gtil = { path = "../treelite-gtil" }
+# treelite-cubecl backs cubecl_cpu_case() (D-11 registration): the dense f32/f64
+# RunnerCase slots call treelite_cubecl::predict_cpu. It is a regular dependency
+# (NOT a dev-dep) because cubecl_cpu_case() is a `pub fn` in src/lib.rs — it must
+# resolve at library-build time, exactly like treelite-gtil/treelite-xgboost.
+treelite-cubecl = { path = "../treelite-cubecl" }
 anyhow = { workspace = true }
 approx = { workspace = true }
 serde = { workspace = true }
