@@ -280,8 +280,28 @@ Plans:
   2. A `sklearn.import_model` entry point marshals fitted estimators, and borrowed buffers from the Python buffer protocol are consumed zero-copy.
   3. Library `thiserror` errors translate into Python exceptions (no panic crosses the FFI boundary), and the binding builds and imports as an abi3 wheel via maturin.
 
-**Plans**: TBD
-**Research flag:** Needs research-phase — PyO3 0.28 buffer-protocol; numpy zero-copy return; GIL/threading pattern.
+**Plans**: 5 plans
+Plans:
+**Wave 0**
+
+- [ ] 08-01-PLAN.md — treelite-py crate scaffold + maturin abi3-py310 wheel (imports as `treelite_rs`) + pytest conftest & 7 RED test stubs (PY-06) (Wave 0)
+
+**Wave 1** *(walking skeleton — blocked on Wave 0)*
+
+- [ ] 08-02-PLAN.md — Model pyclass + frontend loaders + zero-copy dense predict (predict_f32/_f64, GIL release) + single TreeliteError → live A/B 1e-5 (PY-01/PY-02/MEM-04) (Wave 1)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 08-03-PLAN.md — Model serialize_bytes/deserialize_bytes + dump_as_json + concatenate, 1e-5 round-trip (PY-03) (Wave 2)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 08-04-PLAN.md — sklearn.import_model: array-loader pyfunctions + estimator→arrays shim (port importer.py) → live A/B 1e-5 (PY-04) (Wave 3)
+
+**Wave 4** *(blocked on Wave 3 — completes the phase)*
+
+- [ ] 08-05-PLAN.md — Panic guard (no abort crosses FFI) + additive backend= kwarg + un-built/device-absent → TreeliteError + hardware-gated rocm wheel checkpoint (PY-05/D-05/D-08) (Wave 4)
+**Research flag (resolved):** PyO3 0.28 buffer-protocol / numpy zero-copy return / GIL release (`Python::detach`) resolved in 08-RESEARCH.md.
 
 ### Phase 9: Memory-Efficiency Hardening
 
@@ -311,5 +331,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Full Scalar GTIL & Equivalence Harness | 7/7 | Complete    | 2026-06-10 |
 | 6. cubecl GTIL Kernels (CPU Backend) | 7/7 | Complete    | 2026-06-10 |
 | 7. GPU Backend & Equivalence Report | 4/4 | Complete    | 2026-06-10 |
-| 8. PyO3 Python Binding | 0/TBD | Not started | - |
+| 8. PyO3 Python Binding | 0/5 | Not started | - |
 | 9. Memory-Efficiency Hardening | 0/TBD | Not started | - |
