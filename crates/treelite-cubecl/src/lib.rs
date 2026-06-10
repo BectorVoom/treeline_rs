@@ -279,7 +279,9 @@ pub fn model_routes_to_scalar_fallback(model: &Model) -> bool {
     }
 }
 
-/// Host launcher for cubecl CPU-backend prediction.
+/// Runtime-generic host launcher for cubecl GTIL prediction — the single
+/// central code change of Phase 7. Generic over `R: Runtime`, it selects its
+/// client via [`device::client`] so the SAME kernels run on CPU/ROCm/CUDA/wgpu.
 ///
 /// Mirrors [`treelite_gtil::predict`]:
 /// `(&Model, &[F], num_row, &Config) -> Result<Vec<F>, _>`. The output element
@@ -287,45 +289,68 @@ pub fn model_routes_to_scalar_fallback(model: &Model) -> bool {
 /// `Vec<f32>`, `f64` input always yields `Vec<f64>`, independent of the preset.
 ///
 /// Pipeline (RESEARCH Open Q1/Q2):
-/// 1. Validate `num_feature` / `num_row` / `data.len()` / per-node `split_index`
-///    bounds up front, returning a typed [`CubeclError`] BEFORE any device op
-///    (T-06-09; no OOB device write).
-/// 2. If ANY tree carries a categorical split, route the WHOLE model to
-///    [`treelite_gtil::predict`] (the checked scalar fallback, D-02). Sparse
-///    input has its own entry point [`predict_cpu_sparse`].
-/// 3. Otherwise upload the forest ([`upload::upload_forest`]), the input matrix,
-///    and the routing/averaging columns; launch the kernel selected by
-///    `Config.kind`; read the output back into `Vec<F>`; and (for the `Default`
-///    kind only) apply the postprocessor.
+/// 1. If the model routes to the scalar fallback (categorical OR non-`kLT`
+///    operator, [`model_routes_to_scalar_fallback`]), defer the WHOLE model to
+///    [`treelite_gtil::predict`] (the checked scalar fallback, D-02) BEFORE any
+///    device op — so a fallback-routed model succeeds even on a device-less
+///    backend. Sparse input has its own entry point [`predict_cpu_sparse`].
+/// 2. Construct the runtime `R`'s client via [`device::client`]; a missing
+///    device propagates as the typed [`CubeclError::DeviceUnavailable`] skip
+///    (D-05/D-09) — NO silent CPU fallback.
+/// 3. Upload the forest ([`upload::upload_forest`]), the input matrix, and the
+///    routing/averaging columns; launch the kernel selected by `Config.kind`;
+///    read the output back into `Vec<F>`; and (for the `Default` kind only)
+///    apply the postprocessor. `upload_forest` validates `num_feature` /
+///    `num_row` / `data.len()` / per-node `split_index` bounds BEFORE any device
+///    write (T-06-09; no OOB device write).
+pub fn predict<R: Runtime, F: PredictCpuElem>(
+    model: &Model,
+    data: &[F],
+    num_row: usize,
+    cfg: &Config,
+) -> Result<Vec<F>, CubeclError>
+where
+    R::Device: Default,
+{
+    // ---- Whole-model scalar fallback gate (D-02 / Open Q1 + CR-01) ----
+    // Checked BEFORE any device op so a categorical / non-kLT model never reaches
+    // the numerical-only kLT kernels — AND so a fallback-routed model on a
+    // device-less backend still succeeds via the scalar reference (it never
+    // touches the GPU / constructs a client). The predicate is the single source
+    // of truth in [`model_routes_to_scalar_fallback`]; the provenance test
+    // observes THAT same function rather than a parallel hand-rolled copy (WR-04).
+    if model_routes_to_scalar_fallback(model) {
+        return treelite_gtil::predict::<F>(model, data, num_row, cfg)
+            .map_err(|e| CubeclError::Unsupported(format!("scalar fallback: {e}")));
+    }
+
+    // Construct the selected runtime's client. A missing device crosses back as
+    // the typed `CubeclError::DeviceUnavailable` skip (D-05) and PROPAGATES via
+    // `?` — there is NO silent CPU fallback (D-09). The backend tag carried into
+    // the skip is the runtime's type name so the caller knows which backend
+    // skipped on the generic path (CpuRuntime always succeeds via the shim).
+    let client = crate::device::client::<R>(std::any::type_name::<R>())?;
+
+    match cfg.kind {
+        PredictKind::Default | PredictKind::Raw => {
+            launch_default_raw::<R, F>(&client, model, data, num_row, cfg)
+        }
+        PredictKind::LeafId => launch_leaf_id::<R, F>(&client, model, data, num_row),
+        PredictKind::ScorePerTree => launch_score_per_tree::<R, F>(&client, model, data, num_row),
+    }
+}
+
+/// CPU-backend GTIL prediction — a thin shim over [`predict`] pinned to
+/// `CpuRuntime` (registration-not-refactor). Keeps the Phase-6 cubecl-cpu surface
+/// (`treelite_harness::cubecl_cpu_case`, `gtil_matrix_cubecl.rs`) byte-identical:
+/// the CPU client always constructs, so this never returns `DeviceUnavailable`.
 pub fn predict_cpu<F: PredictCpuElem>(
     model: &Model,
     data: &[F],
     num_row: usize,
     cfg: &Config,
 ) -> Result<Vec<F>, CubeclError> {
-    // ---- Whole-model scalar fallback gate (D-02 / Open Q1 + CR-01) ----
-    // (validate_shape inside upload_forest performs step 1; but the fallback gate
-    // must be checked BEFORE upload so a categorical / non-kLT model never reaches
-    // the numerical-only kLT kernels. The fallback's own predict re-validates the
-    // shape.) The predicate is the single source of truth in
-    // [`model_routes_to_scalar_fallback`]; the provenance test observes THAT same
-    // function rather than maintaining a parallel hand-rolled copy (WR-04).
-    if model_routes_to_scalar_fallback(model) {
-        return treelite_gtil::predict::<F>(model, data, num_row, cfg)
-            .map_err(|e| CubeclError::Unsupported(format!("scalar fallback: {e}")));
-    }
-
-    let client = CpuRuntime::client(&Default::default());
-
-    match cfg.kind {
-        PredictKind::Default | PredictKind::Raw => {
-            launch_default_raw::<CpuRuntime, F>(&client, model, data, num_row, cfg)
-        }
-        PredictKind::LeafId => launch_leaf_id::<CpuRuntime, F>(&client, model, data, num_row),
-        PredictKind::ScorePerTree => {
-            launch_score_per_tree::<CpuRuntime, F>(&client, model, data, num_row)
-        }
-    }
+    predict::<CpuRuntime, F>(model, data, num_row, cfg)
 }
 
 /// SPARSE-CSR entry: routed WHOLE to the scalar fallback this phase (D-02).
