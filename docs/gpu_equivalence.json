@@ -1,0 +1,57 @@
+[
+  {
+    "backend": "rocm",
+    "cuda_max_abs_delta": null,
+    "f64_fallback": true,
+    "max_abs_delta": 2.2268493049537597e-7,
+    "model_class": "binary",
+    "postprocessor": "sigmoid",
+    "predicted_high": 5e-6,
+    "predicted_low": 1e-6,
+    "wgpu_max_abs_delta": null
+  },
+  {
+    "backend": "rocm",
+    "cuda_max_abs_delta": null,
+    "f64_fallback": true,
+    "max_abs_delta": 2.907300050480899e-6,
+    "model_class": "large_margin",
+    "postprocessor": "sigmoid",
+    "predicted_high": 5e-6,
+    "predicted_low": 1e-6,
+    "wgpu_max_abs_delta": null
+  },
+  {
+    "backend": "rocm",
+    "cuda_max_abs_delta": null,
+    "f64_fallback": true,
+    "max_abs_delta": 2.3096799850463867e-7,
+    "model_class": "leaf_vec_mc",
+    "postprocessor": "softmax",
+    "predicted_high": 5e-6,
+    "predicted_low": 1e-6,
+    "wgpu_max_abs_delta": null
+  },
+  {
+    "backend": "rocm",
+    "cuda_max_abs_delta": null,
+    "f64_fallback": true,
+    "max_abs_delta": 2.8322729006546865e-7,
+    "model_class": "lgbm_numerical",
+    "postprocessor": "identity",
+    "predicted_high": 1e-6,
+    "predicted_low": 0.0,
+    "wgpu_max_abs_delta": null
+  },
+  {
+    "backend": "rocm",
+    "cuda_max_abs_delta": null,
+    "f64_fallback": true,
+    "max_abs_delta": 0.0,
+    "model_class": "mixedwidth",
+    "postprocessor": "identity",
+    "predicted_high": 1e-6,
+    "predicted_low": 0.0,
+    "wgpu_max_abs_delta": null
+  }
+]
