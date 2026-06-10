@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-04-PLAN.md
-last_updated: "2026-06-10T04:37:00.000Z"
-last_activity: 2026-06-10 -- Plan 04-04 complete
+stopped_at: Completed 04-06-PLAN.md
+last_updated: "2026-06-10T04:51:50.496Z"
+last_activity: 2026-06-10 -- Plan 04-06 complete
 progress:
   total_phases: 9
   completed_phases: 3
   total_plans: 22
-  completed_plans: 18
-  percent: 35
+  completed_plans: 19
+  percent: 33
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 04 (lightgbm-scikit-learn-loaders) — EXECUTING
-Plan: 5 of 8
-Status: Executing Phase 04 — Plan 04-04 complete (Wave 2: treelite-lightgbm crate created; numerical LightGBM model loads→predicts→verifies bitwise vs the treelite-GTIL golden). Next: 04-05 LightGBM categorical (LGB-02), then the sklearn slices.
-Last activity: 2026-06-10 -- Plan 04-04 complete
+Plan: 6 of 8
+Status: Executing Phase 04 — Plan 04-06 complete (Wave 2: treelite-sklearn crate created; RandomForest/ExtraTrees (clf+reg) via the bulk path (SKL-01) and GradientBoosting (clf+reg) via the f64-ModelBuilder MixIn path (SKL-02) each load→predict→verify within 1e-5 of their frozen treelite-GTIL goldens, worst |delta| 5.96e-8). 04-05 (LightGBM categorical, LGB-02) runs in parallel.
+Last activity: 2026-06-10 -- Plan 04-06 complete
 
-Progress: [████░░░░] 50% (Phase 04 plans: 4/8)
+Progress: [██████░░] 75% (Phase 04 plans: 6/8)
 
 ## Performance Metrics
 
@@ -71,6 +71,7 @@ Progress: [████░░░░] 50% (Phase 04 plans: 4/8)
 | Phase 04 P02 | 5min | 2 tasks | 5 files |
 | Phase 04 P03 | 6min | 2 tasks | 10 files |
 | Phase 04 P04 | 6min | 2 tasks | 7 files |
+| Phase 04 P06 | 13min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -136,6 +137,8 @@ Recent decisions affecting current work:
 - [04-04]: CanonicalObjective alias-collapse runs BEFORE the objective→postprocessor map; sigmoid:<a> parsed with strict >0 check (T-04-09); class_id[i]=i%num_class; average_tree_output from average_output key presence; base_scores = num_class zeros; sigmoid_alpha stamped post-commit.
 - [04-04]: Categorical splits rejected with a typed LgbError in this numerical slice (LGB-01) rather than mis-predicting — cat bitset decode (LGB-02) is Plan 04-05; cat_boundaries(u64)/cat_threshold(u32) are already parsed and stored on LGBTree so 04-05 only adds emission.
 - [04-04]: lightgbm_numerical golden gate green at max |delta| = 0e0 (bitwise-exact vs upstream treelite.gtil.predict); harness gained a treelite-lightgbm dev-dep; cargo test --workspace fully green (no XGBoost regression).
+- [Phase ?]: 04-06: treelite-sklearn RF/ET via bulk path, GB via f64 ModelBuilder MixIn; SKL-01/02 within 1e-5 (worst 5.96e-8).
+- [Phase ?]: 04-06: GB base_scores derived capture-side per importer.py, added to golden additively (frozen input,output sha256 unchanged); gtil gained identity_multiclass no-op.
 
 ### Pending Todos
 
@@ -157,6 +160,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T04:37:00.000Z
-Stopped at: Completed 04-04-PLAN.md
+Last session: 2026-06-10T04:51:28.221Z
+Stopped at: Completed 04-06-PLAN.md
 Resume file: None

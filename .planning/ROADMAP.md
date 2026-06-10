@@ -140,7 +140,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1)*
 
 - [x] 04-04-PLAN.md — LightGBM numerical slice: parser + objective→postprocessor map + node-id reassignment, 1e-5 golden (LGB-01/LGB-03) (Wave 2) — DONE (2/2 tasks; treelite-lightgbm crate: load_lightgbm → ModelVariant::F64 via f64 builder, negative-index leaf BFS re-numbering + missing-type default_left override + CanonicalObjective map + sigmoid_alpha + class_id round-robin; lightgbm_numerical golden max |delta| = 0e0 < 1e-5; cargo test --workspace green)
-- [ ] 04-06-PLAN.md — sklearn crate (D-01 array signatures) + RF/ExtraTrees bulk path + GradientBoosting MixIn, 1e-5 goldens (SKL-01/SKL-02) (Wave 2)
+- [x] 04-06-PLAN.md — sklearn crate (D-01 array signatures) + RF/ExtraTrees bulk path + GradientBoosting MixIn, 1e-5 goldens (SKL-01/SKL-02) (Wave 2)
 
 **Wave 3** *(blocked on Wave 2)*
 
@@ -236,7 +236,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. End-to-End Spine | 4/4 | Complete    | 2026-06-09 |
 | 2. Builder & Serialization | 6/6 | Complete    | 2026-06-10 |
 | 3. Full XGBoost Loaders | 4/4 | Complete    | 2026-06-10 |
-| 4. LightGBM & scikit-learn Loaders | 3/8 | In Progress|  |
+| 4. LightGBM & scikit-learn Loaders | 5/8 | In Progress|  |
 | 5. Full Scalar GTIL & Equivalence Harness | 0/TBD | Not started | - |
 | 6. cubecl GTIL Kernels (CPU Backend) | 0/TBD | Not started | - |
 | 7. GPU Backend & Equivalence Report | 0/TBD | Not started | - |
