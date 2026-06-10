@@ -172,7 +172,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 05-02-PLAN.md — GTIL foundation: typed `Config`/`PredictKind` (D-06) + public `Shape`/`output_shape` (D-07) + `O`-generic input/output element (f64 input over both presets, D-05); internal `Shape`→`OutputLayout` rename (GTIL-01/GTIL-03/GTIL-07/GTIL-08)
+- [x] 05-02-PLAN.md — GTIL foundation: typed `Config`/`PredictKind` (D-06) + public `Shape`/`output_shape` (D-07) + `O`-generic input/output element (f64 input over both presets, D-05); internal `Shape`→`OutputLayout` rename (GTIL-01/GTIL-03/GTIL-07/GTIL-08)
 
 **Wave 3** *(blocked on Wave 2 — same lib.rs)*
 
@@ -256,7 +256,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 2. Builder & Serialization | 6/6 | Complete    | 2026-06-10 |
 | 3. Full XGBoost Loaders | 4/4 | Complete    | 2026-06-10 |
 | 4. LightGBM & scikit-learn Loaders | 8/8 | Complete    | 2026-06-10 |
-| 5. Full Scalar GTIL & Equivalence Harness | 1/5 | In Progress|  |
+| 5. Full Scalar GTIL & Equivalence Harness | 2/5 | In Progress|  |
 | 6. cubecl GTIL Kernels (CPU Backend) | 0/TBD | Not started | - |
 | 7. GPU Backend & Equivalence Report | 0/TBD | Not started | - |
 | 8. PyO3 Python Binding | 0/TBD | Not started | - |
