@@ -125,7 +125,7 @@ fn ubjson_predicts_within_1e5_of_golden() {
         }
     }
 
-    let got = treelite_gtil::predict(&model, &flat, num_row).expect("predict");
+    let got = treelite_gtil::predict(&model, &flat, num_row, &treelite_gtil::Config::default()).expect("predict");
     assert_eq!(got.len(), expected.len());
     let mut max_dev = 0.0_f64;
     for (i, &g) in got.iter().enumerate() {

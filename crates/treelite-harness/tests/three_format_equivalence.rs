@@ -92,7 +92,7 @@ fn flatten_input(golden: &Golden) -> anyhow::Result<(Vec<f32>, usize)> {
 /// assertion against the golden, tracking the max `|delta|`.
 fn assert_predicts_within_1e5(model: &Model, golden: &Golden, label: &str) -> anyhow::Result<f64> {
     let (flat, num_row) = flatten_input(golden)?;
-    let rust = treelite_gtil::predict(model, &flat, num_row)
+    let rust = treelite_gtil::predict(model, &flat, num_row, &treelite_gtil::Config::default())
         .map_err(|e| anyhow::anyhow!("{e}"))
         .with_context(|| format!("predicting ({label})"))?;
     anyhow::ensure!(

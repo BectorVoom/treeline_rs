@@ -206,7 +206,7 @@ pub fn run_equivalence(model_json_path: &str, golden: &Golden) -> anyhow::Result
         flat.extend(row.iter().map(|c| c.0));
     }
 
-    let rust = treelite_gtil::predict(&model, &flat, num_row)
+    let rust = treelite_gtil::predict(&model, &flat, num_row, &treelite_gtil::Config::default())
         .map_err(|e| anyhow::anyhow!("{e}"))
         .context("predicting")?;
 

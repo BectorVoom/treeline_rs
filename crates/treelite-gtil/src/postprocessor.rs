@@ -271,6 +271,9 @@ mod tests {
         }
         // A true OVA row does NOT sum to 1 (distinguishes it from softmax).
         let sum: f32 = row.iter().sum();
-        assert!((sum - 1.0).abs() > 1e-3, "OVA must not normalize like softmax");
+        assert!(
+            (sum - 1.0).abs() > 1e-3,
+            "OVA must not normalize like softmax"
+        );
     }
 }

@@ -840,7 +840,7 @@ mod tests {
             0.0,
         )
         .expect("single-leaf histgb loads");
-        let out = treelite_gtil::predict(&model, &[0.0_f32], 1).expect("predict");
+        let out = treelite_gtil::predict(&model, &[0.0_f32], 1, &treelite_gtil::Config::default()).expect("predict");
         approx::assert_abs_diff_eq!(out[0], 3.5_f32, epsilon = 1e-5);
     }
 
@@ -870,10 +870,10 @@ mod tests {
         )
         .expect("histgb loads");
         // Input col1 = 0.0 (<= 0.5) -> LEFT leaf (10.0); col0 is a decoy (99.0).
-        let out = treelite_gtil::predict(&model, &[99.0_f32, 0.0], 1).expect("predict");
+        let out = treelite_gtil::predict(&model, &[99.0_f32, 0.0], 1, &treelite_gtil::Config::default()).expect("predict");
         approx::assert_abs_diff_eq!(out[0], 10.0_f32, epsilon = 1e-5);
         // Input col1 = 1.0 (> 0.5) -> RIGHT leaf (20.0).
-        let out = treelite_gtil::predict(&model, &[99.0_f32, 1.0], 1).expect("predict");
+        let out = treelite_gtil::predict(&model, &[99.0_f32, 1.0], 1, &treelite_gtil::Config::default()).expect("predict");
         approx::assert_abs_diff_eq!(out[0], 20.0_f32, epsilon = 1e-5);
     }
 
@@ -952,10 +952,10 @@ mod tests {
         )
         .expect("categorical histgb loads");
         // Feature 0 = 1.0 (category 1, in {1,2}) -> LEFT leaf (10.0).
-        let out = treelite_gtil::predict(&model, &[1.0_f32], 1).expect("predict");
+        let out = treelite_gtil::predict(&model, &[1.0_f32], 1, &treelite_gtil::Config::default()).expect("predict");
         approx::assert_abs_diff_eq!(out[0], 10.0_f32, epsilon = 1e-5);
         // Feature 0 = 3.0 (category 3, NOT in {1,2}) -> RIGHT leaf (20.0).
-        let out = treelite_gtil::predict(&model, &[3.0_f32], 1).expect("predict");
+        let out = treelite_gtil::predict(&model, &[3.0_f32], 1, &treelite_gtil::Config::default()).expect("predict");
         approx::assert_abs_diff_eq!(out[0], 20.0_f32, epsilon = 1e-5);
     }
 

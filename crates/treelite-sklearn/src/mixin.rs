@@ -604,7 +604,7 @@ mod tests {
         )
         .expect("iforest loads");
         let flat = [1.0_f32];
-        let out = treelite_gtil::predict(&model, &flat, 1).expect("predict");
+        let out = treelite_gtil::predict(&model, &flat, 1, &treelite_gtil::Config::default()).expect("predict");
         // exp2(-(-0.1) / 2.0) = exp2(0.05). If the loader had recomputed the
         // depth (instead of using -0.1 as-is) this would differ.
         let expected = (0.1_f32 / 2.0_f32).exp2();
@@ -625,11 +625,11 @@ mod tests {
         assert_eq!(model.postprocessor, "identity");
         // Route feature 0 = 1.0 (>= 0.5) → right leaf, value -0.1 exactly.
         let flat = [1.0_f32];
-        let out = treelite_gtil::predict(&model, &flat, 1).expect("predict");
+        let out = treelite_gtil::predict(&model, &flat, 1, &treelite_gtil::Config::default()).expect("predict");
         approx::assert_abs_diff_eq!(out[0], -0.1_f32, epsilon = 1e-5);
         // Route feature 0 = 0.0 (< 0.5) → left leaf, value 0.1 exactly.
         let flat = [0.0_f32];
-        let out = treelite_gtil::predict(&model, &flat, 1).expect("predict");
+        let out = treelite_gtil::predict(&model, &flat, 1, &treelite_gtil::Config::default()).expect("predict");
         approx::assert_abs_diff_eq!(out[0], 0.1_f32, epsilon = 1e-5);
     }
 }

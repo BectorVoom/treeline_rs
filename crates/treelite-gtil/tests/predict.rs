@@ -6,7 +6,7 @@
 //! out-of-bounds feature index returns a typed `GtilError` (ERR-01).
 
 use treelite_core::{Model, ModelPreset, ModelVariant, Operator, Tree, TreeBuf};
-use treelite_gtil::{GtilError, predict};
+use treelite_gtil::{Config, GtilError, predict};
 
 /// Build a single-split `Tree<f32>`:
 /// - node 0: numerical test on `feature`, `kLT` threshold, default-left,
@@ -60,7 +60,7 @@ fn routes_left_and_right_on_numerical_split() {
     // feature[0] = 0.0 < 0.5 → left leaf (1.0)
     // feature[0] = 1.0 >= 0.5 → right leaf (-1.0)
     let data = [0.0_f32, 9.0, 1.0, 9.0];
-    let out = predict(&m, &data, 2).unwrap();
+    let out = predict(&m, &data, 2, &Config::default()).unwrap();
     assert_eq!(out.len(), 2);
     assert_eq!(out[0], 1.0_f32);
     assert_eq!(out[1], -1.0_f32);
@@ -116,7 +116,7 @@ fn categorical_match_routes_by_polarity() {
     // feature[0] = 2.0 IS in {1,2} → match → LEFT (10.0).
     // feature[0] = 3.0 NOT in {1,2} → non-match → RIGHT (20.0).
     let data = [2.0_f32, 9.0, 3.0, 9.0];
-    let out = predict(&m, &data, 2).unwrap();
+    let out = predict(&m, &data, 2, &Config::default()).unwrap();
     assert_eq!(out[0], 10.0_f32, "category 2 in list → left");
     assert_eq!(out[1], 20.0_f32, "category 3 not in list → right");
 }
@@ -132,9 +132,15 @@ fn categorical_right_child_polarity_inverts_routing() {
     // feature[0] = 1.0 IS in {1,2} → match → RIGHT (20.0).
     // feature[0] = 5.0 NOT in {1,2} → non-match → LEFT (10.0).
     let data = [1.0_f32, 9.0, 5.0, 9.0];
-    let out = predict(&m, &data, 2).unwrap();
-    assert_eq!(out[0], 20.0_f32, "category 1 in list, right-child polarity → right");
-    assert_eq!(out[1], 10.0_f32, "category 5 not in list, right-child polarity → left");
+    let out = predict(&m, &data, 2, &Config::default()).unwrap();
+    assert_eq!(
+        out[0], 20.0_f32,
+        "category 1 in list, right-child polarity → right"
+    );
+    assert_eq!(
+        out[1], 10.0_f32,
+        "category 5 not in list, right-child polarity → left"
+    );
 }
 
 #[test]
@@ -143,7 +149,7 @@ fn nan_routes_to_default_child() {
     // the threshold comparison.
     let m = model_of(vec![split_tree(0, 0.5, 1.0, -1.0)], "identity", 0.0);
     let data = [f32::NAN, 9.0];
-    let out = predict(&m, &data, 1).unwrap();
+    let out = predict(&m, &data, 1, &Config::default()).unwrap();
     assert_eq!(out[0], 1.0_f32);
 }
 
@@ -159,9 +165,13 @@ fn two_trees_sum_serially_before_base_and_sigmoid() {
     );
     // row: feature0 = 0.0 (<0.5 → +1.0), feature1 = 0.0 (<0.5 → +0.5) ⇒ margin 1.5
     let data = [0.0_f32, 0.0];
-    let out = predict(&m, &data, 1).unwrap();
+    let out = predict(&m, &data, 1, &Config::default()).unwrap();
     let expected = 1.0_f32 / (1.0_f32 + (-1.5_f32).exp());
-    assert!((out[0] - expected).abs() < 1e-7, "got {}, want {expected}", out[0]);
+    assert!(
+        (out[0] - expected).abs() < 1e-7,
+        "got {}, want {expected}",
+        out[0]
+    );
     assert!(out[0] > 0.0 && out[0] < 1.0);
 }
 
@@ -171,7 +181,7 @@ fn base_score_is_added_before_postprocessor() {
     // identity postprocessor returns the margin unchanged.
     let m = model_of(vec![split_tree(0, 0.5, 0.0, 0.0)], "identity", 0.25);
     let data = [0.0_f32, 0.0];
-    let out = predict(&m, &data, 1).unwrap();
+    let out = predict(&m, &data, 1, &Config::default()).unwrap();
     assert!((out[0] - 0.25_f32).abs() < 1e-7);
 }
 
@@ -179,7 +189,7 @@ fn base_score_is_added_before_postprocessor() {
 fn sigmoid_output_in_open_unit_interval() {
     let m = model_of(vec![split_tree(0, 0.5, 5.0, -5.0)], "sigmoid", 0.0);
     let data = [0.0_f32, 0.0, 1.0, 0.0]; // two rows: left then right
-    let out = predict(&m, &data, 2).unwrap();
+    let out = predict(&m, &data, 2, &Config::default()).unwrap();
     for &v in &out {
         assert!(v > 0.0 && v < 1.0, "sigmoid output {v} not in (0,1)");
     }
@@ -190,7 +200,7 @@ fn out_of_bounds_feature_index_is_typed_error() {
     // split on feature 5, but num_feature is only 2 → OOB, must not panic.
     let m = model_of(vec![split_tree(5, 0.5, 1.0, -1.0)], "identity", 0.0);
     let data = [0.0_f32, 0.0];
-    let err = predict(&m, &data, 1).unwrap_err();
+    let err = predict(&m, &data, 1, &Config::default()).unwrap_err();
     match err {
         GtilError::FeatureIndexOutOfBounds {
             node,
@@ -212,7 +222,7 @@ fn input_buffer_too_small_is_typed_error() {
     // row slice (WR-01 / T-03-01).
     let m = model_of(vec![split_tree(0, 0.5, 1.0, -1.0)], "identity", 0.0);
     let data = [0.0_f32, 0.0, 0.0]; // 3 elements, need 4
-    let err = predict(&m, &data, 2).unwrap_err();
+    let err = predict(&m, &data, 2, &Config::default()).unwrap_err();
     match err {
         GtilError::InvalidInputShape {
             num_row,
@@ -236,7 +246,7 @@ fn negative_num_feature_is_typed_error() {
     let mut m = model_of(vec![split_tree(0, 0.5, 1.0, -1.0)], "identity", 0.0);
     m.num_feature = -1;
     let data = [0.0_f32, 0.0];
-    let err = predict(&m, &data, 1).unwrap_err();
+    let err = predict(&m, &data, 1, &Config::default()).unwrap_err();
     assert!(matches!(err, GtilError::InvalidInputShape { .. }));
 }
 
@@ -249,7 +259,7 @@ fn out_of_bounds_child_node_id_is_typed_error() {
     let m = model_of(vec![t], "identity", 0.0);
     // feature[0] = 0.0 < 0.5 → follow cleft[0] == 99 (out of range).
     let data = [0.0_f32, 0.0];
-    let err = predict(&m, &data, 1).unwrap_err();
+    let err = predict(&m, &data, 1, &Config::default()).unwrap_err();
     match err {
         GtilError::NodeIndexOutOfBounds { node } => assert_eq!(node, 99),
         other => panic!("expected NodeIndexOutOfBounds, got {other:?}"),
@@ -266,7 +276,7 @@ fn negative_child_node_id_other_than_leaf_sentinel_is_typed_error() {
     let m = model_of(vec![t], "identity", 0.0);
     // feature[0] = 1.0 >= 0.5 → follow cright[0] == -2.
     let data = [1.0_f32, 0.0];
-    let err = predict(&m, &data, 1).unwrap_err();
+    let err = predict(&m, &data, 1, &Config::default()).unwrap_err();
     assert!(matches!(err, GtilError::NodeIndexOutOfBounds { .. }));
 }
 
@@ -278,6 +288,9 @@ fn unsupported_postprocessor_is_typed_error() {
     // supported and no longer valid "unsupported" probes.)
     let m = model_of(vec![split_tree(0, 0.5, 1.0, -1.0)], "hinge", 0.0);
     let data = [0.0_f32, 0.0];
-    let err = predict(&m, &data, 1).unwrap_err();
-    assert_eq!(err, GtilError::UnsupportedPostprocessor("hinge".to_string()));
+    let err = predict(&m, &data, 1, &Config::default()).unwrap_err();
+    assert_eq!(
+        err,
+        GtilError::UnsupportedPostprocessor("hinge".to_string())
+    );
 }

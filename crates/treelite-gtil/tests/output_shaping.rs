@@ -74,7 +74,7 @@ fn round_robin_class_routing_places_trees_in_distinct_columns() {
     m.base_scores = vec![0.0, 0.0];
 
     let data = [0.0_f32]; // one row, one feature (unused; all leaves at node 0)
-    let out = treelite_gtil::predict(&m, &data, 1).unwrap();
+    let out = treelite_gtil::predict(&m, &data, 1, &treelite_gtil::Config::default()).unwrap();
     assert_eq!(out.len(), 2, "shape is (1, 1, 2)");
     // class 0 = 1.0 + 0.5; class 1 = 2.0 + 0.25. No collapse to column 0.
     assert!((out[0] - 1.5).abs() < 1e-6, "class 0 = {}", out[0]);
@@ -97,7 +97,7 @@ fn leaf_vector_broadcast_fills_full_shape() {
     m.base_scores = vec![0.0, 0.0, 0.0];
 
     let data = [0.0_f32];
-    let out = treelite_gtil::predict(&m, &data, 1).unwrap();
+    let out = treelite_gtil::predict(&m, &data, 1, &treelite_gtil::Config::default()).unwrap();
     assert_eq!(out.len(), 3, "shape is (1, 1, 3)");
     assert!((out[0] - 0.1).abs() < 1e-6);
     assert!((out[1] - 0.2).abs() < 1e-6);
@@ -126,9 +126,13 @@ fn average_tree_output_returns_mean_not_sum() {
     m.base_scores = vec![0.0];
 
     let data = [0.0_f32];
-    let out = treelite_gtil::predict(&m, &data, 1).unwrap();
+    let out = treelite_gtil::predict(&m, &data, 1, &treelite_gtil::Config::default()).unwrap();
     assert_eq!(out.len(), 1);
-    assert!((out[0] - 2.0).abs() < 1e-6, "mean expected 2.0, got {}", out[0]);
+    assert!(
+        (out[0] - 2.0).abs() < 1e-6,
+        "mean expected 2.0, got {}",
+        out[0]
+    );
 }
 
 #[test]
@@ -146,7 +150,7 @@ fn base_scores_added_per_cell_2d() {
     m.base_scores = vec![0.25, -0.5];
 
     let data = [0.0_f32];
-    let out = treelite_gtil::predict(&m, &data, 1).unwrap();
+    let out = treelite_gtil::predict(&m, &data, 1, &treelite_gtil::Config::default()).unwrap();
     // class 0 = 1.0 + 0.25; class 1 = 2.0 - 0.5.
     assert!((out[0] - 1.25).abs() < 1e-6, "class 0 = {}", out[0]);
     assert!((out[1] - 1.5).abs() < 1e-6, "class 1 = {}", out[1]);
@@ -168,7 +172,7 @@ fn scalar_binary_path_shape_unchanged() {
     m.base_scores = vec![0.25];
 
     let data = [0.0_f32, 0.0]; // two rows
-    let out = treelite_gtil::predict(&m, &data, 2).unwrap();
+    let out = treelite_gtil::predict(&m, &data, 2, &treelite_gtil::Config::default()).unwrap();
     assert_eq!(out.len(), 2, "binary scalar shape is (num_row, 1, 1)");
     assert!((out[0] - 1.0).abs() < 1e-6);
     assert!((out[1] - 1.0).abs() < 1e-6);
@@ -190,7 +194,7 @@ fn softmax_normalizes_multiclass_row() {
     m.base_scores = vec![0.0, 0.0, 0.0];
 
     let data = [0.0_f32];
-    let out = treelite_gtil::predict(&m, &data, 1).unwrap();
+    let out = treelite_gtil::predict(&m, &data, 1, &treelite_gtil::Config::default()).unwrap();
     assert_eq!(out.len(), 3);
     let sum: f32 = out.iter().sum();
     assert!((sum - 1.0).abs() < 1e-6, "softmax row sums to {sum}");
@@ -215,7 +219,7 @@ fn out_of_range_class_route_is_typed_error() {
     m.base_scores = vec![0.0, 0.0];
 
     let data = [0.0_f32];
-    let err = treelite_gtil::predict(&m, &data, 1).unwrap_err();
+    let err = treelite_gtil::predict(&m, &data, 1, &treelite_gtil::Config::default()).unwrap_err();
     match err {
         treelite_gtil::GtilError::OutputRouteOutOfBounds {
             target_id,

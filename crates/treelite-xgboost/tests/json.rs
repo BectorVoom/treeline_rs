@@ -132,7 +132,7 @@ fn json_predicts_within_1e5_of_shared_golden() {
         flat.extend(row.iter().map(|c| c.unwrap_or(f32::NAN)));
     }
 
-    let rust = treelite_gtil::predict(&model, &flat, num_row).expect("predict");
+    let rust = treelite_gtil::predict(&model, &flat, num_row, &treelite_gtil::Config::default()).expect("predict");
     assert_eq!(rust.len(), golden.output.len());
     let mut max_dev: f64 = 0.0;
     for (i, &got) in rust.iter().enumerate() {

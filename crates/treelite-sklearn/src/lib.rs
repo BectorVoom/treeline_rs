@@ -273,7 +273,7 @@ mod tests {
         let mut flat = Vec::new();
         flat.extend_from_slice(&row_left);
         flat.extend_from_slice(&row_right);
-        let out = treelite_gtil::predict(&model, &flat, 2).expect("predict");
+        let out = treelite_gtil::predict(&model, &flat, 2, &treelite_gtil::Config::default()).expect("predict");
         // average_tree_output with a single tree → the leaf value itself.
         approx::assert_abs_diff_eq!(out[0], 3.0_f32, epsilon = 1e-5);
         approx::assert_abs_diff_eq!(out[1], 7.0_f32, epsilon = 1e-5);

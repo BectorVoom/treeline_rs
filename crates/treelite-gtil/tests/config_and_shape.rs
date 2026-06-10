@@ -48,7 +48,11 @@ fn binary_model() -> Model {
 #[test]
 fn config_default_matches_upstream() {
     let cfg = Config::default();
-    assert_eq!(cfg.kind, PredictKind::Default, "default kind is kPredictDefault");
+    assert_eq!(
+        cfg.kind,
+        PredictKind::Default,
+        "default kind is kPredictDefault"
+    );
     assert_eq!(cfg.nthread, 0, "default nthread is 0 (gtil.h:51)");
 }
 
@@ -61,7 +65,11 @@ fn output_shape_default_collapses_binary_to_one() {
         nthread: 0,
     };
     let shape = output_shape(&m, 10, &cfg);
-    assert_eq!(shape.dims, vec![10, 1, 1], "binary default → [r, 1, max_num_class]");
+    assert_eq!(
+        shape.dims,
+        vec![10, 1, 1],
+        "binary default → [r, 1, max_num_class]"
+    );
 }
 
 #[test]
@@ -127,7 +135,11 @@ fn predict_takes_config_and_dispatches_default_vs_raw() {
         },
     )
     .unwrap();
-    assert!((raw[0] - 0.0).abs() < 1e-6, "raw skips postprocessor: {}", raw[0]);
+    assert!(
+        (raw[0] - 0.0).abs() < 1e-6,
+        "raw skips postprocessor: {}",
+        raw[0]
+    );
 
     let default = treelite_gtil::predict(
         &m,

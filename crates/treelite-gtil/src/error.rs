@@ -14,7 +14,9 @@ pub enum GtilError {
     /// A node's `split_index` is outside the feature row. Upstream this would
     /// be an unchecked `row(split_index)` access; here it is a typed error
     /// (T-03-01).
-    #[error("feature index {feature} at node {node} is out of bounds (num_feature = {num_feature})")]
+    #[error(
+        "feature index {feature} at node {node} is out of bounds (num_feature = {num_feature})"
+    )]
     FeatureIndexOutOfBounds {
         /// The node id whose split referenced the bad feature.
         node: usize,
@@ -86,6 +88,15 @@ pub enum GtilError {
     /// Upstream silently maps unknown names; here it is a typed error (T-03-02).
     #[error("unsupported postprocessor: {0:?}")]
     UnsupportedPostprocessor(String),
+
+    /// The requested [`PredictKind`](crate::PredictKind) is not yet wired on this
+    /// GTIL surface. `LeafId` and `ScorePerTree` are added in Plan 05-04; until
+    /// then they surface as this typed error rather than producing wrong output.
+    #[error("unsupported predict kind: {kind}")]
+    UnsupportedPredictKind {
+        /// The name of the unsupported kind (e.g. `"LeafId"`).
+        kind: &'static str,
+    },
 
     /// An error bubbled up from `treelite-core`.
     #[error(transparent)]

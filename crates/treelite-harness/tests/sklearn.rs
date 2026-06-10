@@ -209,7 +209,7 @@ fn run_histgb_golden(path: &str, label: &str) -> anyhow::Result<f64> {
     .map_err(|e| anyhow::anyhow!("{e}"))
     .with_context(|| format!("loading {label}"))?;
 
-    let rust = treelite_gtil::predict(&model, &flat, num_row)
+    let rust = treelite_gtil::predict(&model, &flat, num_row, &treelite_gtil::Config::default())
         .map_err(|e| anyhow::anyhow!("{e}"))
         .with_context(|| format!("predicting {label}"))?;
     let dev = assert_within_1e5(&rust, &golden.output, label)?;
@@ -401,7 +401,7 @@ fn sklearn_rf() -> anyhow::Result<()> {
             .with_context(|| format!("loading {name}"))?
         };
 
-        let rust = treelite_gtil::predict(&model, &flat, num_row)
+        let rust = treelite_gtil::predict(&model, &flat, num_row, &treelite_gtil::Config::default())
             .map_err(|e| anyhow::anyhow!("{e}"))
             .with_context(|| format!("predicting {name}"))?;
         let dev = assert_within_1e5(&rust, &fam.output, name)?;
@@ -468,7 +468,7 @@ fn sklearn_gb() -> anyhow::Result<()> {
             .with_context(|| format!("loading {name}"))?
         };
 
-        let rust = treelite_gtil::predict(&model, &flat, num_row)
+        let rust = treelite_gtil::predict(&model, &flat, num_row, &treelite_gtil::Config::default())
             .map_err(|e| anyhow::anyhow!("{e}"))
             .with_context(|| format!("predicting {name}"))?;
         let dev = assert_within_1e5(&rust, &fam.output, name)?;
@@ -516,7 +516,7 @@ fn sklearn_iforest() -> anyhow::Result<()> {
     .map_err(|e| anyhow::anyhow!("{e}"))
     .context("loading isolation_forest")?;
 
-    let rust = treelite_gtil::predict(&model, &flat, num_row)
+    let rust = treelite_gtil::predict(&model, &flat, num_row, &treelite_gtil::Config::default())
         .map_err(|e| anyhow::anyhow!("{e}"))
         .context("predicting isolation_forest")?;
     let dev = assert_within_1e5(&rust, &golden.output, "isolation_forest")?;

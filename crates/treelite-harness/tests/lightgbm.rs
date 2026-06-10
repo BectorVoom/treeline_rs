@@ -133,7 +133,7 @@ fn lightgbm_numerical() -> anyhow::Result<()> {
         flat.extend(row.iter().map(|&c| c as f32));
     }
 
-    let rust = treelite_gtil::predict(&model, &flat, num_row)
+    let rust = treelite_gtil::predict(&model, &flat, num_row, &treelite_gtil::Config::default())
         .map_err(|e| anyhow::anyhow!("{e}"))
         .context("predicting")?;
 
@@ -197,7 +197,7 @@ fn lightgbm_categorical() -> anyhow::Result<()> {
         flat.extend(row.iter().map(|&c| c as f32));
     }
 
-    let rust = treelite_gtil::predict(&model, &flat, num_row)
+    let rust = treelite_gtil::predict(&model, &flat, num_row, &treelite_gtil::Config::default())
         .map_err(|e| anyhow::anyhow!("{e}"))
         .context("predicting")?;
 

@@ -6,10 +6,14 @@
 //! function — there is NO `Predictor`/backend trait in Phase 1 (deferred to
 //! Phase 6).
 
+pub mod config;
 pub mod error;
 pub mod postprocessor;
+pub mod shape;
 
+pub use config::{Config, PredictKind};
 pub use error::GtilError;
+pub use shape::{Shape, output_shape};
 
 use treelite_core::{Model, ModelVariant, Operator, Tree, TreeNodeType};
 
@@ -101,10 +105,7 @@ fn next_node_categorical(
 ) -> i32 {
     // A valid category is a non-negative value that fits in u32 (the subset of
     // the upstream guard exercised by the fixture; full GTIL-06 is Phase 5).
-    let category_matched = if fvalue < 0.0
-        || !fvalue.is_finite()
-        || fvalue > u32::MAX as f32
-    {
+    let category_matched = if fvalue < 0.0 || !fvalue.is_finite() || fvalue > u32::MAX as f32 {
         false
     } else {
         let category_value = fvalue as u32; // truncates toward zero (static_cast<u32>).
@@ -201,20 +202,25 @@ fn evaluate_tree<T: PredictScalar + PartialOrd>(
         // or any id `>= num_nodes` would otherwise index `cleft[nid]` out of
         // bounds and panic. Return the declared typed error instead (CR-01).
         if next < 0 || (next as usize) >= num_nodes {
-            return Err(GtilError::NodeIndexOutOfBounds { node: next as usize });
+            return Err(GtilError::NodeIndexOutOfBounds {
+                node: next as usize,
+            });
         }
         nid = next as usize;
     }
     Ok(nid)
 }
 
-/// Shape metadata extracted from the [`Model`] for output buffer indexing.
+/// Internal output-buffer layout extracted from the [`Model`] for indexing.
+///
+/// Named `OutputLayout` to disambiguate from the public per-kind [`Shape`]
+/// descriptor returned by [`output_shape`] (RESEARCH Open Q3).
 ///
 /// `num_target`, `num_class[target]`, `target_id[tree]`, and `class_id[tree]`
 /// are loader-produced (untrusted). The output buffer is
 /// `(num_row, num_target, max_num_class)` row-major; `cell(row, t, c)` lives at
 /// `row * (num_target * max_num_class) + t * max_num_class + c`.
-struct Shape<'m> {
+struct OutputLayout<'m> {
     num_target: i32,
     max_num_class: i32,
     num_class: &'m [i32],
@@ -224,7 +230,7 @@ struct Shape<'m> {
     base_scores: &'m [f64],
 }
 
-impl Shape<'_> {
+impl OutputLayout<'_> {
     #[inline]
     fn cells_per_row(&self) -> usize {
         self.num_target as usize * self.max_num_class as usize
@@ -290,7 +296,7 @@ fn has_leaf_vector<T: Copy>(tree: &Tree<T>, leaf: usize) -> bool {
 /// `class_id == 0`, it reduces to the Phase-1 serial sum into cell 0.
 fn predict_preset<T: PredictScalar + PartialOrd>(
     trees: &[Tree<T>],
-    shape: &Shape<'_>,
+    shape: &OutputLayout<'_>,
     data: &[f32],
     num_row: usize,
     num_feature: usize,
@@ -337,8 +343,8 @@ fn predict_preset<T: PredictScalar + PartialOrd>(
             } else if class_id < 0 {
                 if target_id < shape.num_target {
                     for c in 0..shape.num_class_of(target_id) {
-                        average_factor[target_id as usize * shape.max_num_class as usize
-                            + c as usize] += 1;
+                        average_factor
+                            [target_id as usize * shape.max_num_class as usize + c as usize] += 1;
                     }
                 }
             } else if target_id < shape.num_target && class_id < shape.max_num_class {
@@ -383,14 +389,17 @@ fn predict_preset<T: PredictScalar + PartialOrd>(
 /// out-of-range route surfaces as a typed error, never an OOB write (T-04-03).
 fn output_leaf_value<T: PredictScalar + PartialOrd>(
     output: &mut [f32],
-    shape: &Shape<'_>,
+    shape: &OutputLayout<'_>,
     tree: &Tree<T>,
     leaf: usize,
     row_id: usize,
     target_id: i32,
     class_id: i32,
 ) -> Result<(), GtilError> {
-    if target_id < 0 || class_id < 0 || target_id >= shape.num_target || class_id >= shape.max_num_class
+    if target_id < 0
+        || class_id < 0
+        || target_id >= shape.num_target
+        || class_id >= shape.max_num_class
     {
         return Err(GtilError::OutputRouteOutOfBounds {
             target_id,
@@ -418,7 +427,7 @@ fn output_leaf_value<T: PredictScalar + PartialOrd>(
 /// short leaf vector surfaces as a typed error, never an OOB read/write.
 fn output_leaf_vector<T: PredictScalar + PartialOrd>(
     output: &mut [f32],
-    shape: &Shape<'_>,
+    shape: &OutputLayout<'_>,
     tree: &Tree<T>,
     leaf: usize,
     row_id: usize,
@@ -431,10 +440,13 @@ fn output_leaf_vector<T: PredictScalar + PartialOrd>(
         for t in 0..shape.num_target {
             for c in 0..shape.num_class_of(t) {
                 let li = t as usize * shape.max_num_class as usize + c as usize;
-                let v = leaf_out.get(li).copied().ok_or(GtilError::LeafVectorTooShort {
-                    needed: li + 1,
-                    got: leaf_out.len(),
-                })?;
+                let v = leaf_out
+                    .get(li)
+                    .copied()
+                    .ok_or(GtilError::LeafVectorTooShort {
+                        needed: li + 1,
+                        got: leaf_out.len(),
+                    })?;
                 output[shape.idx(row_id, t, c)] += v.to_f32();
             }
         }
@@ -488,10 +500,13 @@ fn output_leaf_vector<T: PredictScalar + PartialOrd>(
                 max_num_class: shape.max_num_class,
             });
         }
-        let v = leaf_out.first().copied().ok_or(GtilError::LeafVectorTooShort {
-            needed: 1,
-            got: leaf_out.len(),
-        })?;
+        let v = leaf_out
+            .first()
+            .copied()
+            .ok_or(GtilError::LeafVectorTooShort {
+                needed: 1,
+                got: leaf_out.len(),
+            })?;
         output[shape.idx(row_id, target_id, class_id)] += v.to_f32();
     }
     Ok(())
@@ -516,7 +531,26 @@ fn output_leaf_vector<T: PredictScalar + PartialOrd>(
 ///   routes outside the output buffer (T-04-03);
 /// - [`GtilError::UnsupportedPostprocessor`] for any postprocessor name not in
 ///   the supported set.
-pub fn predict(model: &Model, data: &[f32], num_row: usize) -> Result<Vec<f32>, GtilError> {
+pub fn predict(
+    model: &Model,
+    data: &[f32],
+    num_row: usize,
+    config: &Config,
+) -> Result<Vec<f32>, GtilError> {
+    // Per-kind dispatch (PredictImpl, predict.cc:380-396). Default/Raw share the
+    // sum-over-trees body and differ only in whether the postprocessor runs;
+    // LeafId/ScorePerTree are wired in Plan 05-04 and return a typed error here.
+    match config.kind {
+        PredictKind::Default | PredictKind::Raw => {}
+        PredictKind::LeafId => {
+            return Err(GtilError::UnsupportedPredictKind { kind: "LeafId" });
+        }
+        PredictKind::ScorePerTree => {
+            return Err(GtilError::UnsupportedPredictKind {
+                kind: "ScorePerTree",
+            });
+        }
+    }
     // `model.num_feature` is loader-produced/untrusted. A negative value casts
     // to a huge `usize` and overflows the row-slice math; treat it as a (0-sized,
     // impossible) shape so the buffer-length check below rejects it instead of
@@ -554,7 +588,7 @@ pub fn predict(model: &Model, data: &[f32], num_row: usize) -> Result<Vec<f32>, 
     // clamp num_target to >= 0 and max_num_class to >= 1.
     let num_target = model.num_target.max(0);
     let max_num_class = model.num_class.iter().copied().max().unwrap_or(1).max(1);
-    let shape = Shape {
+    let shape = OutputLayout {
         num_target: if num_target == 0 { 1 } else { num_target },
         max_num_class,
         num_class: &model.num_class,
@@ -574,9 +608,13 @@ pub fn predict(model: &Model, data: &[f32], num_row: usize) -> Result<Vec<f32>, 
     };
 
     // Apply the postprocessor selected by name (ApplyPostProcessor,
-    // predict.cc:307-323). Scalar postprocessors run per cell; `softmax` runs
-    // per `(row, target)` over that target's `num_class` cells (predict.cc:318).
-    apply_postprocessor(model, &shape, &mut output, num_row)?;
+    // predict.cc:307-323) ONLY for the Default kind. `Raw` returns the raw margin
+    // scores with no post-processing (gtil.h:33-36). Scalar postprocessors run
+    // per cell; `softmax` runs per `(row, target)` over that target's `num_class`
+    // cells (predict.cc:318).
+    if config.kind == PredictKind::Default {
+        apply_postprocessor(model, &shape, &mut output, num_row)?;
+    }
 
     Ok(output)
 }
@@ -591,7 +629,7 @@ pub fn predict(model: &Model, data: &[f32], num_row: usize) -> Result<Vec<f32>, 
 /// with `model.num_class[target_id]`).
 fn apply_postprocessor(
     model: &Model,
-    shape: &Shape<'_>,
+    shape: &OutputLayout<'_>,
     output: &mut [f32],
     num_row: usize,
 ) -> Result<(), GtilError> {
