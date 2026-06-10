@@ -11,20 +11,18 @@
 //! byte-for-byte. This exercises the full header + 25-column per-tree walk over a
 //! real upstream blob and fails on any transposed/mis-framed/mis-width field.
 //!
-//! ## Why not `serialize(load_xgboost_json(json))` directly
+//! ## The loader path is now also byte-exact (DEF-02-01 closed, Plan 03-02)
 //!
 //! The golden was captured from upstream `treelite.frontend.load_xgboost_model`,
 //! whose loader populates per-node statistics (`sum_hess`, `gain`) and the
 //! present-but-empty CSR-offset / `category_list_right_child` columns, sets leaf
-//! `split_index = -1`, and stamps `attributes = "{}"`. The Phase 1 Rust XGBoost
-//! loader (`treelite-xgboost`, a different crate/subsystem) intentionally leaves
-//! those columns empty (documented Phase 1 simplification) — it is fidelity-equal
-//! for *prediction* (the green 1e-5 gate) but NOT byte-identical to upstream's
-//! serialized model. Closing that gap is loader-domain work tracked in
-//! `deferred-items.md` (see Plan 03 SUMMARY). The serializer under test here is
-//! byte-perfect; the golden round-trip proves it without depending on that loader
-//! gap. The loader path is additionally exercised below as a NON-fatal diagnostic
-//! so the remaining loader gap stays visible.
+//! `split_index = -1`, and stamps `attributes = "{}"`. Plan 03-02 closed the
+//! Phase-1 loader-fidelity gap: the Rust XGBoost loader now emits `sum_hess` on
+//! every node and `gain` on internal nodes, and passes `attributes = None`
+//! (→ `"{}"`). So `serialize(load_xgboost_json(...))` is now byte-identical to
+//! the upstream golden too — `loader_path_reproduces_golden_v5_byte_for_byte`
+//! below asserts that as a HARD gate (no longer a non-fatal diagnostic), and the
+//! cross-format single-golden close lives in `three_format_equivalence.rs`.
 //!
 //! Uses `anyhow::Result` (ERR-02) so each step propagates with a context chain.
 
@@ -87,17 +85,18 @@ fn serializer_reproduces_golden_v5_byte_for_byte() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Diagnostic (NON-fatal): how close the Phase 1 Rust XGBoost loader's model is
-/// to the upstream golden when serialized.
+/// DEF-02-01 (closed, Plan 03-02): the JSON loader path is byte-identical to the
+/// upstream golden.
 ///
-/// This is intentionally NOT an assertion — the documented Phase 1 loader
-/// simplification (empty stats / CSR-offset columns, empty `attributes`) means
-/// the loaded model is not yet byte-identical to upstream. The test prints the
-/// first divergence so the loader gap (tracked in `deferred-items.md`) stays
-/// visible without breaking the build. The serializer correctness gate is the
-/// round-trip test above.
+/// `serialize(load_xgboost_json(binary_logistic.model.json)) == golden_v5.bin`
+/// byte-for-byte. This was a NON-fatal diagnostic in Phase 1/2 because the loader
+/// then left the per-node stat / CSR-offset columns empty and stamped empty
+/// `attributes`; Plan 03-02 closed that gap (sum_hess/gain on the right nodes,
+/// `attributes = None` → `"{}"`), so this is now a HARD assertion. A failure here
+/// means a real loader-fidelity regression — it must be fixed in the loader, not
+/// masked. `first_diff` reports the precise divergence offset.
 #[test]
-fn loader_path_divergence_diagnostic() -> anyhow::Result<()> {
+fn loader_path_reproduces_golden_v5_byte_for_byte() -> anyhow::Result<()> {
     let model_path = fixture_path("binary_logistic.model.json");
     let golden_path = fixture_path("golden_v5.bin");
 
@@ -109,20 +108,21 @@ fn loader_path_divergence_diagnostic() -> anyhow::Result<()> {
     let produced = treelite_core::serialize_to_buffer(&mut model);
     let golden = std::fs::read(&golden_path).with_context(|| format!("reading {golden_path}"))?;
 
-    match first_diff(&produced, &golden) {
-        None => println!(
-            "loader path is already byte-identical to golden_v5.bin ({} bytes) — \
-             the loader gap is closed; the deferred-items entry can be removed.",
-            produced.len()
-        ),
-        Some(off) => println!(
-            "DIAGNOSTIC: loader-path serialization first diverges from golden_v5.bin \
-             at offset {off} (produced {} B, golden {} B). This is the known Phase 1 \
-             loader-fidelity gap (sum_hess/gain/CSR-offset columns, attributes, leaf \
-             split_index=-1) tracked in deferred-items.md — NOT a serializer defect.",
+    if let Some(off) = first_diff(&produced, &golden) {
+        panic!(
+            "loader-path serialization diverges from golden_v5.bin at offset {off}: \
+             produced={:?} golden={:?} (produced len {}, golden len {}). DEF-02-01 \
+             regression — the XGBoost loader no longer reproduces the upstream golden.",
+            produced.get(off),
+            golden.get(off),
             produced.len(),
             golden.len()
-        ),
+        );
     }
+    assert_eq!(
+        produced, golden,
+        "serialize(load_xgboost_json(binary_logistic)) must equal golden_v5.bin \
+         byte-for-byte (DEF-02-01 closed, D-10)"
+    );
     Ok(())
 }
