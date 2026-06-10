@@ -129,8 +129,27 @@ Plans:
   3. `RandomForest`/`ExtraTrees`, `GradientBoosting`, and `IsolationForest` (classifier + regressor where applicable) import from sklearn array dumps via the bulk path and predict within 1e-5 of their goldens.
   4. `HistGradientBoosting` (classifier + regressor) imports — including the bulk tree-construction path — and predicts within 1e-5 of its golden.
 
-**Plans**: TBD
-**Research flag:** Needs research-phase — HistGradientBoosting is confirmed in v1 scope (packed node structs, `_bin_mapper`, version-gated `_preprocessor`).
+**Plans**: 8 plans
+Plans:
+**Wave 1** *(enablers + frozen golden capture — gate everything)*
+
+- [ ] 04-01-PLAN.md — f64 ModelBuilder mode + bulk→Model assembly (D-05 enabler) (Wave 1)
+- [ ] 04-02-PLAN.md — GTIL output-shaping/averaging/base-score add + softmax/exp-std-ratio/exponential/log1pexp postprocessors (D-03 enabler) (Wave 1)
+- [ ] 04-03-PLAN.md — Frozen per-estimator goldens from treelite.gtil.predict + version-pinned manifests (D-06/D-07) (Wave 1)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 04-04-PLAN.md — LightGBM numerical slice: parser + objective→postprocessor map + node-id reassignment, 1e-5 golden (LGB-01/LGB-03) (Wave 2)
+- [ ] 04-06-PLAN.md — sklearn crate (D-01 array signatures) + RF/ExtraTrees bulk path + GradientBoosting MixIn, 1e-5 goldens (SKL-01/SKL-02) (Wave 2)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 04-05-PLAN.md — LightGBM categorical bitset (BitsetToList) + minimal NextNodeCategorical GTIL, 1e-5 golden (LGB-02) (Wave 3)
+- [ ] 04-07-PLAN.md — IsolationForest MixIn (exponential_standard_ratio + ratio_c), golden == -score_samples 1e-5 (SKL-03) (Wave 3)
+
+**Wave 4** *(blocked on Wave 3 — the HistGB tentpole)*
+
+- [ ] 04-08-PLAN.md — HistGradientBoosting packed-node decode (52/56) + features_map + categories_map; numerical then categorical, 1e-5 goldens (SKL-04) (Wave 4)
 
 ### Phase 5: Full Scalar GTIL & Equivalence Harness
 
@@ -217,7 +236,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. End-to-End Spine | 4/4 | Complete    | 2026-06-09 |
 | 2. Builder & Serialization | 6/6 | Complete    | 2026-06-10 |
 | 3. Full XGBoost Loaders | 4/4 | Complete    | 2026-06-10 |
-| 4. LightGBM & scikit-learn Loaders | 0/TBD | Not started | - |
+| 4. LightGBM & scikit-learn Loaders | 0/8 | Not started | - |
 | 5. Full Scalar GTIL & Equivalence Harness | 0/TBD | Not started | - |
 | 6. cubecl GTIL Kernels (CPU Backend) | 0/TBD | Not started | - |
 | 7. GPU Backend & Equivalence Report | 0/TBD | Not started | - |
