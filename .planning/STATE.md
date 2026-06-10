@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 4 context gathered
-last_updated: "2026-06-10T03:59:39.423Z"
-last_activity: 2026-06-10 -- Phase 04 execution started
+last_updated: "2026-06-10T04:21:00.000Z"
+last_activity: 2026-06-10 -- Plan 04-02 complete
 progress:
   total_phases: 9
   completed_phases: 3
   total_plans: 22
-  completed_plans: 14
-  percent: 33
+  completed_plans: 15
+  percent: 35
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 04 (lightgbm-scikit-learn-loaders) — EXECUTING
-Plan: 2 of 8
-Status: Executing Phase 04 — Plan 04-01 complete (f64 ModelBuilder mode + bulk_to_model; D-05 gate open)
-Last activity: 2026-06-10 -- Plan 04-01 complete
+Plan: 3 of 8
+Status: Executing Phase 04 — Plan 04-02 complete (GTIL output-shaping + 4 postprocessors; D-03 gate open). Wave 1 remaining: 04-03 (frozen goldens).
+Last activity: 2026-06-10 -- Plan 04-02 complete
 
-Progress: [█░░░░░░░] 13% (Phase 04 plans: 1/8)
+Progress: [██░░░░░░] 25% (Phase 04 plans: 2/8)
 
 ## Performance Metrics
 
@@ -68,6 +68,7 @@ Progress: [█░░░░░░░] 13% (Phase 04 plans: 1/8)
 | Phase 03 P03 | 22min | 2 tasks | 6 files |
 | Phase 03 P04 | 30min | 2 tasks | 6 files |
 | Phase 04 P01 | 12min | 2 tasks | 10 files |
+| Phase 04 P02 | 5min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -121,6 +122,9 @@ Recent decisions affecting current work:
 - [04-01]: bulk_to_model (bulk.rs) wraps Vec<Tree<f64>> + BuilderMetadata into a ModelVariant::F64 Model, hand-setting all 10 header fields (sklearn_bulk.cc:244-330); sigmoid_alpha/ratio_c keep Model::new 1.0 defaults, attributes defaults to {}; no topology re-check (D-09, T-04-02 accepted).
 - [04-01]: treelite-lightgbm/treelite-sklearn registered in root Cargo.toml as PLACEHOLDER crates (Rule 3) — registering non-existent members breaks the whole workspace, so minimal doc-only lib stubs keep cargo valid; real loaders land in Plans 04-04/04-06.
 - [03-04]: DEF-02-01/D-10 CLOSED across all three formats — serialize(load_json)==serialize(load_ubjson)==serialize(load_legacy)==golden_v5_3format.bin; three_format_equivalence + golden_v5 loader assertion promoted to fatal; cargo test --workspace fully green.
+- [04-02]: gtil::predict widened to a FLAT row-major (num_row, num_target, max_num_class) buffer (the Array3DView storage) — binary stays length num_row, byte-identical to Phase 1; no new public entry-point. Four-way OutputLeafValue/OutputLeafVector branch on (target_id[tree]==-1, class_id[tree]==-1) ports predict.cc:174-229; RF averaging (predict.cc:259-293) + f64 2D base-score add (:294-304); serial tree-sum (GTIL-08) and T::to_f32 cast preserved.
+- [04-02]: four postprocessors ported verbatim cast-order — exponential_standard_ratio uses exp2 (BASE-2, not exp) with f32 ratio_c; softmax = f32 max-subtraction + f64 norm_const accumulate + f32 divide (the 1e-5 contract). signed_square/hinge/identity_multiclass/multiclass_ova deferred to Phase 5.
+- [04-02]: bounds-checked output routing → typed GtilError::OutputRouteOutOfBounds / LeafVectorTooShort (T-04-03 mitigated, never OOB write/panic); has_leaf_vector made bounds-safe in the gtil layer (absent/short CSR offsets → scalar path) so malformed/hand-crafted trees never panic (ERR-01).
 
 ### Pending Todos
 
@@ -142,6 +146,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T03:04:10.877Z
-Stopped at: Phase 4 context gathered
-Resume file: .planning/phases/04-lightgbm-scikit-learn-loaders/04-CONTEXT.md
+Last session: 2026-06-10T04:21:00.000Z
+Stopped at: Completed 04-02-PLAN.md
+Resume file: None

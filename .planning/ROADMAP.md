@@ -134,7 +134,7 @@ Plans:
 **Wave 1** *(enablers + frozen golden capture — gate everything)*
 
 - [x] 04-01-PLAN.md — f64 ModelBuilder mode + bulk→Model assembly (D-05 enabler) (Wave 1) — DONE (2/2 tasks; leaf_scalar_f64/leaf_vector_f64/numerical_test_f64 → ModelVariant::F64 no-downcast + bulk_to_model; f32 XGBoost path unchanged; treelite-lightgbm/treelite-sklearn registered; cargo test --workspace green)
-- [ ] 04-02-PLAN.md — GTIL output-shaping/averaging/base-score add + softmax/exp-std-ratio/exponential/log1pexp postprocessors (D-03 enabler) (Wave 1)
+- [x] 04-02-PLAN.md — GTIL output-shaping/averaging/base-score add + softmax/exp-std-ratio/exponential/log1pexp postprocessors (D-03 enabler) (Wave 1) — DONE (2/2 tasks; predict widened to flat (num_row,num_target,max_num_class) routed by target_id/class_id + RF averaging + f64 2D base-score add; 4 postprocessors verbatim cast order incl. exp2; bounds-checked routing → typed GtilError; binary (num_row,1,1) byte-identical, cargo test --workspace green)
 - [ ] 04-03-PLAN.md — Frozen per-estimator goldens from treelite.gtil.predict + version-pinned manifests (D-06/D-07) (Wave 1)
 
 **Wave 2** *(blocked on Wave 1)*
