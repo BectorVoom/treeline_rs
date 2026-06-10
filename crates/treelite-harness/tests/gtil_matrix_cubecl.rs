@@ -323,15 +323,33 @@ fn assert_within(got: &[f64], want: &[f64], eps: f64, ctx: &str) -> anyhow::Resu
     Ok(max_dev)
 }
 
-/// Does any tree in `model` carry a categorical split? `predict_cpu` routes such
-/// a WHOLE model to the scalar fallback (D-02) even on a dense layout, so its
-/// provenance is `"scalar-fallback"` — recorded from the executed path, not the
-/// layout alone.
-fn model_has_categorical(model: &Model) -> bool {
-    use treelite_core::ModelVariant;
+/// Does `model` route the WHOLE model to the scalar fallback inside
+/// `predict_cpu`? Two whole-model fallback gates fire (D-02): a categorical split
+/// (the existing gate) OR any internal node with a non-`kLT` comparison operator
+/// (CR-01 — the cubecl `descend` kernel implements only kLT, so e.g. a LightGBM
+/// kLE model defers whole to the scalar reference). Such a cell ran the scalar
+/// fallback, so its provenance is `"scalar-fallback"` — recorded from the
+/// executed path (T-06-12), never the layout alone. The `kernel_cells > 0` guard
+/// still credits only true cubecl-kernel cells.
+fn model_routes_to_fallback(model: &Model) -> bool {
+    use treelite_core::{ModelVariant, Operator};
+    fn has_non_klt<V: Copy>(trees: &[treelite_core::Tree<V>]) -> bool {
+        trees.iter().any(|t| {
+            let cleft = t.cleft.as_slice();
+            let cmp = t.cmp.as_slice();
+            cleft
+                .iter()
+                .zip(cmp.iter())
+                .any(|(&cl, &op)| cl != -1 && op != Operator::kLT)
+        })
+    }
     match &model.variant {
-        ModelVariant::F32(p) => p.trees.iter().any(|t| t.has_categorical_split),
-        ModelVariant::F64(p) => p.trees.iter().any(|t| t.has_categorical_split),
+        ModelVariant::F32(p) => {
+            p.trees.iter().any(|t| t.has_categorical_split) || has_non_klt(&p.trees)
+        }
+        ModelVariant::F64(p) => {
+            p.trees.iter().any(|t| t.has_categorical_split) || has_non_klt(&p.trees)
+        }
     }
 }
 
@@ -408,7 +426,7 @@ fn gtil_matrix_cubecl() -> anyhow::Result<()> {
         // model to the scalar fallback — in which case it is also a fallback. The
         // tag reflects what ACTUALLY ran (T-06-12), never the layout alone.
         let is_sparse = golden.manifest.layout == "sparse";
-        let provenance = if is_sparse || model_has_categorical(&model) {
+        let provenance = if is_sparse || model_routes_to_fallback(&model) {
             Provenance::ScalarFallback
         } else {
             Provenance::CubeclKernel
