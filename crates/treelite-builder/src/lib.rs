@@ -827,8 +827,15 @@ impl ModelBuilder {
                 node: self.current_node_key,
             });
         }
+        // Upstream `model_builder.cc:181-182` only checks `split_index <
+        // num_feature`; because its `split_index` is a signed `std::int32_t`, a
+        // negative value silently passes that comparison. Harden the builder
+        // boundary by rejecting negative split indices too (a forged loader
+        // emitting a negative `feature[node]` is otherwise only caught downstream
+        // at predict time). Gated on metadata presence to match upstream's
+        // `metadata_initialized_` condition for the split-index range check.
         if let Some(meta) = &self.metadata
-            && split_index >= meta.num_feature
+            && (split_index < 0 || split_index >= meta.num_feature)
         {
             return Err(BuilderError::SplitIndexOutOfRange {
                 split_index,
