@@ -221,6 +221,36 @@ fn legacy_binf_magic_is_consumed() {
     );
 }
 
+/// (6) CR-03 regression: a crafted leaf-vector length near `usize::MAX / 4`
+/// must return a typed `XgbError::Legacy`, never an arithmetic-overflow panic
+/// under the default debug `overflow-checks`. We build a minimal single-tree
+/// legacy buffer with `size_leaf_vector = 1` (so the leaf-vector tail is read)
+/// and `major_version = 0` (so the `< 2` branch fires), then append a u64 leaf
+/// length of `usize::MAX as u64 / 4` whose `* 4` lands near `usize::MAX`,
+/// driving `pos + bytes` to overflow in the unfixed `take`.
+#[test]
+fn legacy_leaf_vector_length_overflow_returns_typed_err_not_panic() {
+    let mut buf = build_minimal_legacy_with_leaf_vector(
+        /* major_version */ 0,
+        /* num_feature */ 1,
+        /* num_class */ 0,
+        /* num_target */ 0,
+        /* base_score */ 0.5,
+        "reg:squarederror",
+        /* size_leaf_vector */ 1,
+        &[LegacyNode::leaf(0.0)],
+    );
+    // Append the hostile leaf-vector length: usize::MAX/4 so `* 4` ~ usize::MAX.
+    let hostile_len = (usize::MAX as u64) / 4;
+    buf.extend_from_slice(&hostile_len.to_le_bytes());
+
+    match load_xgboost_legacy(&buf) {
+        Err(XgbError::Legacy { .. }) => {}
+        Err(other) => panic!("expected XgbError::Legacy, got {other:?}"),
+        Ok(_) => panic!("expected an error on an overflowing leaf-vector length"),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // In-memory legacy-buffer builder (little-endian), for the unit-style tests.
 // ---------------------------------------------------------------------------
@@ -260,6 +290,32 @@ fn build_minimal_legacy(
     num_target: u32,
     base_score: f32,
     objective: &str,
+    nodes: &[LegacyNode],
+) -> Vec<u8> {
+    build_minimal_legacy_with_leaf_vector(
+        major_version,
+        num_feature,
+        num_class,
+        num_target,
+        base_score,
+        objective,
+        0,
+        nodes,
+    )
+}
+
+/// Like [`build_minimal_legacy`] but with an explicit `size_leaf_vector` so a
+/// test can exercise the conditional leaf-vector tail (CR-03). The buffer ends
+/// after the NodeStats + tree_info; the caller appends the leaf-vector length.
+#[allow(clippy::too_many_arguments)]
+fn build_minimal_legacy_with_leaf_vector(
+    major_version: u32,
+    num_feature: u32,
+    num_class: i32,
+    num_target: u32,
+    base_score: f32,
+    objective: &str,
+    size_leaf_vector: i32,
     nodes: &[LegacyNode],
 ) -> Vec<u8> {
     let mut b: Vec<u8> = Vec::new();
@@ -305,7 +361,7 @@ fn build_minimal_legacy(
     b.extend_from_slice(&0i32.to_le_bytes()); // num_deleted
     b.extend_from_slice(&0i32.to_le_bytes()); // max_depth
     b.extend_from_slice(&(num_feature as i32).to_le_bytes()); // num_feature
-    b.extend_from_slice(&0i32.to_le_bytes()); // size_leaf_vector
+    b.extend_from_slice(&size_leaf_vector.to_le_bytes()); // size_leaf_vector
     b.extend_from_slice(&[0u8; 31 * 4]); // reserved[31]
     assert_eq!(b.len() - tp_start, 148);
 
@@ -326,8 +382,16 @@ fn build_minimal_legacy(
         b.extend_from_slice(&0i32.to_le_bytes()); // leaf_child_cnt
     }
 
-    // --- tree_info (num_trees × i32) ---
-    b.extend_from_slice(&0i32.to_le_bytes());
+    // --- Conditional leaf-vector tail then tree_info ---
+    // When `size_leaf_vector == 0` the loader skips the leaf-vector tail and
+    // reads `tree_info` next, so emit a valid tree_info to keep the happy-path
+    // builder complete. When `size_leaf_vector != 0` the loader reads the
+    // leaf-vector length right after NodeStats; the caller appends that hostile
+    // length itself (CR-03 test), so stop the buffer here.
+    if size_leaf_vector == 0 {
+        // --- tree_info (num_trees × i32) ---
+        b.extend_from_slice(&0i32.to_le_bytes());
+    }
 
     b
 }

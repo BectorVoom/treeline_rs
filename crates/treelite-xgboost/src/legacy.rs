@@ -85,9 +85,20 @@ impl<'a> Cursor<'a> {
     /// Borrow the next `n` bytes without copying, advancing the cursor. Returns a
     /// truncation error if fewer than `n` bytes remain.
     fn take(&mut self, n: usize) -> Result<&'a [u8], XgbError> {
-        match self.buf.get(self.pos..self.pos + n) {
+        // Use `checked_add` (mirroring the UBJSON cursor) so an attacker-supplied
+        // `n` near `usize::MAX` yields a typed error instead of an
+        // arithmetic-overflow panic under the default debug `overflow-checks`
+        // (CR-03).
+        let end = self
+            .pos
+            .checked_add(n)
+            .ok_or_else(|| XgbError::Legacy {
+                pos: self.pos,
+                detail: format!("length overflow: pos {} + {n} bytes", self.pos),
+            })?;
+        match self.buf.get(self.pos..end) {
             Some(slice) => {
-                self.pos += n;
+                self.pos = end;
                 Ok(slice)
             }
             None => self.err(format!(
@@ -98,10 +109,11 @@ impl<'a> Cursor<'a> {
     }
 
     /// Peek the next `n` bytes without advancing (for the magic check). Returns
-    /// `None` if fewer than `n` bytes remain (peek is best-effort, like upstream's
-    /// `PeekRead` over a short stream).
+    /// `None` if fewer than `n` bytes remain, or if `pos + n` would overflow
+    /// (peek is best-effort, like upstream's `PeekRead` over a short stream).
     fn peek(&self, n: usize) -> Option<&'a [u8]> {
-        self.buf.get(self.pos..self.pos + n)
+        let end = self.pos.checked_add(n)?;
+        self.buf.get(self.pos..end)
     }
 
     fn f32(&mut self) -> Result<f32, XgbError> {
@@ -380,6 +392,18 @@ fn read_tree(
                 pos: c.pos,
                 detail: "leaf-vector byte-count overflow".to_string(),
             })?;
+            // Bound the skip against the remaining buffer BEFORE skipping so a
+            // crafted near-`usize::MAX` length yields a typed error rather than a
+            // `pos + bytes` overflow inside `take` (CR-03, T-03-L02).
+            if bytes > c.remaining() {
+                return Err(XgbError::Legacy {
+                    pos: c.pos,
+                    detail: format!(
+                        "leaf-vector ({bytes} B) exceeds remaining ({} B)",
+                        c.remaining()
+                    ),
+                });
+            }
             c.skip(bytes)?; // discard — scalar-only legacy
         }
     } else if major_version == 2 && size_leaf_vector != 1 {
