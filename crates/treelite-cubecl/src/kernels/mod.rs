@@ -14,9 +14,13 @@
 /// verbatim.
 pub mod traversal;
 
+/// The ten GTIL postprocessors as `#[cube]` helpers (D-03), porting
+/// `treelite_gtil::postprocessor` verbatim with respect to cast order (the 1e-5
+/// contract, CR-01). Authored in Wave 3 / plan 06-03.
+pub mod postproc;
+
 // Reserved for later waves (kept as empty module declarations so the public
 // module path is stable and Wave 3 only fills bodies, never re-wires the tree):
-//   pub mod postproc;        // the 10 postprocessor `#[cube]` ports (Wave 3)
 //   pub mod default_raw;     // predict_default / predict_raw launch kernels
 //   pub mod leaf_id;         // predict_leaf_id launch kernel
 //   pub mod score_per_tree;  // predict_score_per_tree launch kernel
