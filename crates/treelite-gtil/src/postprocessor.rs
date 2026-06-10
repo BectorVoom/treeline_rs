@@ -12,12 +12,27 @@
 //!
 //! ## The 1e-5 cast-ordering contract
 //!
-//! Upstream `sigmoid` is instantiated with `InputT == float`, and
-//! `model.sigmoid_alpha` is a `float`. Therefore both the multiplication and
-//! `std::exp` run in **f32** — there is NO promotion to double precision.
-//! Doing the math in double precision would shift the final ULPs past the
-//! 1e-5 equivalence bound (RESEARCH §Pitfall 3/4). The Rust port keeps every
-//! operation in `f32`.
+//! Upstream `ApplyPostProcessor<InputT>` (`predict.cc:307-323`) is instantiated
+//! with `InputT == float` for f32 input and `InputT == double` for f64 input
+//! (`predict.cc:236`, `c_api/gtil.cc:50-55`). Each postprocessor body in
+//! `postprocessor.cc:19-82` is therefore templated on `InputT`, so for an
+//! f64-input model the multiply / `std::exp` / `std::exp2` / `std::log1p` /
+//! `copysign` run in **f64**, and for an f32-input model they run in **f32**.
+//! Running an f64-input model's postprocessor through an f32 intermediate would
+//! shift the final ULPs past the 1e-5 equivalence bound on a large-margin value
+//! (CR-01, RESEARCH §Pitfall 3/4).
+//!
+//! This module therefore ships each non-softmax/non-identity postprocessor in
+//! BOTH widths: the `f32` fns below run the element arithmetic in `f32`
+//! (matching `ApplyPostProcessor<float>`), and the `*_f64` twins run it in
+//! `f64` (matching `ApplyPostProcessor<double>`). `model.sigmoid_alpha` /
+//! `model.ratio_c` are `f32` model fields on BOTH paths — they are cast into
+//! the element type at the operation site, never stored as the element type.
+//!
+//! `softmax` is the ONE exception: upstream `postprocessor.cc:59-73` hardcodes
+//! `float max_margin` / `float t` for EVERY `InputT`, so softmax stays `f32`
+//! even on an f64-input model (the f64 path narrows that row to f32, runs the
+//! `f32` [`softmax`], and widens back). There is deliberately NO `softmax_f64`.
 
 /// `identity` postprocessor (`postprocessor.cc:19-20`): returns the margin
 /// unchanged. The `_alpha` argument mirrors the upstream signature shape (the
@@ -50,6 +65,23 @@ pub fn sigmoid(sigmoid_alpha: f32, v: f32) -> f32 {
     1.0_f32 / (1.0_f32 + (-sigmoid_alpha * v).exp())
 }
 
+/// f64 twin of [`sigmoid`] for an f64-input model (`ApplyPostProcessor<double>`
+/// instantiating `sigmoid<double>`, `postprocessor.cc:33-37`). The element
+/// `val` and the `std::exp` run in `f64`; only `sigmoid_alpha` is an `f32` model
+/// field, cast into `f64` at the multiply site:
+///
+/// ```cpp
+/// double const val = *elem;
+/// *elem = double(1) / (double(1) + std::exp(-model.sigmoid_alpha * val));
+/// ```
+///
+/// On a large-margin `v` (e.g. near ±40) this is NOT bit-equal to
+/// `sigmoid(alpha, v as f32) as f64` — the f64 `exp` retains precision the
+/// collapsed-f32 path loses (CR-01).
+pub fn sigmoid_f64(sigmoid_alpha: f32, v: f64) -> f64 {
+    1.0_f64 / (1.0_f64 + (-(sigmoid_alpha as f64) * v).exp())
+}
+
 /// `exponential` postprocessor (`postprocessor.cc:39-42`), ported verbatim:
 ///
 /// ```cpp
@@ -59,6 +91,12 @@ pub fn sigmoid(sigmoid_alpha: f32, v: f32) -> f32 {
 /// Instantiated with `InputT == float` in GTIL, so `std::exp` runs in `f32` —
 /// the Rust port keeps the operation in `f32` (the cast-ordering contract).
 pub fn exponential(v: f32) -> f32 {
+    v.exp()
+}
+
+/// f64 twin of [`exponential`] (`exponential<double>`,
+/// `postprocessor.cc:39-42`): `std::exp(*elem)` in `f64`.
+pub fn exponential_f64(v: f64) -> f64 {
     v.exp()
 }
 
@@ -77,6 +115,14 @@ pub fn exponential_standard_ratio(ratio_c: f32, v: f32) -> f32 {
     (-v / ratio_c).exp2()
 }
 
+/// f64 twin of [`exponential_standard_ratio`]
+/// (`exponential_standard_ratio<double>`, `postprocessor.cc:44-47`):
+/// `std::exp2(-*elem / model.ratio_c)` in `f64`. `ratio_c` stays an `f32` model
+/// field, cast into `f64` at the divide site.
+pub fn exponential_standard_ratio_f64(ratio_c: f32, v: f64) -> f64 {
+    (-v / (ratio_c as f64)).exp2()
+}
+
 /// `logarithm_one_plus_exp` postprocessor (`postprocessor.cc:49-52`), ported
 /// verbatim:
 ///
@@ -88,6 +134,12 @@ pub fn exponential_standard_ratio(ratio_c: f32, v: f32) -> f32 {
 /// Rust's [`f32::ln_1p`] is the exact analog. The intermediate `exp` and the
 /// `ln_1p` both run in `f32` (the cast-ordering contract).
 pub fn logarithm_one_plus_exp(v: f32) -> f32 {
+    v.exp().ln_1p()
+}
+
+/// f64 twin of [`logarithm_one_plus_exp`] (`logarithm_one_plus_exp<double>`,
+/// `postprocessor.cc:49-52`): `std::log1p(std::exp(*elem))` in `f64`.
+pub fn logarithm_one_plus_exp_f64(v: f64) -> f64 {
     v.exp().ln_1p()
 }
 
@@ -148,6 +200,12 @@ pub fn signed_square(v: f32) -> f32 {
     (v * v).copysign(v)
 }
 
+/// f64 twin of [`signed_square`] (`signed_square<double>`,
+/// `postprocessor.cc:22-26`): `std::copysign(margin * margin, margin)` in `f64`.
+pub fn signed_square_f64(v: f64) -> f64 {
+    (v * v).copysign(v)
+}
+
 /// `hinge` postprocessor (`postprocessor.cc:28-31`), ported verbatim:
 ///
 /// ```cpp
@@ -175,6 +233,17 @@ pub fn hinge(v: f32) -> f32 {
 pub fn multiclass_ova(sigmoid_alpha: f32, row: &mut [f32]) {
     for c in row.iter_mut() {
         *c = 1.0_f32 / (1.0_f32 + (-sigmoid_alpha * *c).exp());
+    }
+}
+
+/// f64 twin of [`multiclass_ova`] (`multiclass_ova<double>`,
+/// `postprocessor.cc:77-82`): an independent per-class sigmoid run in `f64` over
+/// the row's `num_class` cells. `sigmoid_alpha` stays an `f32` model field, cast
+/// into `f64` at each multiply site. Like [`multiclass_ova`] the cells do NOT
+/// sum to 1 (this is the per-class form of [`sigmoid_f64`], NOT a softmax).
+pub fn multiclass_ova_f64(sigmoid_alpha: f32, row: &mut [f64]) {
+    for c in row.iter_mut() {
+        *c = 1.0_f64 / (1.0_f64 + (-(sigmoid_alpha as f64) * *c).exp());
     }
 }
 
@@ -302,5 +371,86 @@ mod tests {
             (sum - 1.0).abs() > 1e-3,
             "OVA must not normalize like softmax"
         );
+    }
+
+    // ----------------------------------------------------------------------- //
+    // CR-01 (Plan 05-06): the f64-input postprocessor surface must run in f64
+    // (matching `ApplyPostProcessor<double>`), NOT through an f32 intermediate.
+    // These tests PROVE the f64 twins are a genuinely higher-precision
+    // computation: on a large-margin value the f64 path diverges from the
+    // collapsed-f32 path (`*_fn(alpha, v as f32) as f64`) by more than 1e-7.
+    // softmax is excluded — it is f32 on every InputT upstream.
+    // ----------------------------------------------------------------------- //
+
+    /// `sigmoid_f64(alpha, v)` must diverge from the collapsed-f32 path
+    /// `sigmoid(alpha, v as f32) as f64` on a large margin — proving the f64
+    /// sigmoid runs `std::exp` in double precision (CR-01). The divergence sits
+    /// in the ~1e-8 RELATIVE band (NOT 1e-7 absolute on a saturated value): this
+    /// is EXACTLY the regime that masked CR-01 — the collapsed-f32 path stays
+    /// ~1e-7 inside the 1e-5 gate, so a coarser threshold would never catch it.
+    /// We require a relative divergence well above the f64 rounding floor
+    /// (~2.2e-16) on at least one probe, and that the two paths are not
+    /// bit-identical.
+    #[test]
+    fn sigmoid_f64_diverges_from_collapsed_f32_on_large_margin() {
+        let alpha = 1.0_f32;
+        // Margins in the pre-/post-saturation slope where f32 vs f64 `exp`
+        // genuinely differ (empirically ~1e-8 to ~9e-8 relative).
+        let probes = [-18.0_f64, -16.0, -12.0, -10.0, 12.0, 15.0];
+        let mut max_rel = 0.0_f64;
+        let mut any_bit_diff = false;
+        for &v in &probes {
+            let f64_path = sigmoid_f64(alpha, v);
+            let collapsed = sigmoid(alpha, v as f32) as f64;
+            if f64_path.to_bits() != collapsed.to_bits() {
+                any_bit_diff = true;
+            }
+            if f64_path != 0.0 {
+                max_rel = max_rel.max((f64_path - collapsed).abs() / f64_path.abs());
+            }
+        }
+        assert!(
+            any_bit_diff,
+            "sigmoid_f64 was bit-identical to the collapsed-f32 path on every probe — the f64 path is not running in f64"
+        );
+        assert!(
+            max_rel > 1e-8,
+            "sigmoid_f64 max relative divergence from collapsed-f32 was {max_rel:.3e}, \
+             not above the 1e-8 band that distinguishes a genuine f64 computation"
+        );
+    }
+
+    /// `exponential_f64(v)` must diverge from `exponential(v as f32) as f64` on a
+    /// large argument — the f32 `exp` carries far fewer significant digits than
+    /// the native f64 `exp`, so the widened f32 value is a different number. The
+    /// divergence is in the ~1e-8 relative band (CR-01's masking regime).
+    #[test]
+    fn exponential_f64_diverges_from_collapsed_f32_on_large_arg() {
+        let v = 80.0_f64;
+        let f64_path = exponential_f64(v);
+        let collapsed = exponential(v as f32) as f64;
+        let rel = (f64_path - collapsed).abs() / f64_path.abs();
+        assert_ne!(
+            f64_path.to_bits(),
+            collapsed.to_bits(),
+            "exponential_f64 was bit-identical to the collapsed-f32 path — not running in f64"
+        );
+        assert!(
+            rel > 1e-8,
+            "exponential_f64 ({f64_path}) did not diverge from collapsed-f32 ({collapsed}); rel = {rel:.3e}"
+        );
+    }
+
+    /// The f64 twins reduce to their f32 cousins' VALUE on small, exactly
+    /// representable inputs (sanity: same math, just wider) — guards against a
+    /// transcription error in a twin.
+    #[test]
+    fn f64_twins_agree_with_f32_on_small_exact_inputs() {
+        assert!((signed_square_f64(-3.0) - (-9.0)).abs() < 1e-12);
+        assert!((exponential_standard_ratio_f64(4.0, -2.0) - 2.0_f64.sqrt()).abs() < 1e-12);
+        assert!((logarithm_one_plus_exp_f64(0.0) - 2.0_f64.ln()).abs() < 1e-12);
+        let mut row = [0.0_f64];
+        multiclass_ova_f64(1.0, &mut row);
+        assert!((row[0] - 0.5).abs() < 1e-12);
     }
 }

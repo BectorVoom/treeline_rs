@@ -123,14 +123,31 @@ pub trait PredictOut: Copy + PartialOrd {
     /// (`InputT_view += double_view` ⇒ `(self as f64 + base) as Self`,
     /// `predict.cc:294-304`).
     fn add_base_score(self, base: f64) -> Self;
-    /// Narrow this element to `f32` for the postprocessor boundary. For `O =
-    /// f32` this is the identity; for `O = f64` it narrows. (See
-    /// [`apply_postprocessor`] — the f32-intermediate postprocessors are wired
-    /// fully O-generic in Plan 05-03; here the f32 path is byte-identical.)
+    /// Narrow this element to `f32` for the softmax-only f32 boundary. For `O =
+    /// f32` this is the identity; for `O = f64` it narrows. softmax is the ONE
+    /// postprocessor whose f32 intermediate is upstream-correct on every
+    /// `InputT` (`postprocessor.cc:59-73`); see [`apply_named_postprocessor`].
     fn out_to_f32(self) -> f32;
     /// Widen an `f32` postprocessor result back into this element. Identity for
-    /// `O = f32`.
+    /// `O = f32`. Used only by the softmax f32-narrow arm.
     fn out_from_f32(v: f32) -> Self;
+
+    /// Apply the named postprocessor over the `(num_row, num_target,
+    /// max_num_class)` `output` buffer in THIS element's own precision
+    /// (`ApplyPostProcessor<InputT>`, `predict.cc:307-323`). For `O = f32` this
+    /// runs the `f32` postprocessor bodies (`ApplyPostProcessor<float>`); for
+    /// `O = f64` it runs the `*_f64` twins (`ApplyPostProcessor<double>`),
+    /// EXCEPT softmax, which narrows each row to `f32`, runs the `f32`
+    /// [`postprocessor::softmax`], and widens back (softmax hardcodes `float`
+    /// for every `InputT`). `sigmoid_alpha` / `ratio_c` are `f32` model fields
+    /// on both paths (cast into the element type at the operation site). Unknown
+    /// names are a typed [`GtilError::UnsupportedPostprocessor`].
+    fn apply_named_postprocessor(
+        model: &Model,
+        shape: &OutputLayout<'_>,
+        output: &mut [Self],
+        num_row: usize,
+    ) -> Result<(), GtilError>;
 
     /// `std::numeric_limits<InputT>::digits` — the IEEE-754 significand bit count
     /// **including** the implicit leading bit: 24 for `f32`, 53 for `f64`
@@ -210,6 +227,18 @@ impl PredictOut for f32 {
         v
     }
 
+    #[inline]
+    fn apply_named_postprocessor(
+        model: &Model,
+        shape: &OutputLayout<'_>,
+        output: &mut [f32],
+        num_row: usize,
+    ) -> Result<(), GtilError> {
+        // f32 input → `ApplyPostProcessor<float>`: the byte-identical Phase-1
+        // path operating directly on the f32 buffer.
+        apply_postprocessor_f32(model, shape, output, num_row)
+    }
+
     const MANTISSA_BITS: u32 = f32::MANTISSA_DIGITS; // 24
 
     #[inline]
@@ -272,6 +301,18 @@ impl PredictOut for f64 {
     #[inline]
     fn out_from_f32(v: f32) -> Self {
         v as f64
+    }
+
+    #[inline]
+    fn apply_named_postprocessor(
+        model: &Model,
+        shape: &OutputLayout<'_>,
+        output: &mut [f64],
+        num_row: usize,
+    ) -> Result<(), GtilError> {
+        // f64 input → `ApplyPostProcessor<double>`: the non-softmax/non-identity
+        // postprocessors run in f64 (CR-01), softmax stays f32 (narrowed per row).
+        apply_postprocessor_f64(model, shape, output, num_row)
     }
 
     const MANTISSA_BITS: u32 = f64::MANTISSA_DIGITS; // 53
@@ -466,7 +507,7 @@ fn evaluate_tree<T: PredictScalar + PartialOrd, O: PredictOut>(
 /// are loader-produced (untrusted). The output buffer is
 /// `(num_row, num_target, max_num_class)` row-major; `cell(row, t, c)` lives at
 /// `row * (num_target * max_num_class) + t * max_num_class + c`.
-struct OutputLayout<'m> {
+pub struct OutputLayout<'m> {
     num_target: i32,
     max_num_class: i32,
     num_class: &'m [i32],
@@ -1125,19 +1166,13 @@ fn apply_postprocessor<O: PredictOut>(
     output: &mut [O],
     num_row: usize,
 ) -> Result<(), GtilError> {
-    // The postprocessor functions run with the upstream-literal `f32`
-    // intermediates (softmax `max_margin`/`t`, `sigmoid_alpha`/`ratio_c`) — they
-    // must NOT be promoted to `O` (Pitfall 2). For `O = f32` this f32 view is the
-    // identity (byte-identical Phase-1 path). For `O = f64` the cells are narrowed
-    // to f32 here and widened back; the fully O-generic postprocessor element
-    // arithmetic (e.g. f64 sigmoid) is wired in Plan 05-03 — the goldens this plan
-    // validates use the precision-exact `identity` postprocessor.
-    let mut buf: Vec<f32> = output.iter().map(|v| v.out_to_f32()).collect();
-    apply_postprocessor_f32(model, shape, &mut buf, num_row)?;
-    for (dst, src) in output.iter_mut().zip(buf) {
-        *dst = O::out_from_f32(src);
-    }
-    Ok(())
+    // Dispatch on the output element type O so an f64-input model runs its
+    // postprocessor in f64 (`ApplyPostProcessor<double>`), NOT through an f32
+    // intermediate (CR-01). For O = f32 this is the byte-identical Phase-1 path;
+    // for O = f64 the non-softmax/non-identity bodies run in f64 (softmax stays
+    // f32, narrowed per row — `postprocessor.cc:59-73`). `sigmoid_alpha` /
+    // `ratio_c` are f32 model fields cast at the operation site on both paths.
+    O::apply_named_postprocessor(model, shape, output, num_row)
 }
 
 /// f32-buffer postprocessor application (the upstream-literal precision body).
@@ -1220,6 +1255,100 @@ fn apply_postprocessor_f32(
                     let start = shape.idx(r, t, 0);
                     let end = start + n as usize;
                     postprocessor::multiclass_ova(model.sigmoid_alpha, &mut output[start..end]);
+                }
+            }
+        }
+        other => return Err(GtilError::UnsupportedPostprocessor(other.to_string())),
+    }
+    Ok(())
+}
+
+/// f64-buffer postprocessor application (`ApplyPostProcessor<double>`,
+/// `predict.cc:307-323` with `InputT == double`).
+///
+/// Mirrors [`apply_postprocessor_f32`] arm-for-arm, but the non-softmax /
+/// non-identity bodies run in f64 (the `*_f64` twins in [`postprocessor`]) so an
+/// f64-input model runs its postprocessor at f64 precision (CR-01). `softmax` is
+/// the ONE exception: upstream hardcodes `float max_margin`/`t` for every
+/// `InputT` (`postprocessor.cc:59-73`), so each softmax row is narrowed to f32,
+/// run through the existing [`postprocessor::softmax`], and widened back —
+/// softmax is the only postprocessor where the f32 intermediate is correct.
+/// `sigmoid_alpha` / `ratio_c` stay f32 model fields, cast into f64 at the
+/// operation site inside the twins.
+fn apply_postprocessor_f64(
+    model: &Model,
+    shape: &OutputLayout<'_>,
+    output: &mut [f64],
+    num_row: usize,
+) -> Result<(), GtilError> {
+    match model.postprocessor.as_str() {
+        "identity" => {
+            // No-op (margin returned unchanged); keep f64 cells untouched.
+        }
+        "identity_multiclass" => {
+            // No-op (upstream body is empty).
+        }
+        "sigmoid" => {
+            for v in output.iter_mut() {
+                *v = postprocessor::sigmoid_f64(model.sigmoid_alpha, *v);
+            }
+        }
+        "signed_square" => {
+            for v in output.iter_mut() {
+                *v = postprocessor::signed_square_f64(*v);
+            }
+        }
+        "hinge" => {
+            // hinge is a step (1 iff > 0); the result is exactly 0.0/1.0 in any
+            // width. Run it in f64 directly (no f32 intermediate).
+            for v in output.iter_mut() {
+                *v = if *v > 0.0 { 1.0 } else { 0.0 };
+            }
+        }
+        "exponential" => {
+            for v in output.iter_mut() {
+                *v = postprocessor::exponential_f64(*v);
+            }
+        }
+        "exponential_standard_ratio" => {
+            for v in output.iter_mut() {
+                *v = postprocessor::exponential_standard_ratio_f64(model.ratio_c, *v);
+            }
+        }
+        "logarithm_one_plus_exp" => {
+            for v in output.iter_mut() {
+                *v = postprocessor::logarithm_one_plus_exp_f64(*v);
+            }
+        }
+        "softmax" => {
+            // softmax stays f32 on every InputT (postprocessor.cc:59-73): narrow
+            // each (row, target) span to f32, run the f32 softmax, widen back.
+            for r in 0..num_row {
+                for t in 0..shape.num_target {
+                    let n = shape.num_class_of(t);
+                    if n <= 0 {
+                        continue;
+                    }
+                    let start = shape.idx(r, t, 0);
+                    let end = start + n as usize;
+                    let mut tmp: Vec<f32> = output[start..end].iter().map(|&v| v as f32).collect();
+                    postprocessor::softmax(&mut tmp);
+                    for (dst, &src) in output[start..end].iter_mut().zip(tmp.iter()) {
+                        *dst = src as f64;
+                    }
+                }
+            }
+        }
+        "multiclass_ova" => {
+            for r in 0..num_row {
+                for t in 0..shape.num_target {
+                    let n = shape.num_class_of(t);
+                    if n <= 0 {
+                        continue;
+                    }
+                    let start = shape.idx(r, t, 0);
+                    let end = start + n as usize;
+                    postprocessor::multiclass_ova_f64(model.sigmoid_alpha, &mut output[start..end]);
                 }
             }
         }
