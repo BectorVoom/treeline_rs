@@ -178,7 +178,7 @@ Which phases cover which requirements.
 | GPU-01 | Phase 6 | Complete |
 | GPU-02 | Phase 6 | Complete |
 | GPU-05 | Phase 6 | Complete |
-| GPU-03 | Phase 7 | Pending |
+| GPU-03 | Phase 7 | In Progress |
 | GPU-04 | Phase 7 | Pending |
 | PY-01 | Phase 8 | Pending |
 | PY-02 | Phase 8 | Pending |

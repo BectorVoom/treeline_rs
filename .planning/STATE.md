@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 7 context gathered
-last_updated: "2026-06-10T21:27:05.580Z"
-last_activity: 2026-06-10 -- Phase 07 planning complete
+last_updated: "2026-06-10T21:39:00.463Z"
+last_activity: 2026-06-10 -- Phase 07 execution started
 progress:
   total_phases: 9
   completed_phases: 6
-  total_plans: 36
-  completed_plans: 36
+  total_plans: 40
+  completed_plans: 37
   percent: 67
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-09)
 
 **Core value:** Predictions match upstream Treelite within 1e-5.
-**Current focus:** Phase 07 — gpu-backend-&-equivalence-report (next; Phase 06 complete)
+**Current focus:** Phase 07 — gpu-backend-equivalence-report
 
 ## Current Position
 
-Phase: 7
-Plan: Not started
+Phase: 07 (gpu-backend-equivalence-report) — EXECUTING
+Plan: 2 of 4
 Status: Ready to execute
-Last activity: 2026-06-10 -- Phase 07 planning complete
+Last activity: 2026-06-10 -- Phase 07 execution started
 
 Progress: [██████████] Phase 06 complete (7/7 plans) — milestone 6/9 phases
 
@@ -92,6 +92,7 @@ Progress: [██████████] Phase 06 complete (7/7 plans) — mil
 | Phase 06 P05 | 5min | 2 tasks | 4 files |
 | Phase 06 P06 | 9min | 3 tasks | 7 files |
 | Phase 06-cubecl-gtil-kernels-cpu-backend P07 | 6min | 2 tasks | 67 files |
+| Phase 07 P01 | 8min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -195,6 +196,8 @@ Recent decisions affecting current work:
 - [Phase ?]: [06-06]: CR-01 closed via approach A — a whole-model has_non_klt fallback gate in predict_cpu routes any model with a non-kLT operator (every LightGBM kLE numerical model) to treelite_gtil::predict, mirroring the categorical gate (D-02); the cubecl kernel covers only kLT. Matrix provenance widened to model_routes_to_fallback so such cells are tagged scalar-fallback (D-06).
 - [Phase ?]: [06-06]: CR-02 closed — descend() compares both operands in f64 (f64::cast_from(fv) < f64::cast_from(threshold)) matching the scalar next_node f64 promotion (05-02 contract); the lossy F::cast_from(threshold) f64->f32 narrowing is gone. Self-contained f64_threshold_f32_input_routes_like_scalar test locks it inside 06-06.
 - [Phase ?]: [06-06]: CR-03 closed — validate_leaf_vectors (host-side, called from upload_forest before any device op) rejects out-of-range leaf-vector spans with CubeclError::MalformedLeafVector (begin<=end, end<=segment_len, begin+broadcast<=segment_len); absent/short CSR columns treated as scalar leaves. malformed.rs locks the T-06-09 no-OOB contract.
+- [Phase ?]: [07-01]: A3 SETTLED — a missing CUDA device surfaces as a catchable Rust panic (cudarc dlopen(libcuda.so) failure) trapped by catch_unwind in device::client::<R>() -> DeviceUnavailable, NOT an FFI abort. Plan 03 needs NO pre-construction probe; *_case() may construct GPU clients directly, treating DeviceUnavailable as skip-not-fail.
+- [Phase ?]: [07-01]: GPU backends are crate-local additive cargo features (rocm/cuda/wgpu) forwarding to cubecl/* (cubecl table: rocm=[hip]); workspace root stays cubecl=features=[cpu] so default builds need no GPU libs (D-04/Pitfall 5). device.rs uses generic <R::Device>::default() — HipRuntime::Device is AmdDevice not HipDevice.
 
 ### Pending Todos
 
@@ -217,6 +220,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T20:46:58.857Z
+Last session: 2026-06-10T21:38:51.081Z
 Stopped at: Phase 7 context gathered
 Resume file: .planning/phases/07-gpu-backend-equivalence-report/07-CONTEXT.md

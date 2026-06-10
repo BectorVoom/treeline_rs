@@ -252,7 +252,7 @@ Plans:
 Plans:
 **Wave 0** *(infrastructure spike — gates backend registration)*
 
-- [ ] 07-01-PLAN.md — rocm/cuda/wgpu cargo features + CubeclError::DeviceUnavailable + device.rs client constructor + A3 device-absence spike (D-04/D-05) (Wave 0)
+- [x] 07-01-PLAN.md — rocm/cuda/wgpu cargo features + CubeclError::DeviceUnavailable + device.rs client constructor + A3 device-absence spike (D-04/D-05) (Wave 0)
 
 **Wave 1** *(blocked on Wave 0 — same treelite-cubecl lib.rs/device.rs)*
 
@@ -310,6 +310,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 4. LightGBM & scikit-learn Loaders | 8/8 | Complete    | 2026-06-10 |
 | 5. Full Scalar GTIL & Equivalence Harness | 7/7 | Complete    | 2026-06-10 |
 | 6. cubecl GTIL Kernels (CPU Backend) | 7/7 | Complete    | 2026-06-10 |
-| 7. GPU Backend & Equivalence Report | 0/4 | Planned | - |
+| 7. GPU Backend & Equivalence Report | 1/4 | In Progress|  |
 | 8. PyO3 Python Binding | 0/TBD | Not started | - |
 | 9. Memory-Efficiency Hardening | 0/TBD | Not started | - |
