@@ -238,15 +238,20 @@ pub fn rocm_case() -> RunnerCase {
             // f32 input → f32 output, widened to the common f64 accumulator for
             // comparison. The PREDICT runs in f32 (no pre-cast — Pitfall 6);
             // only the already-computed f32 RESULT is lifted to f64 afterwards.
+            // Preserve the TYPED CubeclError as a downcastable anyhow source
+            // (WR-04) so the caller can `matches!(e.downcast_ref::<CubeclError>(),
+            // Some(DeviceUnavailable))` instead of brittle Display-substring
+            // matching. `anyhow::Error::new` keeps the error downcastable;
+            // `anyhow!("{e}")` would flatten it to an opaque string.
             let out =
                 treelite_cubecl::predict::<cubecl::hip::HipRuntime, f32>(model, data, num_row, cfg)
-                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    .map_err(anyhow::Error::new)?;
             Ok(out.into_iter().map(|v| v as f64).collect())
         },
         dense_f64: |model, data, num_row, cfg| {
             let out =
                 treelite_cubecl::predict::<cubecl::hip::HipRuntime, f64>(model, data, num_row, cfg)
-                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    .map_err(anyhow::Error::new)?;
             Ok(out)
         },
         // Sparse rides the scalar fallback (D-02): identical to cubecl_cpu_case.
@@ -275,17 +280,18 @@ pub fn cuda_case() -> RunnerCase {
     RunnerCase {
         backend: Backend::Cuda,
         dense_f32: |model, data, num_row, cfg| {
+            // Preserve the TYPED CubeclError as a downcastable source (WR-04).
             let out = treelite_cubecl::predict::<cubecl::cuda::CudaRuntime, f32>(
                 model, data, num_row, cfg,
             )
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+            .map_err(anyhow::Error::new)?;
             Ok(out.into_iter().map(|v| v as f64).collect())
         },
         dense_f64: |model, data, num_row, cfg| {
             let out = treelite_cubecl::predict::<cubecl::cuda::CudaRuntime, f64>(
                 model, data, num_row, cfg,
             )
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+            .map_err(anyhow::Error::new)?;
             Ok(out)
         },
         sparse_f32: |model, csr, num_row, cfg| {
@@ -318,17 +324,18 @@ pub fn wgpu_case() -> RunnerCase {
     RunnerCase {
         backend: Backend::Wgpu,
         dense_f32: |model, data, num_row, cfg| {
+            // Preserve the TYPED CubeclError as a downcastable source (WR-04).
             let out = treelite_cubecl::predict::<cubecl::wgpu::WgpuRuntime, f32>(
                 model, data, num_row, cfg,
             )
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+            .map_err(anyhow::Error::new)?;
             Ok(out.into_iter().map(|v| v as f64).collect())
         },
         dense_f64: |model, data, num_row, cfg| {
             let out = treelite_cubecl::predict::<cubecl::wgpu::WgpuRuntime, f64>(
                 model, data, num_row, cfg,
             )
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+            .map_err(anyhow::Error::new)?;
             Ok(out)
         },
         sparse_f32: |model, csr, num_row, cfg| {

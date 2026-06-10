@@ -209,11 +209,19 @@ enum CellRun {
 }
 
 /// Is this harness error the typed `DeviceUnavailable` skip (D-05)? The harness
-/// `rocm_case()` wraps the typed `CubeclError::DeviceUnavailable` into `anyhow`,
-/// whose `Display` contains "no device available". Detecting that here lets the
-/// sibling mark the row "not run — no device" and CONTINUE rather than fail.
+/// `rocm_case()` preserves the typed `CubeclError` as a downcastable `anyhow`
+/// source (WR-04), so we match on the VARIANT rather than a Display substring.
+/// This is robust to error-message wording changes and never misclassifies an
+/// unrelated error (e.g. a scalar-fallback `Unsupported` whose text happens to
+/// mention "no device available") as a benign skip. ONLY a genuine
+/// `CubeclError::DeviceUnavailable` marks the row "not run — no device"; a
+/// `CubeclError::ClientInit` (a real init fault, WR-01) is deliberately NOT a
+/// skip and propagates as a failure.
 fn is_device_absent(err: &anyhow::Error) -> bool {
-    err.to_string().contains("no device available")
+    matches!(
+        err.downcast_ref::<treelite_cubecl::CubeclError>(),
+        Some(treelite_cubecl::CubeclError::DeviceUnavailable { .. })
+    )
 }
 
 /// Run one cell through the correct input-dtype + layout arm of the ROCm

@@ -46,9 +46,16 @@ fn docs_path(name: &str) -> PathBuf {
         .join(name)
 }
 
-/// Is this harness error the typed `DeviceUnavailable` skip (D-05)?
+/// Is this harness error the typed `DeviceUnavailable` skip (D-05)? Matches on
+/// the downcast typed `CubeclError` variant (WR-04) rather than a Display
+/// substring, so wording changes can't break skip detection and an unrelated
+/// error can't be misclassified as a benign skip. A `CubeclError::ClientInit`
+/// (a real init fault, WR-01) is deliberately NOT a skip and propagates.
 fn is_device_absent(err: &anyhow::Error) -> bool {
-    err.to_string().contains("no device available")
+    matches!(
+        err.downcast_ref::<treelite_cubecl::CubeclError>(),
+        Some(treelite_cubecl::CubeclError::DeviceUnavailable { .. })
+    )
 }
 
 /// Load a frozen model by class name (the `.model.bin` next to the goldens).
