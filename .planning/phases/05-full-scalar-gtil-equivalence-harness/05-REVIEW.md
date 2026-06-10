@@ -1,305 +1,277 @@
 ---
 phase: 05-full-scalar-gtil-equivalence-harness
-reviewed: 2026-06-10T00:00:00Z
+reviewed: 2026-06-10T09:28:01Z
 depth: standard
-files_reviewed: 17
+files_reviewed: 9
 files_reviewed_list:
-  - crates/treelite-gtil/Cargo.toml
-  - crates/treelite-gtil/src/accessor.rs
-  - crates/treelite-gtil/src/config.rs
-  - crates/treelite-gtil/src/error.rs
   - crates/treelite-gtil/src/lib.rs
   - crates/treelite-gtil/src/postprocessor.rs
   - crates/treelite-gtil/src/shape.rs
-  - crates/treelite-gtil/tests/config_and_shape.rs
-  - crates/treelite-gtil/tests/generic_input.rs
+  - crates/treelite-gtil/src/error.rs
   - crates/treelite-gtil/tests/predict.rs
   - crates/treelite-gtil/tests/predict_kinds.rs
-  - crates/treelite-gtil/tests/sparse.rs
-  - crates/treelite-harness/src/lib.rs
-  - crates/treelite-harness/src/manifest.rs
   - crates/treelite-harness/tests/gtil_matrix.rs
   - fixtures/capture_gtil_matrix.py
   - fixtures/capture_gtil_models.py
 findings:
   critical: 1
-  warning: 6
-  info: 4
-  total: 11
+  warning: 4
+  info: 3
+  total: 8
 status: issues_found
 ---
 
 # Phase 5: Code Review Report
 
-**Reviewed:** 2026-06-10
+**Reviewed:** 2026-06-10T09:28:01Z
 **Depth:** standard
-**Files Reviewed:** 17
+**Files Reviewed:** 9
 **Status:** issues_found
 
 ## Summary
 
-This phase ports the full scalar GTIL inference engine and an equivalence
-harness whose core contract is "predictions match upstream Treelite within
-1e-5". The bounds-checking discipline is genuinely strong — every untrusted
-loader/model field (`split_index`, child ids, `target_id`/`class_id`,
-`row_ptr`, `col_ind`, negative `num_feature`, leaf-vector lengths) is routed to
-a typed `GtilError` rather than an OOB panic, and the tests cover those paths
-well. The cast-order reasoning for the dense numeric path, `leaf_as_out`,
-`add_base_score`, averaging divisor, and `softmax` matches upstream.
+This is a gap-closure cycle (commits `e366dea..HEAD`, plans 05-06 + 05-07) that
+landed the f64-input postprocessor twins (CR-01), the malformed-Model bounds
+guards (ERR-01 / WR-01..05), and the exhaustive GTIL equivalence-matrix runner.
+The ERR-01 bounds-check surface (`evaluate_tree`, `category_list_safe`,
+`has_leaf_vector`, `SparseCsr::validate`, the negative-`num_feature` guards) is
+thorough, well-tested, and faithfully translates each upstream unchecked access
+into a typed `GtilError` — no panics, no silent mis-prediction on the malformed
+inputs the tests construct. The CR-01 non-softmax f64 twins
+(`sigmoid_f64`/`exponential_f64`/etc.) are correct and genuinely run in f64
+(verified against upstream `postprocessor.cc`).
 
-The headline defect is a **numeric-fidelity deviation in the postprocessor
-boundary for f64 input**: every postprocessor except `softmax` is run through
-an f32 intermediate regardless of the output element `O`, while upstream runs
-`sigmoid`/`exponential`/`multiclass_ova`/`logarithm_one_plus_exp`/`signed_square`
-in `double` when `InputT == double`. This contradicts the code's own claim that
-the O-generic postprocessor was "wired in Plan 05-03" and is only masked today
-because the committed f64 goldens stay inside the 1e-5 band. A second
-correctness concern is the matrix harness re-deriving the CSR from
-NaN-presence rather than consuming the frozen sparse golden's own input, which
-weakens the sparse-path guarantee. Several smaller shape/error inconsistencies
-and dead code round out the list.
+The review surfaced one **BLOCKER**: the f64 `softmax` arm violates the exact
+cast-ordering contract the module claims to uphold — and it does so in the same
+class of defect CR-01 was opened for. It narrows the entire output row to f32
+*before* the `row[i] - max_margin` subtraction and the `std::exp`, whereas
+upstream `softmax<double>` keeps `row[i]` in double for both. This is reachable
+today through the committed `leaf_vec_mc.f32.f64.default.*` fixtures and produces
+a ~9e-8 deviation from upstream — under the 1e-5 gate purely by margin, not by
+contract.
+
+A secondary structural concern (WARNING): the 1e-5 matrix gate does **not**
+actually catch the CR-01-class regression for the `large_margin` f64 cells (the
+buggy collapsed-f32 path deviates from the f64 golden by only ~6e-8, well inside
+1e-5). The only real regression guard is the WR-06 `max_div > 0.0`
+bit-inequality assertion, which is directionally correct but fragile. The runner
+comments overstate what the 1e-5 gate proves.
 
 ## Critical Issues
 
-### CR-01: Postprocessor forced through f32 intermediate breaks the f64-input cast-order contract
+### CR-01: f64 `softmax` narrows the row to f32 before the subtraction/exp — diverges from upstream `softmax<double>`
 
-**File:** `crates/treelite-gtil/src/lib.rs:1122-1141` (`apply_postprocessor`)
+**File:** `crates/treelite-gtil/src/lib.rs:1369-1387` (contract docs at `crates/treelite-gtil/src/postprocessor.rs:32-35` and `crates/treelite-gtil/src/lib.rs:126-133`)
+
 **Issue:**
-`apply_postprocessor` narrows every output cell to `f32`, runs
-`apply_postprocessor_f32`, and widens back to `O`:
+The f64 postprocessor arm handles `softmax` by collapsing the whole output row to
+`Vec<f32>` (`output[start..end].iter().map(|&v| v as f32)`), running the f32
+`postprocessor::softmax`, and widening back. The module asserts this is correct
+because "softmax hardcodes `float` for every `InputT`."
+
+That premise is wrong. Upstream `softmax` (`postprocessor.cc:57-75`) is templated
+on `InputT` and operates on the `InputT*` row in place. For the `double`
+instantiation (`ApplyPostProcessor<double>`, `predict.cc:307-323`, verified in
+the vendored tree) only `max_margin`, the temporary `t`, and the final
+`static_cast<float>(norm_const)` divisor are `float`. The cell reads `row[i]`
+stay **double**, so:
+
+- `t = std::exp(row[i] - max_margin)` computes `double - float = double`, then
+  `std::exp(double)` in **double**, narrowing only the result to `float t`;
+- `row[i] /= static_cast<float>(norm_const)` is `double /= float` — a **double**
+  divide.
+
+The Rust port narrows `row[i]` to f32 up front, so the subtraction and `exp` run
+entirely in f32. This is exactly the "collapse the f64 buffer to f32 before the
+postprocessor" defect CR-01 was opened to fix — just for softmax instead of
+sigmoid.
+
+Verified numerically against the committed `leaf_vec_mc.f32.f64.raw.dense.s1234`
+margins (4-class softprob, the exact rows the f64 softmax fixtures feed): the
+narrow-to-f32 path deviates from the upstream `softmax<double>` ordering by up to
+**~9.0e-8** across the row set (and ~2.8e-8 on a synthetic near-tie row). It is
+under 1e-5 here only by margin; a closer-spaced or larger-magnitude multiclass
+row (a deeper softprob booster, a different seed) can push this past the
+project's 1e-5 core-value contract. The `leaf_vec_mc.f32.f64.default.*` cells
+exercise this path today, so the matrix runner is asserting a non-faithful
+computation that merely happens to fit under the tolerance.
+
+**Fix:** Implement an `InputT == double` softmax that keeps the cell in f64 for
+the subtraction and `exp`, mirroring the upstream float/double split exactly. Add
+a `softmax_f64` to `postprocessor.rs`:
 
 ```rust
-let mut buf: Vec<f32> = output.iter().map(|v| v.out_to_f32()).collect();
-apply_postprocessor_f32(model, shape, &mut buf, num_row)?;
-for (dst, src) in output.iter_mut().zip(buf) {
-    *dst = O::out_from_f32(src);
+/// `softmax<double>` (postprocessor.cc:57-75): row cells stay f64 for the
+/// `row[i] - max_margin` subtraction and `std::exp`; only max_margin, t, and the
+/// final divisor are f32 (matching the upstream template body literally).
+pub fn softmax_f64(row: &mut [f64]) {
+    if row.is_empty() {
+        return;
+    }
+    let mut max_margin: f32 = row[0] as f32;
+    for &x in row.iter().skip(1) {
+        if (x as f32) > max_margin {
+            max_margin = x as f32;
+        }
+    }
+    let mut norm_const: f64 = 0.0;
+    for cell in row.iter_mut() {
+        // double - float -> double; std::exp in double; narrow to f32 t.
+        let t: f32 = (*cell - max_margin as f64).exp() as f32;
+        norm_const += t as f64;
+        *cell = t as f64;
+    }
+    let divisor = norm_const as f32 as f64; // static_cast<float>(norm_const)
+    for cell in row.iter_mut() {
+        *cell /= divisor; // double /= float
+    }
 }
 ```
 
-Upstream `ApplyPostProcessor<InputT>` (`predict.cc:307-323`) is instantiated
-with `InputT == double` for f64 input, and the postprocessors are
-`InputT`-templated (`postprocessor.cc:33-52, 77-82`): `sigmoid`, `exponential`,
-`exponential_standard_ratio`, `logarithm_one_plus_exp`, `signed_square`, and
-`multiclass_ova` run their `std::exp`/`std::exp2`/`std::log1p`/multiply in
-**double** when `InputT == double`. The Rust port forces all of them through
-`f32`, so for any f64-input model whose postprocessor is not `identity`/
-`softmax`, the result is computed at f32 precision and then widened — the wrong
-ULPs. (`softmax` is the one case that happens to match: upstream hardcodes
-`float max_margin`/`float t` regardless of `InputT`, `postprocessor.cc:59-61`,
-so the f32 intermediate is correct only there.)
-
-This is the precise "postprocessor arithmetic precision" deviation the 1e-5
-contract calls out. It is currently masked because the committed matrix
-goldens (binary:logistic → sigmoid, multi:softprob → softmax) keep f64-input
-sigmoid deviations near ~1e-7 to ~1e-8, inside the 1e-5 band — but the engine
-is shipping wrong-precision output for the entire f64 × {sigmoid, exponential,
-exp_standard_ratio, log1p, signed_square, ova} surface, and a large-margin or
-edge input can push a sigmoid/exp deviation past 1e-5. The module comment at
-`lib.rs:1128-1134` and `postprocessor.rs:13-20` claim the O-generic
-postprocessor was "wired in Plan 05-03"; it was not — the f32 path is the only
-path.
-
-**Fix:** Make the postprocessor element arithmetic generic over `O` so f64
-input runs the postprocessor in f64 (matching upstream `InputT`-templated
-instantiation), while keeping `softmax`'s `max_margin`/`t` hardcoded to `f32`
-(upstream does so for every `InputT`). Concretely, parameterize the
-postprocessor functions over the element type (or add f64 variants) instead of
-collapsing to `f32`:
-
-```rust
-// sigmoid<O>: O(1) / (O(1) + (-(sigmoid_alpha as O) * v).exp())
-// softmax: keep `let mut max_margin: f32`, `let t: f32 = (cell_as_f32 - max_margin).exp()`
-//          per upstream postprocessor.cc:59-73, even when O = f64.
-```
-
-At minimum, add a committed f64-input fixture whose postprocessor is `sigmoid`
-or `exponential` with large-margin rows so the deviation is actually exercised
-against the gate rather than silently absorbed.
+Then call `softmax_f64` directly in the f64 arm instead of the narrow/widen
+dance, and correct the contract docs in both files (softmax is **not** uniformly
+f32-correct on every `InputT`; only `max_margin`/`t`/divisor are float). Add a
+test mirroring `f64_twins_*` that proves `softmax_f64` diverges from
+`softmax(narrowed)` on a double-precision near-tie row.
 
 ## Warnings
 
-### WR-01: Matrix harness re-derives the sparse CSR instead of consuming the frozen sparse golden's input
+### WR-01: The 1e-5 matrix gate cannot catch the CR-01 regression it claims to measure
 
-**File:** `crates/treelite-harness/tests/gtil_matrix.rs:240-294` (`run_cell`), `build_csr` at `188-212`
+**File:** `crates/treelite-harness/tests/gtil_matrix.rs:540-594`
+
 **Issue:**
-For every cell (dense *and* sparse), `run_cell` decodes the golden's `input`
-into a dense-with-NaN buffer, then synthesizes the CSR with `build_csr` by
-treating every non-NaN cell as "present". For a fixture whose `manifest.layout
-== "sparse"`, the golden's committed `input` is *already* the dense-with-NaN
-materialization (see `capture_gtil_matrix.py:_freeze_cell` passing `dense_nan`
-for the sparse layout), so the runner is reconstructing a CSR from a
-reconstruction. This means the Rust sparse path is never fed a CSR that
-originated from the upstream `scipy.sparse.csr_matrix`; it is fed a CSR whose
-present-set == "non-NaN cells", which is only correct as long as the capture's
-presence mask never selected a genuine NaN/inf value as "present". The
-edge-seeded matrices inject `np.nan`/`±inf` at specific cells
-(`capture_gtil_matrix.py:194-203`); if a presence-masked cell holds an injected
-NaN, dense-with-NaN cannot distinguish "present NaN" from "absent", and the
-reconstructed CSR diverges from the captured CSR — silently, because the test
-never compares against the captured `indices`/`indptr`.
-**Fix:** Freeze the actual CSR triple (`data`, `col_ind`/`indices`,
-`row_ptr`/`indptr`) into the sparse golden payload at capture time and have the
-runner load it verbatim for sparse cells, rather than re-deriving presence from
-NaN. This makes the sparse path assert against the real captured CSR and
-removes the "present NaN == absent" ambiguity.
+The runner's comments and the `large_margin_f64_cells` coverage gate present the
+1e-5 golden assert as the guard that "would have caught the pre-05-06
+collapse-to-f32." It would not. Verified against the committed
+`large_margin.f32.f64.default.dense.s1234` golden: the buggy collapsed-f32
+sigmoid path deviates from the f64 golden by only **~6.0e-8** — comfortably
+inside the 1e-5 epsilon. So both the corrected `sigmoid_f64` path and the old
+buggy path pass the 1e-5 gate identically; the gate is real but blind to this
+regression class. The actual guard is the separate WR-06 `max_div > 0.0`
+assertion. The eprintln at :551-554 and the gate message at :585-594 overstate
+what the 1e-5 assert proves.
 
-### WR-02: `predict_score_by_tree` lvs clamp disagrees with `output_shape` (buffer length can mismatch the published shape)
+**Fix:** Reword the CR-01 comments to state plainly that the 1e-5 gate confirms
+the f64 path *matches* upstream but does **not** by itself reject the collapsed
+path (the divergence is sub-1e-5); the regression guard is WR-06's paired
+divergence. Optionally add an explicit dual assert on the `large_margin` f64
+*default* cells ("matches the f64 golden to < 1e-7 AND the synthetic collapsed-f32
+recompute does not") so the file documents the true mechanism.
 
-**File:** `crates/treelite-gtil/src/lib.rs:1056-1061` vs `crates/treelite-gtil/src/shape.rs:51-60`
+### WR-02: WR-06 divergence guard is a strict bit-inequality, not a magnitude floor — fragile against future fixtures
+
+**File:** `crates/treelite-harness/tests/gtil_matrix.rs:613-637`
+
 **Issue:**
-`predict_score_by_tree` computes the third-dim size as
-`lvs = (a * b).max(1)` with `a`/`b` defaulting to `1` on a missing/short
-`leaf_vector_shape`, so the produced buffer length is `num_row * num_tree * 1`.
-But the public `output_shape` for `ScorePerTree` computes `a * b` with
-`unwrap_or(0)` (no `.max(1)`), so for the same malformed/short
-`leaf_vector_shape` it reports a third dim of `0`. A Phase-8 caller that
-allocates / reshapes against `output_shape` would then disagree with the actual
-buffer `predict` returns (shape says `[r, t, 0]` → 0 elements; predict returns
-`r * t * 1`). The two clamps must agree.
-**Fix:** Use the same clamp in both. Either clamp `output_shape`'s product to
-`>= 1`:
+The WR-06 paired f32-vs-f64 guard asserts `max_div > 0.0` — any single bit of
+difference passes. For the current `large_margin` fixtures this is satisfied on
+all 140 rows (verified), and a future f32->f64 input pre-cast would collapse the
+two computations and make them bit-identical, failing the assert — so the
+*direction* is correct. But the worst genuine divergence between the two paths is
+~2.6e-17 absolute on the saturated tails (sigmoid output ~1.9e-9). A guard that
+trips on a single ULP is brittle: a future fixture whose margins land where the
+f32 and f64 sigmoid round to the same f64 bits on *every* row would silently
+pass `wr06_checked` while contributing zero real signal, masking a true collapse
+on the cells that matter.
 
-```rust
-// shape.rs
-let a = model.leaf_vector_shape.first().copied().unwrap_or(1).max(0) as u64;
-let b = model.leaf_vector_shape.get(1).copied().unwrap_or(1).max(0) as u64;
-Shape { dims: vec![num_row, num_tree, (a * b).max(1)] }
-```
+**Fix:** Replace `max_div > 0.0` with a relative-divergence floor anchored to the
+expected f32-vs-f64 separation (e.g. require `max_rel > 1e-9` on at least one
+row, mirroring the in-crate `sigmoid_f64_diverges_*` test at
+`postprocessor.rs:412-420`), and assert that floor is met *per shared-axis pair*,
+not just that some non-zero bit differs.
 
-or have `predict_score_by_tree` honor a 0-width third dim. They cannot diverge.
+### WR-03: f64 softmax final `static_cast<float>(norm_const)` divide is also collapsed to f32
 
-### WR-03: `evaluate_tree` only bounds-checks the *next* node id, never node 0
+**File:** `crates/treelite-gtil/src/lib.rs:1380-1384`
 
-**File:** `crates/treelite-gtil/src/lib.rs:407-456` (`evaluate_tree`)
 **Issue:**
-The loop validates `next` against `[0, num_nodes)` before re-entering, but the
-initial `nid = 0` and the first-iteration accessors (`tree.is_leaf(0)`,
-`tree.split_index(0)`, `tree.node_type(0)`, `tree.threshold(0)`, etc.) are
-called with no check that `num_nodes >= 1`. For a malformed/empty tree
-(`num_nodes == 0`, empty `cleft`/`split_index` columns), `tree.is_leaf(0)` or
-`tree.split_index(0)` would index an empty `ContiguousArray` and panic — the
-exact OOB-panic the ERR-01 contract says must become a typed error. The
-declared invariant "a malformed `Model` must never index out of bounds" is not
-fully held at node 0.
-**Fix:** Guard the entry before the first access, e.g.:
+Subordinate to CR-01 but worth flagging independently: even setting aside the
+subtraction/exp, the final divide in the f64 arm runs in f32 (the whole `tmp`
+vector is f32, so `*cell /= divisor` is an f32 divide), then the f32 quotient is
+widened back to f64. Upstream `row[i] /= static_cast<float>(norm_const)` with a
+`double* row` is a `double /= float` — the quotient is computed in **double**.
+The CR-01 fix above resolves this, but if softmax is left as-is this is a second,
+separate ULP-shifting divergence on every f64 softmax cell.
 
-```rust
-if num_nodes == 0 {
-    return Err(GtilError::NodeIndexOutOfBounds { node: 0 });
-}
-```
+**Fix:** Covered by the CR-01 `softmax_f64` fix (its final divide is
+`*cell /= divisor` with `*cell: f64` and `divisor: f64` derived from
+`norm_const as f32 as f64`).
 
-(or make the per-node accessors `get`-based and return the typed error). The
-existing tests never construct a 0-node tree, so this gap is untested.
+### WR-04: `predict_score_by_tree_preset` reports a misleading `needed`/`got` on leaf-vector overflow
 
-### WR-04: `category_list_safe` swallows malformed begin/end inversions as a silent non-match
+**File:** `crates/treelite-gtil/src/lib.rs:1183-1191`
 
-**File:** `crates/treelite-gtil/src/lib.rs:375-391` (`category_list_safe`)
 **Issue:**
-On an out-of-range or inverted (`b > e`) category-list slice the function
-returns `&[]`, which `next_node_categorical` then treats as "no category
-matches" and routes accordingly. This is a *silent fallback that changes the
-prediction*: a corrupt categorical node produces a definite (wrong) routing
-instead of surfacing an error, directly the "silent fallback that could mask a
-wrong prediction" failure mode the review brief flags. Upstream would slice
-unchecked (and the loader guarantees well-formed offsets), so for a corrupt
-model the two diverge silently rather than loudly.
-**Fix:** Distinguish "legitimately empty list" (`b == e`, in bounds) from
-"malformed offsets" (`b > e` or `e > values.len()` or missing offset) and
-return a typed `GtilError` for the malformed case rather than `&[]`. Same
-applies to the analogous `has_leaf_vector` fallthrough at `lib.rs:513-520`,
-which silently treats a malformed leaf-vector offset as "scalar leaf".
+In the ScorePerTree leaf-vector arm the bounds check is `if i >= lvs` (per
+element), but the error payload reports `needed: leafvec.len(), got: lvs`. When a
+leaf vector is longer than the model's declared `lvs`, the loop errors on the
+first `i == lvs`, yet `needed` is the *full* `leafvec.len()` rather than the
+index that actually overflowed. This is a diagnostic inaccuracy, not a
+memory-safety bug (the check still prevents the OOB write at line 1190), but the
+reported pair is misleading for a malformed-model diagnosis and is inconsistent
+with the precise `needed: li + 1` reporting in `output_leaf_vector`
+(lines 828-831).
 
-### WR-05: `next_node` swallows `kEQ`/`kGT`/`kGE`/`kNone` differences silently relative to the upstream fatal check
-
-**File:** `crates/treelite-gtil/src/lib.rs:316-329` (`next_node`)
-**Issue:**
-Upstream `NextNode` (`predict.cc:120-122`) hits `TREELITE_CHECK(false)` (throws)
-on any operator outside the five comparison ops and returns `-1`. The Rust port
-maps `Operator::kNone` to `cond = false` → routes to `right`. For a model that
-somehow carries `kNone` on a numerical test node, upstream aborts loudly while
-the Rust port silently produces a prediction (route right). The comment
-acknowledges "Phase 1 fixtures never reach here", but this is a silent-fallback
-divergence from the upstream fatal path on malformed input. (The non-`kNone`
-ops `kLE/kEQ/kGT/kGE` are handled and correct.)
-**Fix:** Return a typed `GtilError` (e.g. a new `UnrecognizedOperator` variant)
-for `kNone` on a numerical node, matching upstream's fatal-on-unrecognized
-behavior, rather than defaulting to `right`.
-
-### WR-06: f32-input matrix fixture asserts against a golden but never cross-checks the f64 golden, hiding input-dtype-axis regressions
-
-**File:** `crates/treelite-harness/tests/gtil_matrix.rs:392-400`
-**Issue:**
-The runner asserts each fixture's own-dtype result against its own-dtype golden
-and asserts dense==sparse parity, but there is no assertion tying the f32 and
-f64 cells of the *same model/kind/seed* together. The whole point of the D-05
-input-dtype axis (per the file header) is that f32-input and f64-input are
-*different* computations; nothing here verifies they actually differ where they
-should (e.g. that an f32 categorical-gap routing diverges from f64), so an
-accidental f32→f64 pre-cast inside a future backend would still pass every
-assertion in this test as long as each cell matched its own golden. The
-`f32_cells > 0` / `f64_cells > 0` counters only prove both axes ran, not that
-the axis is meaningfully exercised.
-**Fix:** Add at least one paired assertion that the f32 and f64 cells of the
-categorical-gap model differ on the `2^24`-boundary row (or document that the
-golden values themselves encode this), so a silent input-dtype collapse is
-caught.
+**Fix:** Either hoist a single `if leafvec.len() > lvs` pre-check before the loop
+and frame the message as "leaf vector longer than declared lvs", or keep the
+per-element check and report `needed: i + 1, got: lvs` so the payload names the
+overflow point.
 
 ## Info
 
-### IN-01: `Operator::kNone` arm comment references a non-existent "default arm returning right_child"
+### IN-01: `GtilError::UnsupportedPredictKind` is now dead
 
-**File:** `crates/treelite-gtil/src/lib.rs:323-326`
-**Issue:** The comment says the `kNone` arm "mirrors the upstream default arm
-returning right_child after the fatal check", but upstream's default arm
-returns `-1` after `TREELITE_CHECK(false)` (`predict.cc:120-123`), not
-`right_child`. The comment misdescribes upstream behavior. (See WR-05 for the
-behavioral concern.)
-**Fix:** Correct the comment to state upstream aborts/returns `-1`, and that the
-port chooses a non-fatal route (or a typed error per WR-05).
+**File:** `crates/treelite-gtil/src/error.rs:93-100`
 
-### IN-02: `LeafVectorTooShort` fields are populated with reversed semantics in score-per-tree
+**Issue:**
+The doc comment says `LeafId`/`ScorePerTree` "surface as this typed error" until
+Plan 05-04, but both kinds are now fully wired (`predict_rows` dispatches them at
+`lib.rs:1020-1023`) and no code path constructs `UnsupportedPredictKind`
+anymore. The variant and its `kind: &'static str` field are dead.
 
-**File:** `crates/treelite-gtil/src/lib.rs:1097-1101`
-**Issue:** When `leafvec.len() > lvs`, the error is built with
-`needed: leafvec.len(), got: lvs` — but here `lvs` is the *buffer* width and
-`leafvec.len()` is the data; the variant's doc comment defines `needed` as "the
-minimum leaf-vector length the routing requires" and `got` as "actual
-leaf-vector length", which is the opposite of how it is filled here (the leaf
-vector is too *long* for the buffer, not too short). The message will read
-backwards. Purely diagnostic; no behavioral impact.
-**Fix:** Use a distinct variant (e.g. `LeafVectorTooLong { len, capacity }`) or
-populate `needed`/`got` consistently with the doc.
+**Fix:** Remove the variant (and its stale doc), or if it is retained as a
+forward-compat placeholder, update the comment to say so explicitly rather than
+referencing a closed plan.
 
-### IN-03: `category_match` magnitude bound built per-call (recomputed each node)
+### IN-02: `output_shape` and predict resolve the target dim with differently-spelled clamps
 
-**File:** `crates/treelite-gtil/src/lib.rs:219-220, 283-284`
-**Issue:** `max_representable_int` is recomputed on every `category_match`
-invocation (per node, per row). It is a compile-time constant per `O`
-(`2^24` for f32, `u32::MAX` for f64). Out of scope as a perf issue, but it could
-be a `const` for clarity and to make the per-dtype boundary self-documenting.
-**Fix:** Promote to an associated `const MAX_REPRESENTABLE_INT: Self` on
-`PredictOut`.
+**File:** `crates/treelite-gtil/src/shape.rs:38-46` vs `crates/treelite-gtil/src/lib.rs:1031-1034`
 
-### IN-04: Fixture comment overstates the `2^24 + 1` f32 edge value
+**Issue:**
+`output_shape` emits the target dim as `model.num_target as u64` when
+`num_target > 1`, else literally `1`. `predict_rows` clamps
+`num_target == 0 -> 1` then uses `num_target`. They agree for all `num_target >= 1`
+models and even for the degenerate `num_target == 0` case (both yield dim 1), so
+there is no live bug — but the two clamps are spelled differently, so a future
+edit to one will not be caught by the other. No fixture exercises `num_target == 0`.
 
-**File:** `fixtures/capture_gtil_matrix.py:197-200`, `lib.rs:1264`
-**Issue:** The capture injects `float(2**24 + 1)` into an f64 matrix, then casts
-the f32 cell via `astype(np.float32)`, which rounds `2^24 + 1` to exactly
-`2^24` (the value *is* representable in f32 and sits *at* the boundary, not in
-the `[2^24, u32::MAX]` gap). The comment claims it "is NOT representable in f32
-and sits in the gap"; for the f32 cell it actually lands on the boundary
-`2^24`, which `category_match` accepts (not rejects). The routing still matches
-upstream (both round identically), so this is documentation-only, but the
-claimed edge is not the edge being tested on the f32 path. The unit test at
-`lib.rs:1258-1278` (which uses `2^24 + 64`, exactly representable) is the real
-gap test.
-**Fix:** Inject a value that is genuinely in the f32 gap and exactly
-representable (e.g. `2**24 + 64`) if the matrix is meant to exercise the gap,
-or correct the comment to say the f32 cell tests the boundary.
+**Fix:** Factor the `(num_target, max_num_class)` resolution into one shared
+helper used by both `output_shape` and `predict_rows` so the published shape and
+the produced buffer can never drift.
+
+### IN-03: D-04 parity probe drops present-NaN cells; asymmetry with kept inf is undocumented
+
+**File:** `crates/treelite-harness/tests/gtil_matrix.rs:252-272`
+
+**Issue:**
+`build_csr` reconstructs the parity CSR by treating every non-NaN dense cell as
+present. The edge matrix injects a present `np.nan` (`X[5, cat_col]`) and `±inf`.
+The present-NaN is dropped (becomes "absent" in the parity CSR) while inf is
+kept and the dense path keeps NaN as a present feature. Because NaN routes to the
+default child identically whether present or absent, the parity assert still
+holds — but this is the same "present NaN == absent" ambiguity WR-01/T-05-19
+flagged for the golden path, surviving in the parity probe. It is correctly
+scoped to parity-only (the golden gate uses the frozen CSR via `frozen_csr`), so
+this is informational; the NaN-dropped / inf-kept asymmetry just deserves a
+comment.
+
+**Fix:** Add a one-line note at `build_csr` that it is a NaN-presence
+reconstruction used only for the D-04 invariant and deliberately differs from the
+frozen capture CSR on present-NaN cells.
 
 ---
 
-_Reviewed: 2026-06-10_
+_Reviewed: 2026-06-10T09:28:01Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
