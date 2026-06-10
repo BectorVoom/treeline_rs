@@ -206,7 +206,7 @@ Plans:
   2. The cubecl CPU backend is the default and the full equivalence harness passes within 1e-5 on it in CI, with output bit-identical across two runs of the same input (determinism check).
   3. SoA model buffers upload host→device via `TreeBuf::as_bytes()` + `client.create_from_slice` with per-column ragged-SoA concatenation across the forest (no per-tree handle explosion), and a plain-Rust fallback exists for any unimplemented cubecl op.
 
-**Plans**: 5 plans
+**Plans**: 7 plans (5 + 2 gap-closure)
 Plans:
 **Wave 1** *(Wave 0 — crate scaffold + as_bytes + RED scaffolds; gates everything)*
 
@@ -227,6 +227,14 @@ Plans:
 **Wave 5** *(blocked on Wave 4 — registration capstone)*
 
 - [x] 06-05-PLAN.md — Backend::CubeclCpu + cubecl_cpu_case() registration + gtil_matrix_cubecl sibling gate (frozen goldens to 1e-5 + per-cell provenance D-06) + SC2 determinism (Wave 5)
+
+**Wave 6** *(gap closure — fixes the 3 BLOCKERs from 06-VERIFICATION.md)*
+
+- [ ] 06-06-PLAN.md — Gap closure: CR-01 non-kLT operator fallback gate + CR-02 f64-promoted descend() comparison + CR-03 leaf-vector span validation (MalformedLeafVector) + matrix provenance honesty + malformed-model test (Wave 6)
+
+**Wave 7** *(blocked on Wave 6 — real-upstream-golden lock)*
+
+- [ ] 06-07-PLAN.md — Gap closure: capture kLE LightGBM-numerical + f32-unrepresentable-threshold mixed-width fixtures from upstream Treelite, re-run cubecl matrix gate within 1e-5 on the previously-uncovered classes, full workspace green (Wave 7)
 
 ### Phase 7: GPU Backend & Equivalence Report
 
