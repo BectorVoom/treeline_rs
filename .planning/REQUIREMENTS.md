@@ -89,8 +89,8 @@ Requirements for the initial release. Each maps to a roadmap phase. All are hypo
 
 - [x] **EQV-01**: The harness generates random seeded input matrices (dense + sparse CSR)
 - [x] **EQV-02**: Golden output vectors are captured from C++ Treelite and committed as fixtures with a toolchain/libm manifest
-- [ ] **EQV-03**: Rust predictions assert within 1e-5 of goldens across model types, both presets, and all predict kinds
-- [ ] **EQV-04**: The harness reports max observed deviation, not just pass/fail
+- [x] **EQV-03**: Rust predictions assert within 1e-5 of goldens across model types, both presets, and all predict kinds
+- [x] **EQV-04**: The harness reports max observed deviation, not just pass/fail
 
 ### Memory Efficiency
 
@@ -173,8 +173,8 @@ Which phases cover which requirements.
 | GTIL-08 | Phase 5 | Complete |
 | EQV-01 | Phase 5 | Complete |
 | EQV-02 | Phase 5 | Complete |
-| EQV-03 | Phase 5 | Pending |
-| EQV-04 | Phase 5 | Pending |
+| EQV-03 | Phase 5 | Complete |
+| EQV-04 | Phase 5 | Complete |
 | GPU-01 | Phase 6 | Pending |
 | GPU-02 | Phase 6 | Pending |
 | GPU-05 | Phase 6 | Pending |

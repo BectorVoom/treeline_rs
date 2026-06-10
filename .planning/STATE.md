@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
+status: verifying
 stopped_at: Completed 05-04-PLAN.md
-last_updated: "2026-06-10T07:28:06.019Z"
+last_updated: "2026-06-10T07:41:18.592Z"
 last_activity: 2026-06-10 -- Phase 05 execution started
 progress:
   total_phases: 9
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 27
-  completed_plans: 26
-  percent: 44
+  completed_plans: 27
+  percent: 56
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 
 Phase: 05 (full-scalar-gtil-equivalence-harness) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-10 -- Phase 05 execution started
 
 Progress: [████████] 100% (Phase 04 plans: 8/8)
@@ -80,6 +80,7 @@ Progress: [████████] 100% (Phase 04 plans: 8/8)
 | Phase 05 P02 | 22min | 2 tasks | 7 files |
 | Phase 05 P03 | ~8min | 2 tasks | 3 files |
 | Phase 05 P04 | ~6min | 2 tasks | 5 files |
+| Phase 05 P05 | 30min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -163,6 +164,8 @@ Recent decisions affecting current work:
 - [Phase ?]: GTIL PredictOut representability const MANTISSA_BITS (not DIGITS: inherent f32::DIGITS shadows Self::DIGITS to decimal-6)
 - [Phase ?]: RowSource enum gives structural dense==sparse parity (D-04): both paths materialize one reusable scratch row that evaluate_tree walks verbatim
 - [Phase ?]: LeafId/ScorePerTree size output on actual trees.len() (GetNumTree), not the staged num_tree() header field
+- [Phase ?]: Plan 05-05: committed treelite v5 model bytes loaded via treelite_core::deserialize (the exact model the goldens were captured from); frozen goldens untouched — Rule 3 fix for Plan-01's discarded in-script models.
+- [Phase ?]: Plan 05-05: minimal fn-pointer Backend/RunnerCase seam (four input-dtype slots, f64 output) — Phase 6 registers a cubecl runtime by adding a variant + constructor with no matrix-iteration change (D-11).
 
 ### Pending Todos
 
@@ -184,6 +187,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T07:28:06.015Z
+Last session: 2026-06-10T07:40:37.101Z
 Stopped at: Completed 05-04-PLAN.md
 Resume file: None

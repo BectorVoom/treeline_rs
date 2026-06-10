@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Builder & Serialization** - Validated `ModelBuilder` + bulk path + v5 binary/PyBuffer/JSON round-trip and field accessors (completed 2026-06-10)
 - [x] **Phase 3: Full XGBoost Loaders** - JSON + UBJSON + legacy binary with auto-detect and version-gated base_score margin transform (completed 2026-06-10)
 - [x] **Phase 4: LightGBM & scikit-learn Loaders** - LightGBM text + RF/ET/GBM/IsolationForest + HistGradientBoosting (completed 2026-06-10)
-- [ ] **Phase 5: Full Scalar GTIL & Equivalence Harness** - All 4 predict kinds, 10 postprocessors, sparse CSR, categoricals, output shaping, seeded golden harness at 1e-5
+- [x] **Phase 5: Full Scalar GTIL & Equivalence Harness** - All 4 predict kinds, 10 postprocessors, sparse CSR, categoricals, output shaping, seeded golden harness at 1e-5 (completed 2026-06-10)
 - [ ] **Phase 6: cubecl GTIL Kernels (CPU Backend)** - Traversal + postprocessor kernels; CPU backend default, validated to 1e-5 with zero-copy SoA upload
 - [ ] **Phase 7: GPU Backend & Equivalence Report** - Runtime-selectable GPU backend (CUDA/wgpu/ROCm) with a documented per-model-class deviation report
 - [ ] **Phase 8: PyO3 Python Binding** - load/predict/serialize/dump from Python with zero-copy numpy I/O and abi3 wheel
@@ -184,7 +184,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 — full GTIL surface)*
 
-- [ ] 05-05-PLAN.md — Exhaustive equivalence-matrix runner (1e-5 across model×preset×dtype×kind×{dense,sparse}×seed) + dense==sparse parity + max-dev report + `Manifest` `backend` field & backend-parameterized seam (D-09/D-11) (EQV-03/EQV-04)
+- [x] 05-05-PLAN.md — Exhaustive equivalence-matrix runner (1e-5 across model×preset×dtype×kind×{dense,sparse}×seed) + dense==sparse parity + max-dev report + `Manifest` `backend` field & backend-parameterized seam (D-09/D-11) (EQV-03/EQV-04)
 
 ### Phase 6: cubecl GTIL Kernels (CPU Backend)
 
@@ -256,7 +256,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 2. Builder & Serialization | 6/6 | Complete    | 2026-06-10 |
 | 3. Full XGBoost Loaders | 4/4 | Complete    | 2026-06-10 |
 | 4. LightGBM & scikit-learn Loaders | 8/8 | Complete    | 2026-06-10 |
-| 5. Full Scalar GTIL & Equivalence Harness | 4/5 | In Progress|  |
+| 5. Full Scalar GTIL & Equivalence Harness | 5/5 | Complete   | 2026-06-10 |
 | 6. cubecl GTIL Kernels (CPU Backend) | 0/TBD | Not started | - |
 | 7. GPU Backend & Equivalence Report | 0/TBD | Not started | - |
 | 8. PyO3 Python Binding | 0/TBD | Not started | - |
