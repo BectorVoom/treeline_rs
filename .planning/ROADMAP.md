@@ -184,14 +184,14 @@ Plans:
 
 ### Phase 7: GPU Backend & Equivalence Report
 
-**Goal**: Layer at least one runtime-selectable GPU backend onto the green CPU equivalence and document its numerical behavior — proving GPU acceleration in v1 without making it a correctness prerequisite.
+**Goal**: Layer runtime-selectable GPU backends onto the green CPU equivalence and document numerical behavior — proving GPU acceleration in v1 without making it a correctness prerequisite. **ROCm is the hardware-validated backend** (the developer has an AMD/ROCm device, no NVIDIA); CUDA is implemented and runtime-selectable but validated only where an NVIDIA device is available.
 **Mode:** mvp
 **Depends on**: Phase 6
 **Requirements**: GPU-03, GPU-04
 **Success Criteria** (what must be TRUE):
 
-  1. At least one GPU backend (CUDA, wgpu, or ROCm) is selectable at runtime via Cargo feature + `Backend` enum and produces predictions for the harness model set.
-  2. A committed GPU equivalence report documents the observed max deviation per model class against an accepted tolerance, noting where f64 postprocessor fallback is needed to stay in budget.
+  1. **ROCm** is selectable at runtime via Cargo feature + `Backend` enum and produces predictions for the harness model set on the developer's AMD/ROCm hardware (this is the backend that satisfies GPU-03's "at least one ... produces predictions"). CUDA and wgpu share the same generic `R: Runtime` seam and are runtime-selectable from the same enum; **CUDA is build-supported but not locally hardware-validated** (no NVIDIA device) — its predictions are exercised only where such hardware exists (e.g. CI), and a missing CUDA device is a skip, not a failure.
+  2. A committed GPU equivalence report documents the observed max deviation per model class **on ROCm** against an accepted tolerance, noting where f64 postprocessor fallback is needed to stay in budget. CUDA/wgpu rows are filled wherever their hardware is available and explicitly marked "not run — no device" otherwise.
   3. CPU remains the default backend and small inputs do not pay GPU transfer/launch overhead (documented crossover heuristic).
 
 **Plans**: TBD
