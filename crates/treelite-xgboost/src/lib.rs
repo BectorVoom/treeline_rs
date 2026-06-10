@@ -14,9 +14,12 @@
 //! Ports `treelite-mainline/src/model_loader/detail/xgboost.{h,cc}` and
 //! `.../xgboost_json/delegated_handler.cc`.
 
+mod detect;
 pub mod error;
 mod json;
 pub mod objective;
+
+pub use detect::detect_xgboost_format;
 
 /// Test-only surface exposing the crate-internal D-02 NaN/Inf primitives so the
 /// integration test `tests/nan_inf.rs` can exercise them directly. Hidden from
