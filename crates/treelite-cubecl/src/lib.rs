@@ -20,6 +20,12 @@
 
 pub mod error;
 
+/// Per-backend `ComputeClient<R>` construction with a typed device-absence
+/// skip (`CubeclError::DeviceUnavailable`, D-05). Holds the generic
+/// `client::<R>()` plus the `#[cfg(feature = …)]`-gated `rocm_client`/
+/// `cuda_client`/`wgpu_client` helpers (Phase-7 Wave 0).
+pub mod device;
+
 /// Per-column ragged-SoA host→device upload (Wave 2).
 pub mod upload;
 
