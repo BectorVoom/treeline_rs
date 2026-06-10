@@ -1158,8 +1158,14 @@ fn predict_score_by_tree_preset<T: PredictScalar + PartialOrd, O: PredictOut>(
                 let leafvec = tree.leaf_vector(leaf);
                 for (i, &v) in leafvec.iter().enumerate() {
                     if i >= lvs {
+                        // The leaf vector overflows the per-tree output slot of
+                        // width `lvs`. Report the overflow POINT, mirroring the
+                        // precise `needed: li + 1` reporting in
+                        // `output_leaf_vector` (this arm errors on the first
+                        // `i == lvs`, so `i + 1` names the slot that overflowed
+                        // and `got: lvs` is the declared capacity). WR-04.
                         return Err(GtilError::LeafVectorTooShort {
-                            needed: leafvec.len(),
+                            needed: i + 1,
                             got: lvs,
                         });
                     }
