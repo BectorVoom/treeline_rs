@@ -85,7 +85,7 @@ fn upload_ragged_soa_roundtrip() {
     let num_feature = 2i32;
     let num_row = 4usize;
     let data_len = num_row * num_feature as usize;
-    let up = upload_forest::<CpuRuntime, f32>(&client, &preset, num_feature, num_row, data_len)
+    let up = upload_forest::<CpuRuntime, f32>(&client, &preset, num_feature, num_row, data_len, 1, 1)
         .expect("well-formed forest uploads");
 
     assert_eq!(up.num_nodes_total, 9);
@@ -124,7 +124,7 @@ fn upload_rejects_bad_split_index_before_device_op() {
     // holds device `Handle`s (not `Debug`), so match the Result directly rather
     // than via `expect_err` (which needs `T: Debug`).
     let client = CpuRuntime::client(&Default::default());
-    match upload_forest::<CpuRuntime, f32>(&client, &preset, 2, 1, 2) {
+    match upload_forest::<CpuRuntime, f32>(&client, &preset, 2, 1, 2, 1, 1) {
         Err(CubeclError::FeatureIndexOutOfBounds { .. }) => {}
         Err(other) => panic!("expected FeatureIndexOutOfBounds, got {other:?}"),
         Ok(_) => panic!("upload must reject the malformed model before any client.create"),

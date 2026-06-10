@@ -54,6 +54,31 @@ pub enum CubeclError {
         node: usize,
     },
 
+    /// A leaf node's `[leaf_vector_begin, leaf_vector_end)` span does not lie
+    /// within its tree's leaf-vector segment (an inverted span, or an end past
+    /// the segment length, or a broadcast span the kernel would read past the
+    /// segment). Caught HOST-side in
+    /// [`crate::upload::validate_leaf_vectors`] BEFORE any device op, so a
+    /// malformed model returns a typed error instead of an out-of-bounds device
+    /// read (T-06-09). Mirrors the scalar twin's
+    /// `GtilError::LeafVectorTooShort`/`MalformedLeafVector` discipline.
+    #[error(
+        "malformed leaf vector at tree {tree} node {node}: span [{begin}, {end}) does not fit \
+         the tree's leaf-vector segment length {segment_len}"
+    )]
+    MalformedLeafVector {
+        /// The tree whose leaf node carries the bad span.
+        tree: usize,
+        /// The leaf node id (relative to the tree) with the bad span.
+        node: usize,
+        /// The offending `leaf_vector_begin` value.
+        begin: u32,
+        /// The offending `leaf_vector_end` (or broadcast end) value.
+        end: u32,
+        /// The tree's leaf-vector segment length the span must fit within.
+        segment_len: u32,
+    },
+
     /// A model construct is not yet supported on the cubecl path (sparse CSR,
     /// categorical splits, or — until Wave 3 — the launcher itself). Routed to
     /// the scalar fallback by the host, never a panic. Catch-all so the

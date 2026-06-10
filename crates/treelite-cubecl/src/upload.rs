@@ -261,22 +261,104 @@ pub fn validate_shape<F: Copy>(
     Ok(())
 }
 
-/// Concatenate the forest's columns, VALIDATE the shape, then upload each column
-/// as ONE device handle (no per-tree explosion). Validation precedes every
-/// `client.create_from_slice` (T-06-06).
+/// Validate every leaf node's `[leaf_vector_begin, leaf_vector_end)` span lies
+/// within its tree's leaf-vector segment, HOST-side, BEFORE any device op
+/// (T-06-09; no out-of-bounds leaf-vector device read on a malformed model).
+///
+/// The kernels read `leaf_vector[leafvec_off[t] + offset]` where `offset` ranges
+/// over `[begin, end)` (score_per_tree, `default_raw` scalar/per-target/per-class
+/// cases) and, for the multiclass broadcast case, over
+/// `[begin, begin + num_target * max_num_class)` (`default_raw`:108-158). The
+/// per-tree segment length for tree `t` is
+/// `tree_leafvec_offset[t+1] - tree_leafvec_offset[t]`. For EVERY leaf node
+/// (`cleft == -1`) with a non-empty span (`begin != end`) this asserts:
+///   - `begin <= end` (not inverted), and
+///   - `end <= segment_len` (the declared span fits the segment), and
+///   - `begin + num_target * max_num_class <= segment_len` (the broadcast span
+///     the launcher would read also fits — the bound the kernel's broadcast loops
+///     reach).
+/// Any violation returns [`CubeclError::MalformedLeafVector`]. A well-formed model
+/// (every existing fixture: begin == end scalar leaves, or end <= segment_len
+/// vector leaves) passes unchanged.
+pub fn validate_leaf_vectors<F: Copy>(
+    cols: &HostColumns<F>,
+    num_target: usize,
+    max_num_class: usize,
+) -> Result<(), CubeclError> {
+    let num_tree = cols.tree_node_offset.len().saturating_sub(1);
+    let broadcast_span = num_target.saturating_mul(max_num_class) as u32;
+    for t in 0..num_tree {
+        let node_base = cols.tree_node_offset[t] as usize;
+        let node_end = cols.tree_node_offset[t + 1] as usize;
+        let seg_len = cols.tree_leafvec_offset[t + 1] - cols.tree_leafvec_offset[t];
+        for n in node_base..node_end {
+            // Internal node: cleft != -1, no leaf-vector access. Skip.
+            if cols.cleft[n] != -1 {
+                continue;
+            }
+            // Absent/short CSR offset columns (a binary scalar model never
+            // populated `leaf_vector_begin/end`) carry no leaf-vector span — the
+            // kernel never reads `leaf_vector` for such a leaf. Treat as scalar.
+            if n >= cols.leaf_vector_begin.len() || n >= cols.leaf_vector_end.len() {
+                continue;
+            }
+            let begin = cols.leaf_vector_begin[n];
+            let end = cols.leaf_vector_end[n];
+            // Empty span (scalar leaf) → no leaf-vector read; nothing to bound.
+            if begin == end {
+                continue;
+            }
+            let node_rel = n - node_base;
+            // Inverted span, or the declared end past the segment.
+            if begin > end || end > seg_len {
+                return Err(CubeclError::MalformedLeafVector {
+                    tree: t,
+                    node: node_rel,
+                    begin,
+                    end,
+                    segment_len: seg_len,
+                });
+            }
+            // The multiclass-broadcast span the launcher would read
+            // (default_raw.rs:108-158) must also fit the segment.
+            let broadcast_end = begin.saturating_add(broadcast_span);
+            if broadcast_end > seg_len {
+                return Err(CubeclError::MalformedLeafVector {
+                    tree: t,
+                    node: node_rel,
+                    begin,
+                    end: broadcast_end,
+                    segment_len: seg_len,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Concatenate the forest's columns, VALIDATE the shape + leaf-vector spans, then
+/// upload each column as ONE device handle (no per-tree explosion). Validation
+/// precedes every `client.create_from_slice` (T-06-06 / T-06-09).
 ///
 /// `num_row`/`data_len` describe the input matrix the kernel will read; they are
 /// validated here so a malformed model never reaches a device launch.
+/// `num_target`/`max_num_class` bound the multiclass leaf-vector broadcast span
+/// the kernel reads, so a malformed leaf-vector span is rejected with a typed
+/// [`CubeclError::MalformedLeafVector`] before any device op.
 pub fn upload_forest<R: Runtime, F: Copy + bytemuck::Pod>(
     client: &ComputeClient<R>,
     preset: &ModelPreset<F>,
     num_feature: i32,
     num_row: usize,
     data_len: usize,
+    num_target: usize,
+    max_num_class: usize,
 ) -> Result<UploadedForest<R>, CubeclError> {
     let cols = concat_columns(preset);
     // VALIDATE BEFORE ANY DEVICE OP (no OOB device write on a malformed model).
     validate_shape(num_feature, num_row, data_len, &cols)?;
+    // Leaf-vector span validation (T-06-09: no OOB leaf-vector device read).
+    validate_leaf_vectors(&cols, num_target, max_num_class)?;
 
     let num_nodes_total = cols.cleft.len();
     let num_leafvec_total = cols.leaf_vector.len();
