@@ -374,21 +374,24 @@ Verified patterns from the vendored upstream source.
 | A4 | The RF classifier leaf-normalization (`norm_factor`) is the only load-time leaf transform; GB leaf-shrink is capture-side | Pattern 2 / Anti-Patterns | Double-applying learning-rate shrink would scale GB predictions. Verified: `importer.py:220-223` shrinks capture-side; loader must not. |
 | A5 | slopcheck verdicts for `scikit-learn`/`lightgbm` would be `[OK]` (couldn't run in sandbox) | Package Legitimacy Audit | Negligible — both are first-party-maintained, capture-only, never in the Rust/CI graph. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Exact `treelite.gtil.predict` keyword for predict-kind in 4.7.0**
    - What we know: Phase-1's `capture_golden.py` already prints `help(treelite.gtil.predict)` to confirm the 4.7.0 signature; default kind applies the postprocessor.
    - What's unclear: whether IsolationForest needs a non-default predict kind (it does not — default applies `exponential_standard_ratio`).
    - Recommendation: the capture script should print `help()` once (as Phase 1 did) and assert the golden against the DEFAULT kind; cross-check IsolationForest golden equals `-clf.score_samples(X)`.
+   - RESOLVED in Plan 04-03 Task 1: the capture script prints `help(treelite.gtil.predict)` once, asserts the golden against the DEFAULT predict kind, and cross-checks the IsolationForest golden against `-clf.score_samples(X)` — confirming no non-default kind is needed.
 
 2. **f64 ModelBuilder: generic-over-T vs parallel builder**
    - What we know: the builder is f32-only; `bulk_construct_tree` is already `Tree<f64>`; core has `ModelVariant::F64`.
    - What's unclear: whether to make `ModelBuilder` generic `<T>` or add a thin f64 variant — a design call.
    - Recommendation: planner's call (architecture). Generic-over-T keeps one state machine; a parallel builder avoids touching the working f32 path. Either way it's the FIRST enabling task.
+   - RESOLVED in Plan 04-01: the plan makes this design call and implements the f64 builder mode + `bulk_to_model` assembly as the first enabling task (planner's discretion exercised per Claude's Discretion in CONTEXT.md).
 
 3. **Single combined HistGB slice vs numerical-then-categorical**
    - What we know: D-08 requires full HistGB verify; categorical adds `categories_map`/`features_map` complexity (Pitfall 4).
    - Recommendation: two slices — numerical-only HistGB first (identity feature map), then categorical HistGB — to isolate the remap risk. Both still land in Phase 4.
+   - RESOLVED in Plan 04-08: a two-task split — numerical-only HistGB first (identity feature map), categorical HistGB second — isolates the `features_map`/`categories_map` remap risk, both landing in Phase 4 per D-08.
 
 ## Environment Availability
 
