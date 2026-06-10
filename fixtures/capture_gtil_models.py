@@ -83,6 +83,33 @@ def build_leaf_vector_model(seed):
     return treelite.frontend.from_xgboost(booster)
 
 
+def build_large_margin_model(seed):
+    """LARGE-MARGIN binary:logistic — identical to capture_gtil_matrix.py.
+
+    The CR-01 ``sigmoid`` stressor (margins past ±10). Its ``model.bin`` is also
+    frozen by ``capture_gtil_matrix.py`` (from the same object that produced its
+    goldens); this entry keeps the canonical model-freezer aware of all three
+    GTIL-matrix models for regeneration parity.
+    """
+    rng = np.random.RandomState(seed)
+    n, n_feat = 200, 4
+    X = rng.uniform(-3.0, 3.0, size=(n, n_feat)).astype(np.float32)
+    y = ((X[:, 0] + X[:, 1] - X[:, 2]) > 0.0).astype(np.float32)
+    booster = xgboost.train(
+        {
+            "objective": "binary:logistic",
+            "max_depth": 6,
+            "seed": seed,
+            "eta": 1.0,
+            "lambda": 0.0,
+            "min_child_weight": 0.0,
+        },
+        xgboost.DMatrix(X, label=y),
+        num_boost_round=20,
+    )
+    return treelite.frontend.from_xgboost(booster)
+
+
 def _freeze(name, model):
     os.makedirs(OUT_DIR, exist_ok=True)
     raw = model.serialize_bytes()
@@ -95,6 +122,7 @@ def _freeze(name, model):
 def main():
     _freeze("binary.model.bin", build_binary_model(MODEL_SEED))
     _freeze("leaf_vec_mc.model.bin", build_leaf_vector_model(MODEL_SEED))
+    _freeze("large_margin.model.bin", build_large_margin_model(MODEL_SEED))
     print("GTIL matrix model artifacts frozen (treelite v5 serialize_bytes).")
 
 

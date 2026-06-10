@@ -214,7 +214,10 @@ def _dense_and_csr(X_dense_full, dtype, seed):
 
     The dense matrix carries ``NaN`` in absent positions; the CSR is built from
     ONLY the present positions, so treelite materializes ``NaN`` for exactly the
-    absent columns (predict.cc:81). Returns (dense_nan, csr) in ``dtype``.
+    absent columns (predict.cc:81). Returns (dense_nan, csr, csr_triple) in
+    ``dtype``, where ``csr_triple`` is the REAL frozen CSR
+    ``(data, indices, indptr)`` (WR-01) — the exact arrays the Rust sparse path
+    must consume verbatim instead of re-deriving a CSR from NaN-presence.
     """
     n_rows, n_feat = X_dense_full.shape
     mask = _present_mask(seed, n_rows, n_feat)
@@ -234,11 +237,18 @@ def _dense_and_csr(X_dense_full, dtype, seed):
         indices.extend(cols.tolist())
         data.extend(X_dense_full[r, cols].astype(dtype).tolist())
         indptr.append(len(indices))
+    data_arr = np.asarray(data, dtype=dtype)
+    indices_arr = np.asarray(indices, dtype=np.int64)
+    indptr_arr = np.asarray(indptr, dtype=np.int64)
     csr = scipy.sparse.csr_matrix(
-        (np.asarray(data, dtype=dtype), np.asarray(indices), np.asarray(indptr)),
+        (data_arr, indices_arr, indptr_arr),
         shape=(n_rows, n_feat),
     )
-    return dense_nan, csr
+    # WR-01: the REAL captured CSR triple (data/indices/indptr) — frozen into the
+    # sparse golden so the Rust runner loads it verbatim, never reconstructing a
+    # CSR from NaN-presence (which can mistake a present NaN for absent).
+    csr_triple = (data_arr, indices_arr, indptr_arr)
+    return dense_nan, csr, csr_triple
 
 
 # --------------------------------------------------------------------------- #
@@ -296,6 +306,42 @@ def build_leaf_vector_model(seed):
     return model, n_feat, 2  # cat_col index for edge injection
 
 
+def build_large_margin_model(seed):
+    """LARGE-MARGIN XGBoost binary:logistic — the CR-01 ``sigmoid`` stressor.
+
+    Authored to drive prediction margins WELL past ±10 (deep trees + ``eta=1.0``
+    + many rounds over a cleanly-separable target), the regime where the f64 and
+    f32 ``sigmoid`` (``1/(1+exp(-x))``) differ by ~1e-7 (empirically ~6e-8 on
+    ±20 margins). That divergence sits INSIDE the 1e-5 gate — exactly the band
+    that masked CR-01 (the pre-05-06 engine narrowed the f64 buffer to f32 before
+    the postprocessor). The committed ``f64`` cells of this model are captured
+    from upstream ``treelite.gtil.predict`` which runs ``ApplyPostProcessor<double>``
+    (f64 sigmoid); the Rust engine must reproduce them via its ``sigmoid_f64``
+    twin (05-06). A silent collapse to the f32 path would deviate from THIS
+    golden by ~6e-8 — measured, not absorbed (GTIL-04, EQV-03/04).
+    """
+    rng = np.random.RandomState(seed)
+    n, n_feat = 200, 4
+    X = rng.uniform(-3.0, 3.0, size=(n, n_feat)).astype(np.float32)
+    # Cleanly separable target so the booster can drive scores to large margins.
+    y = ((X[:, 0] + X[:, 1] - X[:, 2]) > 0.0).astype(np.float32)
+    dtrain = xgboost.DMatrix(X, label=y)
+    booster = xgboost.train(
+        {
+            "objective": "binary:logistic",
+            "max_depth": 6,
+            "seed": seed,
+            "eta": 1.0,
+            "lambda": 0.0,
+            "min_child_weight": 0.0,
+        },
+        dtrain,
+        num_boost_round=20,
+    )
+    model = treelite.frontend.from_xgboost(booster)
+    return model, n_feat, 2  # cat_col index for edge injection
+
+
 def _preset_of(model):
     """Return the model's preset token (``f32`` / ``f64``) for the fixture name.
 
@@ -314,7 +360,7 @@ def capture_model(model_name, model, n_feat, cat_col):
         X_full = _build_edge_matrix(seed, n_rows, n_feat, cat_col)
         for indtype, np_dtype in (("f32", np.float32), ("f64", np.float64)):
             Xc = X_full.astype(np_dtype)
-            dense_nan, csr = _dense_and_csr(X_full, np_dtype, seed)
+            dense_nan, csr, csr_triple = _dense_and_csr(X_full, np_dtype, seed)
 
             for kind in KINDS:
                 # ---- DENSE cell --------------------------------------------
@@ -344,12 +390,13 @@ def capture_model(model_name, model, n_feat, cat_col):
                 )
                 _freeze_cell(
                     model_name, preset, indtype, kind, "sparse", seed,
-                    n_feat, dense_nan, sparse_out,
+                    n_feat, dense_nan, sparse_out, csr_triple=csr_triple,
                 )
 
 
 def _freeze_cell(
-    model_name, preset, indtype, kind, layout, seed, n_feat, X, out
+    model_name, preset, indtype, kind, layout, seed, n_feat, X, out,
+    csr_triple=None,
 ):
     name = f"{model_name}.{preset}.{indtype}.{kind}.{layout}.s{seed}.golden.json"
     payload = {
@@ -363,6 +410,17 @@ def _freeze_cell(
             _json_safe(np.asarray(X)), _json_safe(out)
         ),
     }
+    # WR-01: sparse cells carry the REAL frozen CSR triple (data/indices/indptr)
+    # so the Rust runner loads it verbatim instead of re-deriving a CSR from
+    # NaN-presence. ``data`` runs through ``_json_safe`` for non-finite safety
+    # (an edge cell may legitimately be +/-inf); indices/indptr are exact ints.
+    if layout == "sparse" and csr_triple is not None:
+        data_arr, indices_arr, indptr_arr = csr_triple
+        payload["csr"] = {
+            "data": _json_safe(np.asarray(data_arr)),
+            "indices": [int(v) for v in np.asarray(indices_arr).tolist()],
+            "indptr": [int(v) for v in np.asarray(indptr_arr).tolist()],
+        }
     _write_golden(name, payload)
 
 
@@ -391,7 +449,30 @@ def main():
     lv_model, lv_feat, lv_cat = build_leaf_vector_model(SEEDS[0])
     capture_model("leaf_vec_mc", lv_model, lv_feat, lv_cat)
 
+    # CR-01 large-margin sigmoid axis (the f64 cells exercise sigmoid_f64). Its
+    # model.bin is frozen from the SAME object that produced its goldens, so the
+    # Rust runner deserializes the exact model — no xgboost-frontend re-drift.
+    lm_model, lm_feat, lm_cat = build_large_margin_model(SEEDS[0])
+    capture_model("large_margin", lm_model, lm_feat, lm_cat)
+    _freeze_model_bin("large_margin.model.bin", lm_model)
+
     print("All GTIL matrix goldens captured (treelite-GTIL, scalar-cpu, D-07/D-09).")
+
+
+def _freeze_model_bin(name, model):
+    """Freeze a model's treelite v5 byte stream beside its goldens.
+
+    The Rust runner (``tests/gtil_matrix.rs``) loads ``<model>.model.bin`` via
+    ``treelite_core::deserialize``. The large-margin model is authored fresh
+    here, so its ``model.bin`` MUST be frozen from this exact object (the same
+    one that produced its golden cells) — mirroring ``capture_gtil_models.py``.
+    """
+    os.makedirs(OUT_DIR, exist_ok=True)
+    raw = model.serialize_bytes()
+    path = os.path.join(OUT_DIR, name)
+    with open(path, "wb") as f:
+        f.write(raw)
+    print(f"Wrote {path} ({len(raw)} bytes)")
 
 
 if __name__ == "__main__":
