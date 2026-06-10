@@ -230,6 +230,10 @@ fn gpu_crossover() -> anyhow::Result<()> {
     );
 
     let out_path = docs_path("GPU_CROSSOVER.md");
+    if let Some(parent) = out_path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("creating {}", parent.display()))?;
+    }
     std::fs::write(&out_path, &md)
         .with_context(|| format!("writing {}", out_path.display()))?;
 

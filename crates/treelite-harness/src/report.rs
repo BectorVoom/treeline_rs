@@ -259,12 +259,20 @@ pub fn emit(
     report_md_path: &Path,
 ) -> anyhow::Result<()> {
     let md = render_markdown(rows, manifest, device_name);
+    if let Some(parent) = report_md_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| anyhow::anyhow!("creating {}: {e}", parent.display()))?;
+    }
     std::fs::write(report_md_path, md)
         .map_err(|e| anyhow::anyhow!("writing {}: {e}", report_md_path.display()))?;
 
     let json_path = report_md_path.with_file_name("gpu_equivalence.json");
     let json = render_json(rows);
     let json_text = serde_json::to_string_pretty(&json)?;
+    if let Some(parent) = json_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| anyhow::anyhow!("creating {}: {e}", parent.display()))?;
+    }
     std::fs::write(&json_path, json_text)
         .map_err(|e| anyhow::anyhow!("writing {}: {e}", json_path.display()))?;
     Ok(())
