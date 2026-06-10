@@ -79,6 +79,19 @@ pub enum CubeclError {
         segment_len: u32,
     },
 
+    /// A backend was compiled in (its cargo feature is enabled) but no device
+    /// is present at runtime. A typed SKIP the caller branches on (D-05): the
+    /// harness/report marks the row "not run — no device", NEVER a silent CPU
+    /// fallback (that would hide which backend actually ran). The `&'static str`
+    /// backend tag keeps the enum's `PartialEq, Eq` derives intact. Produced by
+    /// the per-backend constructors in [`crate::device`] when client
+    /// construction fails on a missing device.
+    #[error("no device available for the {backend} backend (skip, not a failure)")]
+    DeviceUnavailable {
+        /// The selected backend's feature name (`"rocm"` / `"cuda"` / `"wgpu"`).
+        backend: &'static str,
+    },
+
     /// A model construct is not yet supported on the cubecl path (sparse CSR,
     /// categorical splits, or — until Wave 3 — the launcher itself). Routed to
     /// the scalar fallback by the host, never a panic. Catch-all so the

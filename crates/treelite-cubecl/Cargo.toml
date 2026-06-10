@@ -4,6 +4,19 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+# Additive GPU backends (D-04 / Pitfall 5): default = cpu-only (cpu rides the
+# workspace `cubecl = { features = ["cpu"] }`). Each feature here forwards to the
+# cubecl 0.10.0 umbrella crate's runtime feature — NO separate cubecl-hip /
+# cubecl-cuda / cubecl-wgpu deps, and explicitly NEVER the removed HIP typosquat
+# fork (RESEARCH Package Legitimacy Audit). The workspace root Cargo.toml stays
+# cpu-only so a plain `cargo build` / `cargo test --workspace` never requires
+# ROCm/CUDA system libs.
+[features]
+default = []
+rocm = ["cubecl/rocm"]
+cuda = ["cubecl/cuda"]
+wgpu = ["cubecl/wgpu"]
+
 [dependencies]
 treelite-core = { path = "../treelite-core" }
 treelite-gtil = { path = "../treelite-gtil" }
