@@ -222,7 +222,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 — the dense kernel slice)*
 
-- [ ] 06-04-PLAN.md — #[cube(launch)] kernels for all 4 predict kinds + leaf-vector broadcast (D-01) + predict_cpu host launcher with categorical/sparse scalar fallback (D-02), f32+f64 to 1e-5 (Wave 4)
+- [x] 06-04-PLAN.md — #[cube(launch)] kernels for all 4 predict kinds + leaf-vector broadcast (D-01) + predict_cpu host launcher with categorical/sparse scalar fallback (D-02), f32+f64 to 1e-5 (Wave 4)
 
 **Wave 5** *(blocked on Wave 4 — registration capstone)*
 
@@ -284,7 +284,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. Full XGBoost Loaders | 4/4 | Complete    | 2026-06-10 |
 | 4. LightGBM & scikit-learn Loaders | 8/8 | Complete    | 2026-06-10 |
 | 5. Full Scalar GTIL & Equivalence Harness | 7/7 | Complete    | 2026-06-10 |
-| 6. cubecl GTIL Kernels (CPU Backend) | 3/5 | In Progress|  |
+| 6. cubecl GTIL Kernels (CPU Backend) | 4/5 | In Progress|  |
 | 7. GPU Backend & Equivalence Report | 0/TBD | Not started | - |
 | 8. PyO3 Python Binding | 0/TBD | Not started | - |
 | 9. Memory-Efficiency Hardening | 0/TBD | Not started | - |

@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 06-02-PLAN.md (cubecl descent spike, A1-A4 retired)
-last_updated: "2026-06-10T11:46:22.625Z"
+last_updated: "2026-06-10T12:00:12.011Z"
 last_activity: 2026-06-10 -- Completed 06-02-PLAN.md (cubecl descent spike, A1-A4 retired)
 progress:
   total_phases: 9
   completed_phases: 5
   total_plans: 34
-  completed_plans: 32
+  completed_plans: 33
   percent: 56
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 06 (cubecl-gtil-kernels-cpu-backend) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-06-10 -- Completed 06-02-PLAN.md (cubecl descent spike, A1-A4 retired)
 
@@ -87,6 +87,7 @@ Progress: [███░░░░░] 40% (Phase 06 plans: 2/5)
 | Phase 06 P01 | 6min | 2 tasks | 12 files |
 | Phase 06 P02 | ~25min | 2 tasks | 4 files |
 | Phase 06 P03 | 10min | 2 tasks | 5 files |
+| Phase 06 P04 | ~30min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -183,6 +184,8 @@ Recent decisions affecting current work:
 - [06-02]: descend<F: Float> #[cube] helper authored ONCE in kernels/traversal.rs (kernels.rs file module -> kernels/ directory); Wave 3 reuses it verbatim (D-11). Break-free while-!is_leaf, if-STATEMENT child routing (never if-expr value), default_left==1u32 (bool-as-u32, Pitfall 4), ragged-SoA base/row_off offset indexing.
 - [Phase ?]: 06-03: per-column ragged-SoA upload (one Handle/column) + prefix-sum offset index + validate-before-device (SC3/GPU-05/T-06-06)
 - [Phase ?]: 06-03: 10 postprocessors as #[cube] helpers, verbatim cast order to 1e-5; copysign as sign-flip if-statement, exp2 via exp(x*ln2) (D-03/CR-01)
+- [Phase ?]: 06-04: Default-kind postprocessor applied host-side after kernel read-back (PredictCpuElem reuses public treelite_gtil::postprocessor::* arm-for-arm), byte-identical to scalar predict; default_raw produces the Raw margin
+- [Phase ?]: 06-04: descend generalized to descend<F,T> (Pitfall 6 input/threshold width split); spike call site updated to descend::<F,F>, unchanged behavior
 
 ### Pending Todos
 
@@ -205,6 +208,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T11:46:04.548Z
+Last session: 2026-06-10T11:59:47.763Z
 Stopped at: Completed 06-02-PLAN.md (cubecl descent spike, A1-A4 retired)
 Resume file: None

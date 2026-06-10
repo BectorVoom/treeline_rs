@@ -18,5 +18,10 @@ per the executor scope boundary).
     scoped `#[allow(clippy::eq_op)]` on the `if fv != fv {` line with a comment
     pointing at the 06-02 NaN-test decision, or use `F`'s native NaN intrinsic if
     Wave 3 finds a working associated-fn form. One line, no behavior change.
+  - **RESOLVED (plan 06-04, commit `2fdff21`):** plan 06-04 generalized `descend`
+    (the same `traversal.rs` it was already touching for the `<F, T>` Pitfall-6
+    change), so the scoped `#[allow(clippy::eq_op)]` was added on the `if fv != fv`
+    line with the 06-02 NaN-test comment. `cargo clippy -p treelite-cubecl` is now
+    clean (no warnings/errors). No behavior change.
   - **Also pre-existing:** `tests/spike.rs` emits a `clippy::type_complexity`
     warning on `soa_columns`'s 7-tuple return (06-02). Cosmetic.

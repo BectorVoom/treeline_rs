@@ -64,7 +64,7 @@ Requirements for the initial release. Each maps to a roadmap phase. All are hypo
 ### cubecl Compute & GPU
 
 - [x] **GPU-01**: The GTIL inference hot path (traversal + postprocessors) is implemented as cubecl kernels
-- [ ] **GPU-02**: The cubecl CPU backend is the default and is validated to 1e-5
+- [x] **GPU-02**: The cubecl CPU backend is the default and is validated to 1e-5
 - [ ] **GPU-03**: At least one GPU backend (ROCm, wgpu, or CUDA) is runtime-selectable and produces predictions. ROCm is the hardware-validated backend (developer's AMD device); CUDA is build-supported but validated only where an NVIDIA device exists
 - [ ] **GPU-04**: A GPU equivalence report documents observed deviation per model class within an accepted tolerance
 - [x] **GPU-05**: SoA model buffers upload host→device zero-copy
@@ -176,7 +176,7 @@ Which phases cover which requirements.
 | EQV-03 | Phase 5 | Complete |
 | EQV-04 | Phase 5 | Complete |
 | GPU-01 | Phase 6 | Complete |
-| GPU-02 | Phase 6 | Pending |
+| GPU-02 | Phase 6 | Complete |
 | GPU-05 | Phase 6 | Complete |
 | GPU-03 | Phase 7 | Pending |
 | GPU-04 | Phase 7 | Pending |
