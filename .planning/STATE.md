@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: 02-03 complete — next plan is 02-04 (Wave 2)
-last_updated: "2026-06-10T00:00:00.000Z"
-last_activity: 2026-06-10 -- 02-03 complete; v5 serializer/deserializer + zero-copy PyBuffer frames, golden byte-fidelity (951 B), workspace green
+stopped_at: 02-04 complete — next plan is 02-05 (Wave 3)
+last_updated: "2026-06-10T00:01:40.000Z"
+last_activity: 2026-06-10 -- 02-04 complete; DumpAsJSON (SER-03/D-04) + Model/Tree field accessors (SER-04), dump_json + fields tests green, workspace green
 progress:
   total_phases: 9
   completed_phases: 1
   total_plans: 9
-  completed_plans: 7
+  completed_plans: 8
   percent: 11
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 02 (builder-serialization) — EXECUTING
-Plan: 4 of 5
-Status: Plan 02-03 COMPLETE — v5 serializer/deserializer + zero-copy PyBuffer frames landed (9d68397, a7575df); SER-01/SER-02 green; golden round-trip byte-exact (951 B); next: 02-04 (Wave 2)
-Last activity: 2026-06-10 -- 02-03 complete; serialize_to_buffer/deserialize/serialize_to_pybuffer, 7 new tests, workspace green
+Plan: 5 of 5
+Status: Plan 02-04 COMPLETE — DumpAsJSON (SER-03/D-04) + Model/Tree field accessors (SER-04) landed (8a0597c, bd1c747); json.rs mirrors json_serializer.cc, fields read-only (no setters); dump_json + fields tests green; next: 02-05 (Wave 3)
+Last activity: 2026-06-10 -- 02-04 complete; serialize/json.rs + serialize/fields.rs, 5 new tests, workspace green
 
-Progress: [████░░░░░░] 44%
+Progress: [█████░░░░░] 56%
 
 ## Performance Metrics
 
@@ -58,6 +58,7 @@ Progress: [████░░░░░░] 44%
 | Phase 02 P01 | 10min | 3 tasks | 5 files |
 | Phase 02 P02 | 7min | 2 tasks | 9 files |
 | Phase 02 P03 | 75min | 2 tasks | 10 files |
+| Phase 02 P04 | 6min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -84,6 +85,9 @@ Recent decisions affecting current work:
 - [02-02]: leaf-vs-test mutual exclusivity is enforced structurally by the state machine (second detail call → WrongState), not a dedicated runtime conflict check. Orphan check always-on; D-08 validation toggle NOT ported.
 - [02-02]: concatenate adds NO postprocessor/base_scores cross-input equality checks — upstream model_concat.cc lacks them (BLD-02 fidelity).
 - [Phase ?]: 02-03: golden byte-fidelity proven via serialize(deserialize(golden_v5.bin))==blob, making the serializer gate loader-independent; XGBoost loader fidelity gap deferred (DEF-02-01)
+- [02-04]: DumpAsJSON reuses the existing enum as_str() spellings verbatim (D-04); no new strings invented; dump_as_json takes &mut Model to stage variant-derived type tags (mirrors upstream GetThresholdType()/GetLeafOutputType()).
+- [02-04]: D-04 equivalence asserted at the PARSED-value level, never by byte-comparing serialized JSON (RapidJSON vs serde_json float formatting differs, A4/Q3).
+- [02-04]: Model v5 bookkeeping readers promoted pub(crate)→pub (read-only, NO setter) as the SER-04 inspection surface, preserving field_accessor.cc Set-rejection fidelity (T-02-J02).
 
 ### Pending Todos
 
@@ -105,6 +109,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-09T23:54:33.882Z
-Stopped at: 02-02 complete — next plan is 02-03 (Wave 2)
-Resume file: .planning/phases/02-builder-serialization/02-03-PLAN.md
+Last session: 2026-06-10T00:01:40.000Z
+Stopped at: 02-04 complete — next plan is 02-05 (Wave 3)
+Resume file: .planning/phases/02-builder-serialization/02-05-PLAN.md

@@ -79,7 +79,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 02-04-PLAN.md — DumpAsJSON (SER-03) + Model/Tree field accessors (SER-04) (Wave 3)
+- [x] 02-04-PLAN.md — DumpAsJSON (SER-03) + Model/Tree field accessors (SER-04) (Wave 3) ✅
 - [ ] 02-05-PLAN.md — Rewire XGBoost loader through ModelBuilder (D-11) + 1e-5 regression gate (Wave 3)
 
 ### Phase 3: Full XGBoost Loaders
@@ -196,7 +196,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. End-to-End Spine | 4/4 | Complete    | 2026-06-09 |
-| 2. Builder & Serialization | 3/5 | In Progress|  |
+| 2. Builder & Serialization | 4/5 | In Progress|  |
 | 3. Full XGBoost Loaders | 0/TBD | Not started | - |
 | 4. LightGBM & scikit-learn Loaders | 0/TBD | Not started | - |
 | 5. Full Scalar GTIL & Equivalence Harness | 0/TBD | Not started | - |
