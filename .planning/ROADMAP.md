@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Builder & Serialization** - Validated `ModelBuilder` + bulk path + v5 binary/PyBuffer/JSON round-trip and field accessors (completed 2026-06-10)
 - [x] **Phase 3: Full XGBoost Loaders** - JSON + UBJSON + legacy binary with auto-detect and version-gated base_score margin transform (completed 2026-06-10)
 - [x] **Phase 4: LightGBM & scikit-learn Loaders** - LightGBM text + RF/ET/GBM/IsolationForest + HistGradientBoosting (completed 2026-06-10)
-- [ ] **Phase 5: Full Scalar GTIL & Equivalence Harness** - All 4 predict kinds, 10 postprocessors, sparse CSR, categoricals, output shaping, seeded golden harness at 1e-5 (plans 5/5 built; pending CR-01 gap closure — f64 postprocessor precision)
+- [ ] **Phase 5: Full Scalar GTIL & Equivalence Harness** - All 4 predict kinds, 10 postprocessors, sparse CSR, categoricals, output shaping, seeded golden harness at 1e-5 (plans 5/5 built + 2 gap-closure plans 05-06/05-07 for CR-01 + WR-01…WR-06)
 - [ ] **Phase 6: cubecl GTIL Kernels (CPU Backend)** - Traversal + postprocessor kernels; CPU backend default, validated to 1e-5 with zero-copy SoA upload
 - [ ] **Phase 7: GPU Backend & Equivalence Report** - Runtime-selectable GPU backend (CUDA/wgpu/ROCm) with a documented per-model-class deviation report
 - [ ] **Phase 8: PyO3 Python Binding** - load/predict/serialize/dump from Python with zero-copy numpy I/O and abi3 wheel
@@ -66,7 +66,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. A model round-trips through the v5 binary format (serialize → deserialize → identical model) and serializes to the v5 zero-copy PyBuffer representation.
   4. `DumpAsJSON` emits a model as JSON and field accessors expose model/tree fields for inspection.
 
-**Plans**: 5 plans
+**Plans**: 7 plans (5 shipped + 2 gap closure)
 Plans:
 **Wave 1**
 
@@ -164,7 +164,7 @@ Plans:
   3. Output shaping is correct — `GetOutputShape` per kind, leaf-vector broadcast, tree averaging, f64 base-score addition — and per-row tree summation is serial in `tree_id` order (parallelism only across rows).
   4. The harness generates random seeded dense + sparse CSR inputs, compares against C++-captured golden vectors (committed with a toolchain/libm manifest) across model types, both presets, and all predict kinds, asserting within 1e-5 and reporting the max observed deviation.
 
-**Plans**: 5 plans
+**Plans**: 7 plans (5 shipped + 2 gap closure)
 Plans:
 **Wave 1** *(Wave 0 — frozen contract; gates everything)*
 
@@ -185,6 +185,14 @@ Plans:
 **Wave 5** *(blocked on Wave 4 — full GTIL surface)*
 
 - [x] 05-05-PLAN.md — Exhaustive equivalence-matrix runner (1e-5 across model×preset×dtype×kind×{dense,sparse}×seed) + dense==sparse parity + max-dev report + `Manifest` `backend` field & backend-parameterized seam (D-09/D-11) (EQV-03/EQV-04)
+
+**Wave 6** *(gap closure — engine fixes; blocked on the shipped GTIL surface)*
+
+- [ ] 05-06-PLAN.md — CR-01 f64-input postprocessors run in f64 (softmax stays f32) + WR-02 shape/predict third-dim clamp agreement + WR-03 0-node-tree guard + WR-04 typed errors for malformed category-list/leaf-vector offsets + WR-05 `UnrecognizedOperator` on `kNone` (GTIL-04/05/06/07, ERR-01)
+
+**Wave 7** *(gap closure — fixtures + harness; blocked on 05-06 engine fixes)*
+
+- [ ] 05-07-PLAN.md — CR-01 large-margin f64 sigmoid/exponential fixture asserted to 1e-5 + WR-01 frozen CSR triple consumed verbatim by sparse cells + WR-06 f32/f64 paired divergence assertion (GTIL-02/04, EQV-01/02/03/04)
 
 ### Phase 6: cubecl GTIL Kernels (CPU Backend)
 
