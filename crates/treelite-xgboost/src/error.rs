@@ -61,6 +61,20 @@ pub enum XgbError {
         got: usize,
     },
 
+    /// A vector-form `base_score` string (`"[...]"`) had an element count that
+    /// disagreed with `num_target * num_class`. Mirrors `ParseBaseScore`
+    /// (`xgboost.cc:62-79`): a wrong-length vector base_score is a typed error
+    /// rather than a silent truncation (XGB-05, T-03-V04).
+    #[error(
+        "vector base_score has the wrong length: expected {expected} (num_target*num_class), got {got}"
+    )]
+    BaseScoreShape {
+        /// Expected element count (`num_target * num_class`).
+        expected: usize,
+        /// Actual element count found in the `base_score` string.
+        got: usize,
+    },
+
     /// The objective name is not one of the recognized XGBoost objectives.
     /// Upstream this is a `TREELITE_LOG(FATAL)` (`xgboost.cc:47`); here it is a
     /// typed `Err` per ERR-01.

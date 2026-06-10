@@ -1,93 +1,40 @@
-//! `treelite-xgboost` — the XGBoost-JSON model loader (Wave 2).
+//! `treelite-xgboost` — the XGBoost model loaders.
 //!
-//! Parses an XGBoost-JSON model into a [`treelite_core::Model`] (always the
-//! `F32` variant — XGBoost-JSON only ever yields `<f32, f32>`), porting the
+//! Parses an XGBoost model into a [`treelite_core::Model`] (always the `F32`
+//! variant — XGBoost only ever yields `<f32, f32>`), porting the
 //! objective→postprocessor map and the version-gated f64 `base_score`→margin
 //! transform verbatim from upstream Treelite v4.7.0.
+//!
+//! The recognized key set, the NaN/Inf mechanism (D-02), and the serde struct
+//! family live in [`json`]; this module owns the shared
+//! [`build_model_from_parsed`] convergence path (D-01) that the JSON loader (and
+//! the UBJSON/legacy loaders in 03-03/03-04) all funnel through, plus the
+//! per-tree builder emission that closes DEF-02-01 for byte fidelity (D-10).
 //!
 //! Ports `treelite-mainline/src/model_loader/detail/xgboost.{h,cc}` and
 //! `.../xgboost_json/delegated_handler.cc`.
 
 pub mod error;
+mod json;
 pub mod objective;
+
+/// Test-only surface exposing the crate-internal D-02 NaN/Inf primitives so the
+/// integration test `tests/nan_inf.rs` can exercise them directly. Hidden from
+/// docs; not part of the stable public API.
+#[doc(hidden)]
+pub mod test_support {
+    pub use crate::json::{de_vec_f32_value, replace_nonfinite};
+}
 
 pub use error::XgbError;
 pub use objective::{
-    get_postprocessor, prob_to_margin_exponential, prob_to_margin_sigmoid,
+    get_postprocessor, parse_base_score, prob_to_margin_exponential, prob_to_margin_sigmoid,
     transform_base_score_to_margin,
 };
 
-use serde::Deserialize;
+use json::{RegTreeJson, XgbModelJson};
 use treelite_builder::{BuilderMetadata, ModelBuilder};
 use treelite_core::{Model, Operator, TaskType};
-
-// ---------------------------------------------------------------------------
-// serde intermediate structs — the recognized XGBoost-JSON key subset.
-//
-// The recognized per-tree key list mirrors `delegated_handler.cc:484-490`; the
-// learner/booster nesting mirrors the `LearnerHandler` hierarchy. Numeric
-// scalar params in XGBoost-JSON are JSON *strings* (e.g. `"num_feature":"2"`,
-// `"base_score":"2.5E-1"`, `"num_nodes":"3"`), so they are deserialized as
-// `String` and parsed via `str::parse`. Parallel node arrays are real JSON
-// arrays.
-// ---------------------------------------------------------------------------
-
-#[derive(Deserialize)]
-struct XgbModelJson {
-    learner: Learner,
-    /// `[major, minor, patch]`; gates the base_score→margin transform.
-    #[serde(default)]
-    version: Vec<i32>,
-}
-
-#[derive(Deserialize)]
-struct Learner {
-    learner_model_param: LearnerModelParam,
-    gradient_booster: GradientBooster,
-    objective: Objective,
-}
-
-#[derive(Deserialize)]
-struct LearnerModelParam {
-    num_feature: String,
-    num_class: String,
-    num_target: String,
-    base_score: String,
-}
-
-#[derive(Deserialize)]
-struct GradientBooster {
-    model: BoosterModel,
-}
-
-#[derive(Deserialize)]
-struct BoosterModel {
-    trees: Vec<RegTreeJson>,
-    tree_info: Vec<i32>,
-}
-
-#[derive(Deserialize)]
-struct Objective {
-    name: String,
-}
-
-#[derive(Deserialize)]
-struct RegTreeJson {
-    tree_param: TreeParam,
-    left_children: Vec<i32>,
-    right_children: Vec<i32>,
-    split_indices: Vec<i32>,
-    /// 0 = numerical, 1 = categorical (Phase 1: all 0).
-    split_type: Vec<i32>,
-    split_conditions: Vec<f32>,
-    /// XGBoost stores `default_left` as 0/1 integers.
-    default_left: Vec<i32>,
-}
-
-#[derive(Deserialize)]
-struct TreeParam {
-    num_nodes: String,
-}
 
 // ---------------------------------------------------------------------------
 // Loader
@@ -141,17 +88,22 @@ fn check_dim(
     Ok(())
 }
 
-/// Build a single tree by driving the [`ModelBuilder`] (D-11).
+/// Build a single tree by driving the [`ModelBuilder`] (D-11), emitting the
+/// per-node `sum_hess`/`gain` columns that close DEF-02-01 (D-10).
 ///
 /// Ports the per-node build loop (`delegated_handler.cc:435-479`) onto the
 /// validated builder's fluent API instead of hand-assembling `Tree` columns: a
 /// node with `left_children[i] == -1` is a scalar leaf (`leaf_scalar`, since
-/// `size_leaf_vector <= 1` in Phase 1); every other node is a numerical test
-/// (`numerical_test` with `Operator::kLT` always — XGBoost never uses another
-/// operator). The loader's `check_dim` validators still run BEFORE emitting any
-/// builder call; the builder then re-validates topology (negative/dangling/
-/// orphan keys) as defense-in-depth. Node `i` is keyed by `i` itself, so the
-/// XGBoost child indices map 1:1 onto builder child keys.
+/// `size_leaf_vector <= 1` in the verify-narrow path); every other node is a
+/// numerical test (`numerical_test` with `Operator::kLT` always — XGBoost never
+/// uses another operator). Node `i` is keyed by `i`, so the XGBoost child
+/// indices map 1:1 onto builder child keys.
+///
+/// D-10 byte-fidelity (RESEARCH §DEF-02-01 table): `sum_hess` is set on EVERY
+/// node from `sum_hessian` (triggers builder CR-02 `any_sum_hess` → the column
+/// is emitted at length `num_nodes`); `gain` is set on INTERNAL nodes only from
+/// `loss_changes`; `data_count` is intentionally NOT set (upstream leaves it
+/// empty). Each stat array is dimension-checked before any builder emission.
 fn build_tree(
     builder: &mut ModelBuilder,
     tree_idx: usize,
@@ -166,12 +118,15 @@ fn build_tree(
     check_dim(tree_idx, "split_type", num_nodes, t.split_type.len())?;
     check_dim(tree_idx, "split_conditions", num_nodes, t.split_conditions.len())?;
     check_dim(tree_idx, "default_left", num_nodes, t.default_left.len())?;
+    // D-10 stat arrays: present in the recognized key set; validate before use.
+    check_dim(tree_idx, "sum_hessian", num_nodes, t.sum_hessian.len())?;
+    check_dim(tree_idx, "loss_changes", num_nodes, t.loss_changes.len())?;
 
     builder.start_tree()?;
     for i in 0..num_nodes {
         builder.start_node(i as i32)?;
         if t.left_children[i] == -1 {
-            // Scalar leaf output (size_leaf_vector <= 1 in Phase 1).
+            // Scalar leaf output (size_leaf_vector <= 1 in the verify-narrow path).
             builder.leaf_scalar(t.split_conditions[i])?;
         } else {
             // Numerical internal node (XGBoost always uses kLT).
@@ -183,24 +138,32 @@ fn build_tree(
                 t.left_children[i],
                 t.right_children[i],
             )?;
+            // gain on internal nodes only (delegated_handler.cc gain branch).
+            builder.gain(t.loss_changes[i] as f64)?;
         }
+        // sum_hess on EVERY node (delegated_handler.cc:471-477) — triggers the
+        // CR-02 `any_sum_hess` column emission for byte fidelity (D-10).
+        builder.sum_hess(t.sum_hessian[i] as f64)?;
         builder.end_node()?;
     }
     builder.end_tree()?;
     Ok(())
 }
 
-/// Load one XGBoost-JSON model into a [`treelite_core::Model`] (F32 variant).
+/// The shared convergence path (D-01): finalize header metadata, drive the
+/// [`ModelBuilder`], and commit, given an already-parsed [`XgbModelJson`].
 ///
-/// Ports the loader leg of the walking skeleton: parse the recognized
-/// XGBoost-JSON key subset, build each `Tree<f32>` per the per-node loop, then
-/// finalize header metadata exactly as `LearnerHandler::EndObject`
-/// (`delegated_handler.cc:811-903`). Malformed input (bad JSON, array-length
-/// mismatch, unrecognized objective) returns a typed [`XgbError`] — never a
-/// panic or an out-of-bounds index (ERR-01).
-pub fn load_xgboost_json(json: &str) -> Result<Model, XgbError> {
-    let parsed: XgbModelJson = serde_json::from_str(json)?;
-
+/// `load_xgboost_json` funnels here after `replace_nonfinite` + `from_str`; the
+/// UBJSON loader (03-03, via `serde_json::from_value`) and the legacy loader
+/// (03-04, by filling the same logical fields) reuse this exact path so all
+/// three formats produce an identical `Model` → identical v5 bytes (D-10).
+///
+/// Finalizes header metadata exactly as `LearnerHandler::EndObject`
+/// (`delegated_handler.cc:811-903`), applies the version-gated f64 `base_score`
+/// margin transform via [`parse_base_score`] (XGB-05, handling BOTH the scalar
+/// and the vector form), and passes `attributes: None` so `commit_model`
+/// defaults the serialized attributes to `"{}"` matching upstream (D-10).
+pub(crate) fn build_model_from_parsed(parsed: XgbModelJson) -> Result<Model, XgbError> {
     let lp = &parsed.learner.learner_model_param;
     let num_feature: i32 =
         require_non_negative("num_feature", parse_scalar("num_feature", &lp.num_feature)?)?;
@@ -208,7 +171,6 @@ pub fn load_xgboost_json(json: &str) -> Result<Model, XgbError> {
         require_non_negative("num_class", parse_scalar("num_class", &lp.num_class)?)?;
     let num_target: i32 =
         require_non_negative("num_target", parse_scalar("num_target", &lp.num_target)?)?;
-    let base_score: f64 = parse_scalar("base_score", &lp.base_score)?;
 
     let objective = &parsed.learner.objective.name;
     let postprocessor = get_postprocessor(objective)?.to_string();
@@ -216,18 +178,19 @@ pub fn load_xgboost_json(json: &str) -> Result<Model, XgbError> {
     let booster = &parsed.learner.gradient_booster.model;
     let num_tree = booster.trees.len();
 
-    // Header metadata finalize (delegated_handler.cc:847-872 — binary/regressor
-    // branch, since num_class <= 1 for binary:logistic). Computed up front so it
-    // can seed the builder metadata; values are byte-for-byte the same as the
-    // previous hand-assembled finalize, so predictions are unchanged.
-    let (task_type, num_class, target_id, class_id) = if num_class_param > 1 {
-        // Multi-class — not exercised by the Phase 1 fixture, but ported for
-        // completeness of the branch (delegated_handler.cc:824-846).
+    // Header metadata finalize (delegated_handler.cc:824-872). `num_class` on the
+    // Model is the per-class count vector; `expand_to` for base_scores is the
+    // product `num_target * effective_num_class` (effective class count is
+    // `max(num_class_param, 1)` — see the binary/regressor branch below).
+    let (task_type, num_class, target_id, class_id, effective_num_class) = if num_class_param > 1 {
+        // Multi-class — parse-wide (D-04); not exercised by the verify-narrow
+        // fixture but ported for completeness (delegated_handler.cc:824-846).
         (
             TaskType::kMultiClf,
             vec![num_class_param],
             vec![0; num_tree],
             booster.tree_info.clone(),
+            num_class_param,
         )
     } else {
         let task_type = if objective.starts_with("binary:") {
@@ -243,26 +206,28 @@ pub fn load_xgboost_json(json: &str) -> Result<Model, XgbError> {
             // Grove per target: target_id[i] = tree_info[i].
             booster.tree_info.clone(),
             vec![0; num_tree],
+            1,
         )
     };
 
-    // Base scores in f64, then version-gated margin transform
-    // (delegated_handler.cc:874-897). The transform fires when the version is
-    // empty or version[0] >= 1; the fixture's version [4,7,0] fires it.
-    let mut base_scores = vec![base_score];
-    let need_transform = parsed.version.is_empty() || parsed.version[0] >= 1;
-    if need_transform {
-        for e in base_scores.iter_mut() {
-            *e = transform_base_score_to_margin(&postprocessor, *e);
-        }
-    }
+    // Base scores: parse the scalar OR vector form, expand to
+    // `num_target * effective_num_class`, then apply the version-gated f64
+    // margin transform element-wise (XGB-05). The transform fires when the
+    // version is empty or version[0] >= 1; the fixture's version [3,2,0] fires
+    // it (a no-op for base_score=0.5 since sigmoid(0.5)=0 margin).
+    let expand_to = (num_target as i64) * (effective_num_class as i64);
+    let expand_to = usize::try_from(expand_to).map_err(|_| XgbError::InvalidScalar {
+        field: "num_target*num_class",
+        value: -1,
+    })?;
+    let apply_transform = parsed.version.is_empty() || parsed.version[0] >= 1;
+    let base_scores = parse_base_score(&lp.base_score, expand_to, &postprocessor, apply_transform)?;
 
-    // Drive the validated builder (D-11). Metadata carries the exact header
-    // values the previous finalize set; `attributes: Some(String::new())`
-    // preserves the prior empty `model.attributes` (the builder otherwise
-    // defaults absent attributes to `"{}"`). `sigmoid_alpha`/`ratio_c` are set
-    // after `commit_model` since the builder metadata API does not cover them;
-    // they keep their previous `1.0` values so predictions are unchanged.
+    // Drive the validated builder (D-11). `attributes: None` makes
+    // `commit_model` default the serialized attributes to `"{}"`, matching
+    // upstream's serialized attributes (D-10 / DEF-02-01 close — RESEARCH line
+    // 385). `sigmoid_alpha`/`ratio_c` are set after `commit_model` since the
+    // builder metadata API does not cover them; they keep their `1.0` values.
     let metadata = BuilderMetadata {
         num_feature,
         task_type,
@@ -274,20 +239,34 @@ pub fn load_xgboost_json(json: &str) -> Result<Model, XgbError> {
         class_id,
         postprocessor,
         base_scores,
-        attributes: Some(String::new()),
+        attributes: None,
     };
 
     let mut builder = ModelBuilder::new(metadata)?;
-    // Build the trees (F32 — XGBoost-JSON only ever yields <f32, f32>).
+    // Build the trees (F32 — XGBoost only ever yields <f32, f32>).
     for (i, t) in booster.trees.iter().enumerate() {
         build_tree(&mut builder, i, t)?;
     }
     let mut model = builder.commit_model()?;
 
     // Header fields the builder metadata API does not carry, preserved verbatim
-    // from the previous finalize (delegated_handler.cc:814,818).
+    // from the upstream finalize (delegated_handler.cc:814,818).
     model.sigmoid_alpha = 1.0;
     model.ratio_c = 1.0;
 
     Ok(model)
+}
+
+/// Load one XGBoost-JSON model into a [`treelite_core::Model`] (F32 variant).
+///
+/// Applies the D-02 NaN/Inf pre-lex ([`json::replace_nonfinite`]) so bare
+/// `NaN`/`Infinity`/`-Infinity` literals round-trip into f32 thresholds/leaf
+/// values, parses the recognized XGBoost-JSON key set into [`XgbModelJson`],
+/// then funnels through the shared [`build_model_from_parsed`] path. Malformed
+/// input (bad JSON, array-length mismatch, unrecognized objective) returns a
+/// typed [`XgbError`] — never a panic or an out-of-bounds index (ERR-01).
+pub fn load_xgboost_json(json: &str) -> Result<Model, XgbError> {
+    let prelexed = json::replace_nonfinite(json);
+    let parsed: XgbModelJson = serde_json::from_str(&prelexed)?;
+    build_model_from_parsed(parsed)
 }

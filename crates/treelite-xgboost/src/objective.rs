@@ -68,3 +68,65 @@ pub fn transform_base_score_to_margin(postprocessor: &str, base_score: f64) -> f
         _ => base_score,
     }
 }
+
+/// Parse the XGBoost `base_score` string (scalar OR vector form) into the
+/// `base_scores` column, applying the version-gated f64 margin transform
+/// element-wise (XGB-05).
+///
+/// Ports `ParseBaseScore` (`xgboost.cc:62-79`) + the
+/// `delegated_handler.cc:877-889` scalar/vector branch:
+/// - **Scalar form** (XGBoost <3.1, e.g. `"5E-1"`): parse one float, fill it
+///   across `expand_to` (= `num_target * num_class`) entries.
+/// - **Vector form** (XGBoost 3.1+, e.g. `"[5E-1]"` or `"[0.1, 0.2]"`): the
+///   string itself is a JSON array of floats; parse it (routing any embedded
+///   `NaN`/`Infinity`/`-Infinity` through the same D-02 sentinel mechanism), and
+///   its length MUST equal `expand_to` — a mismatch is a typed
+///   [`XgbError::BaseScoreShape`], never a silent truncation (T-03-V04).
+///
+/// Each element is parsed as `f32` then cast to **f64 BEFORE** the transform
+/// (RESEARCH Pitfall 3 — doing the sigmoid/exponential margin in f32 is the #1
+/// silent 1e-5 break). When `apply_transform` is `true`, every element is run
+/// through [`transform_base_score_to_margin`]; the version gate
+/// (`version.is_empty() || version[0] >= 1`) is decided by the caller.
+pub fn parse_base_score(
+    raw: &str,
+    expand_to: usize,
+    postprocessor: &str,
+    apply_transform: bool,
+) -> Result<Vec<f64>, XgbError> {
+    let trimmed = raw.trim_start();
+    let mut scores: Vec<f64> = if trimmed.starts_with('[') {
+        // Vector form: the string is a JSON array of floats. Route through the
+        // D-02 sentinel mechanism so an embedded NaN/Inf parses (upstream uses
+        // `kParseNanAndInfFlag`); recover each element via `de_vec_f32`.
+        let prelexed = crate::json::replace_nonfinite(raw);
+        let elems: Vec<f32> = serde_json::from_str::<crate::json::BaseScoreVec>(&prelexed)
+            .map_err(XgbError::Json)?
+            .0;
+        if elems.len() != expand_to {
+            return Err(XgbError::BaseScoreShape {
+                expected: expand_to,
+                got: elems.len(),
+            });
+        }
+        // Cast f32 → f64 BEFORE the transform (Pitfall 3).
+        elems.into_iter().map(|e| e as f64).collect()
+    } else {
+        // Scalar form: parse one f32, cast to f64, fill across expand_to.
+        let scalar: f32 = raw.parse().map_err(|e: std::num::ParseFloatError| {
+            XgbError::ParseScalar {
+                field: "base_score",
+                value: raw.to_string(),
+                source: Box::new(e),
+            }
+        })?;
+        vec![scalar as f64; expand_to]
+    };
+
+    if apply_transform {
+        for e in scores.iter_mut() {
+            *e = transform_base_score_to_margin(postprocessor, *e);
+        }
+    }
+    Ok(scores)
+}
