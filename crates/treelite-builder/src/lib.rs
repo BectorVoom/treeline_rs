@@ -97,6 +97,14 @@ struct NodeStaging {
     gain: f64,
     gain_present: bool,
     is_leaf: bool,
+    // Categorical-split staging (LGB-02). `categories` is the per-node category
+    // list (`SetCategoricalTest`'s `category_list`); `category_list_right_child`
+    // is the polarity (whether a category MATCH routes to the right child). Both
+    // are only meaningful when `node_type == kCategoricalTestNode`; for every
+    // other node they stay empty/false so the CSR columns built at `end_tree`
+    // match upstream's `AllocNode` defaults.
+    categories: Vec<u32>,
+    category_list_right_child: bool,
 }
 
 impl NodeStaging {
@@ -119,6 +127,8 @@ impl NodeStaging {
             gain: 0.0,
             gain_present: false,
             is_leaf: false,
+            categories: Vec::new(),
+            category_list_right_child: false,
         }
     }
 }
@@ -270,13 +280,24 @@ impl ModelBuilder {
     }
 
     /// Configure the current node as a categorical test
-    /// (`model_builder.cc:192-212`). Phase 2 stores the split as a
-    /// categorical-test node but does not yet exercise category lists in GTIL;
-    /// children are stored RAW like the numerical path.
+    /// (`model_builder.cc:192-212` → `SetCategoricalTest`, `detail/tree.h:138-155`).
+    ///
+    /// `categories` is the per-node category list tested for membership;
+    /// `category_list_right_child` is the polarity (whether a category MATCH
+    /// routes to the right child, mirroring upstream's
+    /// `category_list_right_child` argument). Both are stored on the node and
+    /// flattened into the CSR `category_list` / `category_list_begin` /
+    /// `category_list_end` / `category_list_right_child` columns at
+    /// [`Self::end_tree`]. `cmp` is `kNone` for a categorical node (no numeric
+    /// comparison). Children are stored RAW like the numerical path, resolved at
+    /// `end_tree`. This entry point is mode-agnostic — it sets no leaf/threshold
+    /// value, so it does not latch the f32/f64 numeric mode and works in both.
     pub fn categorical_test(
         &mut self,
         split_index: i32,
         default_left: bool,
+        categories: &[u32],
+        category_list_right_child: bool,
         left_child_key: i32,
         right_child_key: i32,
     ) -> Result<(), BuilderError> {
@@ -284,7 +305,6 @@ impl ModelBuilder {
             &[BuilderState::ExpectDetail],
             "numerical_test(), categorical_test(), leaf_scalar(), leaf_vector(), gain(), data_count(), or sum_hess()",
         )?;
-        self.guard_f32()?;
         self.validate_test_children(split_index, left_child_key, right_child_key)?;
 
         let node = &mut self.nodes[self.current_node_id as usize];
@@ -292,6 +312,8 @@ impl ModelBuilder {
         node.split_index = split_index;
         node.default_left = default_left;
         node.cmp = Operator::kNone;
+        node.categories = categories.to_vec();
+        node.category_list_right_child = category_list_right_child;
         node.raw_left = left_child_key;
         node.raw_right = right_child_key;
         node.is_leaf = false;
@@ -567,16 +589,42 @@ impl ModelBuilder {
         }
 
         // CR-01: per-node columns upstream `AllocNode` pushes on EVERY node
-        // (`detail/tree.h:79-84`). For the builder's no-category / no-leaf-vector
-        // trees the `leaf_vector_`/`category_list_` value buffers stay empty, so
-        // `leaf_vector_.Size()` and `category_list_.Size()` are 0 for every node —
-        // begin/end offsets are all 0, and `category_list_right_child_` is `false`.
-        // These columns must be length num_nodes (not 0) to match upstream.
-        let category_list_right_child = vec![false; num_nodes]; // tree.h:79
+        // (`detail/tree.h:79-84`). `leaf_vector_` stays empty for the builder
+        // (no leaf-vector entry point fills it), so the leaf-vector begin/end
+        // offsets are all 0. The CSR `category_list` columns, however, ARE filled
+        // when categorical nodes are present (`SetCategoricalTest`,
+        // `detail/tree.h:138-155`): each categorical node `Extend`s its category
+        // list onto the shared `category_list_` buffer and records a
+        // `[begin, end)` slice; non-categorical nodes get a zero-length
+        // `[len, len)` slice (begin == end) so `category_list(nid)` is empty,
+        // matching upstream where only categorical nodes set non-trivial offsets.
         let leaf_vector_begin = vec![0u64; num_nodes]; // tree.h:81 (leaf_vector_.Size() == 0)
         let leaf_vector_end = vec![0u64; num_nodes]; // tree.h:82 (leaf_vector_.Size() == 0)
-        let category_list_begin = vec![0u64; num_nodes]; // tree.h:83 (category_list_.Size() == 0)
-        let category_list_end = vec![0u64; num_nodes]; // tree.h:84 (category_list_.Size() == 0)
+
+        let mut category_list: Vec<u32> = Vec::new();
+        let mut category_list_begin = vec![0u64; num_nodes]; // tree.h:83
+        let mut category_list_end = vec![0u64; num_nodes]; // tree.h:84
+        let mut category_list_right_child = vec![false; num_nodes]; // tree.h:79
+        for (nid, n) in self.nodes.iter().enumerate() {
+            if n.node_type == TreeNodeType::kCategoricalTestNode {
+                // SetCategoricalTest (detail/tree.h:143-152): begin = current
+                // buffer size, Extend, end = new size. Non-categorical nodes keep
+                // begin == end == current size (empty slice), exactly mirroring
+                // upstream where they never touch category_list_.
+                let begin = category_list.len() as u64;
+                category_list.extend_from_slice(&n.categories);
+                let end = category_list.len() as u64;
+                category_list_begin[nid] = begin;
+                category_list_end[nid] = end;
+                category_list_right_child[nid] = n.category_list_right_child;
+            } else {
+                // Empty [len, len) slice so category_list(nid) is empty without
+                // shifting any later node's offsets.
+                let cur = category_list.len() as u64;
+                category_list_begin[nid] = cur;
+                category_list_end[nid] = cur;
+            }
+        }
 
         // CR-02: empty-unless-set stat columns, ported from upstream `AllocNode`'s
         // `if (!*_present_.Empty())` guards (`detail/tree.h:87-98`). Each stat pair
@@ -608,6 +656,10 @@ impl ModelBuilder {
                 $tree.category_list_right_child = TreeBuf::from_owned(category_list_right_child);
                 $tree.leaf_vector_begin = TreeBuf::from_owned(leaf_vector_begin);
                 $tree.leaf_vector_end = TreeBuf::from_owned(leaf_vector_end);
+                // CSR category list value buffer + begin/end offsets (LGB-02).
+                // Empty for non-categorical trees (matching upstream's untouched
+                // category_list_ of length 0).
+                $tree.category_list = TreeBuf::from_owned(category_list);
                 $tree.category_list_begin = TreeBuf::from_owned(category_list_begin);
                 $tree.category_list_end = TreeBuf::from_owned(category_list_end);
                 // CR-02 empty-unless-set stat columns (tree.h:87-98).

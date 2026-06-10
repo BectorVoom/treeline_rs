@@ -239,7 +239,13 @@ fn parse_tree(idx: usize, dict: &HashMap<String, String>) -> Result<LGBTree, Lgb
         }
     };
 
-    // Categorical arrays (lightgbm.cc:324-333). LGB-02; parsed for completeness.
+    // Categorical arrays (lightgbm.cc:324-333). LGB-02.
+    //
+    // Security domain (T-04-10): `cat_boundaries` is `num_cat + 1` monotone u64
+    // offsets into `cat_threshold`; `cat_threshold.len()` MUST equal
+    // `cat_boundaries.back()`. We validate the EXACT length (not just `>=`,
+    // which `parse_array` allows by truncation) and reject a non-monotone
+    // boundary BEFORE any slicing downstream, so `lib.rs` can never index OOB.
     let (cat_boundaries, cat_threshold) = if num_cat > 0 {
         let cb: Vec<u64> = parse_array(
             &where_,
@@ -247,13 +253,32 @@ fn parse_tree(idx: usize, dict: &HashMap<String, String>) -> Result<LGBTree, Lgb
             require(dict, &where_, "cat_boundaries")?,
             (num_cat as usize) + 1,
         )?;
+        // Boundaries must be monotone non-decreasing (each split's slice
+        // [cb[k], cb[k+1]) is well-formed) and start at 0.
+        for w in cb.windows(2) {
+            if w[1] < w[0] {
+                return Err(LgbError::Bitset {
+                    tree: idx,
+                    detail: format!(
+                        "cat_boundaries not monotone: {} follows {}",
+                        w[1], w[0]
+                    ),
+                });
+            }
+        }
         let total = *cb.last().unwrap_or(&0) as usize;
-        let ct: Vec<u32> = parse_array(
-            &where_,
-            "cat_threshold",
-            require(dict, &where_, "cat_threshold")?,
-            total,
-        )?;
+        // Count the actual tokens to enforce EXACT length equality (T-04-10).
+        let ct_text = require(dict, &where_, "cat_threshold")?;
+        let ct_tokens = ct_text.trim().split(' ').filter(|t| !t.is_empty()).count();
+        if ct_tokens != total {
+            return Err(LgbError::Bitset {
+                tree: idx,
+                detail: format!(
+                    "cat_threshold length {ct_tokens} != cat_boundaries.back() {total}"
+                ),
+            });
+        }
+        let ct: Vec<u32> = parse_array(&where_, "cat_threshold", ct_text, total)?;
         (cb, ct)
     } else {
         (Vec::new(), Vec::new())
@@ -372,5 +397,50 @@ mod tests {
         // No max_feature_idx → typed Parse error.
         let bad = "num_class=1\nobjective=regression\n";
         assert!(matches!(parse_lightgbm(bad), Err(LgbError::Parse { .. })));
+    }
+
+    /// A small categorical tree: 2 leaves, one categorical split with one cat,
+    /// `cat_boundaries=0 1` (one bitset word), `cat_threshold=6` (bit 1+2 set).
+    fn categorical_tree_text(cat_threshold: &str, cat_boundaries: &str) -> String {
+        format!(
+            "num_class=1\nmax_feature_idx=0\nobjective=regression\n\
+             Tree=0\nnum_leaves=2\nnum_cat=1\n\
+             split_feature=0\ndecision_type=1\nthreshold=0\n\
+             left_child=-1\nright_child=-2\n\
+             cat_boundaries={cat_boundaries}\ncat_threshold={cat_threshold}\n\
+             leaf_value=1 2\n"
+        )
+    }
+
+    #[test]
+    fn cat_fields_parse_at_per_field_precision() {
+        // cat_boundaries are u64, cat_threshold are u32 (LGB-02). Use a value
+        // larger than u32::MAX in cat_boundaries to prove the u64 width, and a
+        // value larger than i32::MAX (but < u32::MAX) in cat_threshold to prove
+        // the u32 width. cat_boundaries=0 1 → total=1, one cat_threshold word.
+        let text = categorical_tree_text("4000000000", "0 1");
+        let m = parse_lightgbm(&text).expect("parse categorical tree");
+        let t = &m.trees[0];
+        assert_eq!(t.num_cat, 1);
+        // u64 boundaries.
+        assert_eq!(t.cat_boundaries, vec![0u64, 1u64]);
+        // u32 threshold: 4_000_000_000 > i32::MAX, fits u32.
+        assert_eq!(t.cat_threshold, vec![4_000_000_000u32]);
+    }
+
+    #[test]
+    fn cat_threshold_length_mismatch_is_typed_error_not_oob() {
+        // cat_boundaries=0 2 says 2 threshold words, but only 1 is supplied.
+        let text = categorical_tree_text("6", "0 2");
+        let err = parse_lightgbm(&text).unwrap_err();
+        assert!(matches!(err, LgbError::Bitset { .. }), "got {err:?}");
+    }
+
+    #[test]
+    fn cat_boundaries_non_monotone_is_typed_error() {
+        // cat_boundaries=5 1 is non-monotone (1 < 5).
+        let text = categorical_tree_text("6", "5 1");
+        let err = parse_lightgbm(&text).unwrap_err();
+        assert!(matches!(err, LgbError::Bitset { .. }), "got {err:?}");
     }
 }

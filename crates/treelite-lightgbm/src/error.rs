@@ -93,6 +93,21 @@ pub enum LgbError {
         alpha: f64,
     },
 
+    /// A categorical split's bitset slicing was malformed: the `cat_threshold`
+    /// length disagreed with `cat_boundaries.back()`, a node's categorical index
+    /// (`threshold[node]` cast to an index) fell outside `cat_boundaries`, or a
+    /// boundary pair was non-monotone. Upstream this would be an out-of-bounds
+    /// access into `cat_threshold` / `cat_boundaries` during `BitsetToList`
+    /// slicing (`lightgbm.cc:563-573`); here it is a typed, recoverable error so
+    /// a crafted model can never trigger an OOB slice (T-04-10, T-04-11, ASVS V5).
+    #[error("malformed categorical split (tree {tree}): {detail}")]
+    Bitset {
+        /// The tree index whose categorical split was malformed.
+        tree: usize,
+        /// Human-readable cause (length mismatch, out-of-range cat index, ...).
+        detail: String,
+    },
+
     /// The objective name is not one of the recognized LightGBM objectives.
     /// Upstream this is a `TREELITE_LOG(FATAL)` (`lightgbm.h:54`); here it is a
     /// typed `Err` per ERR-01.

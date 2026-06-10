@@ -19,6 +19,7 @@
 
 use std::collections::VecDeque;
 
+pub mod bitset;
 pub mod error;
 pub mod objective;
 pub mod parse;
@@ -180,13 +181,79 @@ fn build_tree(
             dfs_index += 1;
 
             if get_decision_type(decision_type, CATEGORICAL_MASK) {
-                // Categorical split — LGB-02, deferred to Plan 04-05. Reject with
-                // a typed error rather than silently mis-predicting.
-                return Err(LgbError::Parse {
-                    line: format!("Tree {tree_idx}"),
-                    detail: "categorical split (LGB-02) not yet supported in this loader slice"
-                        .to_string(),
-                });
+                // Categorical split (lightgbm.cc:563-573). The node's `threshold`
+                // field holds the CATEGORICAL INDEX (cat_idx), not a numeric
+                // threshold: cat_idx = static_cast<int>(threshold[old_node_id]).
+                let cat_idx_raw = tree.threshold[oi];
+                // The cast truncates toward zero; reject a negative / non-integral
+                // / out-of-range index BEFORE slicing cat_boundaries (T-04-10).
+                if !(cat_idx_raw.is_finite() && cat_idx_raw >= 0.0) {
+                    return Err(LgbError::Bitset {
+                        tree: tree_idx,
+                        detail: format!("categorical index {cat_idx_raw} is not a non-negative integer"),
+                    });
+                }
+                let cat_idx = cat_idx_raw as usize; // truncates toward zero (static_cast<int>).
+                // cat_boundaries has num_cat + 1 entries; need cat_idx and
+                // cat_idx + 1 in range (the [begin, end) slice bounds).
+                if cat_idx + 1 >= tree.cat_boundaries.len() {
+                    return Err(LgbError::Bitset {
+                        tree: tree_idx,
+                        detail: format!(
+                            "cat_idx {cat_idx} out of range (cat_boundaries has {} entries)",
+                            tree.cat_boundaries.len()
+                        ),
+                    });
+                }
+                let begin = tree.cat_boundaries[cat_idx] as usize;
+                let end = tree.cat_boundaries[cat_idx + 1] as usize;
+                // parse.rs already validated monotonicity + total length, but
+                // bounds-check the concrete slice once more (defense in depth).
+                if begin > end || end > tree.cat_threshold.len() {
+                    return Err(LgbError::Bitset {
+                        tree: tree_idx,
+                        detail: format!(
+                            "categorical slice [{begin}, {end}) out of cat_threshold (len {})",
+                            tree.cat_threshold.len()
+                        ),
+                    });
+                }
+                let bits = &tree.cat_threshold[begin..end];
+                let categories = bitset::bitset_to_list(bits);
+                // Categorical splits ignore the missing_type field: NaNs always
+                // map to the RIGHT child, so default_left = false and
+                // category_list_right_child = false (a category MATCH routes
+                // LEFT, i.e. left_categories) — lightgbm.cc:569-573.
+                builder.categorical_test(
+                    split_index,
+                    /* default_left = */ false,
+                    &categories,
+                    /* category_list_right_child = */ false,
+                    left_child_new,
+                    right_child_new,
+                )?;
+
+                // internal data count / split gain (same as the numerical path,
+                // lightgbm.cc:588-595).
+                if !tree.internal_count.is_empty() {
+                    let dc = tree.internal_count[oi];
+                    if dc < 0 {
+                        return Err(LgbError::Parse {
+                            line: format!("Tree {tree_idx}"),
+                            detail: format!("negative internal_count {dc}"),
+                        });
+                    }
+                    builder.data_count(dc as u64)?;
+                }
+                if !tree.split_gain.is_empty() {
+                    builder.gain(tree.split_gain[oi] as f64)?;
+                }
+
+                // Enqueue children at the FRONT (lightgbm.cc:596-597).
+                queue.push_front((left_child_old, left_child_new));
+                queue.push_front((right_child_old, right_child_new));
+                builder.end_node()?;
+                continue;
             }
 
             // Numerical split (lightgbm.cc:575-586).
@@ -348,5 +415,53 @@ mod tests {
         let m = "num_class=1\nmax_feature_idx=0\nobjective=regression\nTree=0\nnum_leaves=1\nnum_cat=0\nleaf_value=7.5\n";
         let model = load_lightgbm(m).expect("load single-leaf tree");
         assert!(matches!(model.variant, treelite_core::ModelVariant::F64(_)));
+    }
+
+    /// A 2-leaf categorical tree: root is a categorical split on feature 0, with
+    /// one categorical index (cat_idx=0). cat_boundaries=0 1 (one bitset word);
+    /// cat_threshold=6 → bits 1 and 2 set → categories {1, 2}. left_child=-1
+    /// (leaf 0, value 10), right_child=-2 (leaf 1, value 20).
+    fn categorical_model_text() -> String {
+        // decision_type=1 → categorical mask bit set. threshold=0 → cat_idx 0.
+        "num_class=1\nmax_feature_idx=0\nobjective=regression\n\
+         Tree=0\nnum_leaves=2\nnum_cat=1\n\
+         split_feature=0\ndecision_type=1\nthreshold=0\n\
+         left_child=-1\nright_child=-2\n\
+         cat_boundaries=0 1\ncat_threshold=6\n\
+         leaf_value=10 20\n"
+            .to_string()
+    }
+
+    #[test]
+    fn categorical_node_emits_categorical_test_default_left_false() {
+        let model = load_lightgbm(&categorical_model_text()).expect("load categorical tree");
+        let treelite_core::ModelVariant::F64(preset) = &model.variant else {
+            panic!("LightGBM must load into the F64 variant");
+        };
+        let tree = &preset.trees[0];
+        // Root node (id 0) is the categorical split.
+        assert_eq!(
+            tree.node_type(0),
+            treelite_core::TreeNodeType::kCategoricalTestNode
+        );
+        // Categorical splits set default_left = false (NaN → right, LGB).
+        assert!(!tree.default_left(0));
+        // category_list_right_child = false: a MATCH routes to the left child.
+        assert!(!tree.category_list_right_child(0));
+        // The decoded category list from cat_threshold=6 (bits 1, 2) is {1, 2}.
+        assert_eq!(tree.category_list(0), &[1u32, 2u32]);
+    }
+
+    #[test]
+    fn categorical_index_out_of_range_is_typed_error_not_panic() {
+        // cat_boundaries=0 1 has 2 entries → only cat_idx 0 is valid. threshold=5
+        // → cat_idx 5 is out of range; must be a typed Bitset error, not a panic.
+        let bad = "num_class=1\nmax_feature_idx=0\nobjective=regression\n\
+                   Tree=0\nnum_leaves=2\nnum_cat=1\n\
+                   split_feature=0\ndecision_type=1\nthreshold=5\n\
+                   left_child=-1\nright_child=-2\n\
+                   cat_boundaries=0 1\ncat_threshold=6\n\
+                   leaf_value=10 20\n";
+        assert!(matches!(load_lightgbm(bad), Err(LgbError::Bitset { .. })));
     }
 }
