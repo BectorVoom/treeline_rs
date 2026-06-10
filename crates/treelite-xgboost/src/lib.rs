@@ -17,10 +17,12 @@
 mod detect;
 pub mod error;
 mod json;
+mod legacy;
 pub mod objective;
 mod ubjson;
 
 pub use detect::detect_xgboost_format;
+pub use legacy::load_xgboost_legacy;
 
 /// Test-only surface exposing the crate-internal D-02 NaN/Inf primitives so the
 /// integration test `tests/nan_inf.rs` can exercise them directly. Hidden from

@@ -177,6 +177,96 @@ pub(crate) struct XgbModelJson {
     pub(crate) version: Vec<i32>,
 }
 
+impl XgbModelJson {
+    /// Construct an [`XgbModelJson`] directly from already-decoded legacy fields,
+    /// bypassing the JSON/UBJSON deserializers so the legacy loader (03-04) lands
+    /// on the IDENTICAL convergence path (`build_model_from_parsed`) the JSON and
+    /// UBJSON loaders use (D-01).
+    ///
+    /// `version` is set to `[major_version]` so the shared path's transform gate
+    /// (`version.is_empty() || version[0] >= 1`) reproduces the legacy gate
+    /// (`major_version >= 1`) exactly (XGB-05). All scalar params are formatted
+    /// back to strings (XGBoost stores them as strings in JSON/UBJSON); f32
+    /// `base_score` round-trips losslessly through `f32::to_string` → `f32::parse`.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn from_legacy_fields(
+        major_version: i32,
+        num_feature: i32,
+        num_class: i32,
+        num_target: i32,
+        base_score: f32,
+        objective_name: String,
+        tree_info: Vec<i32>,
+        trees: Vec<RegTreeJson>,
+    ) -> Self {
+        XgbModelJson {
+            version: vec![major_version],
+            learner: Learner {
+                learner_model_param: LearnerModelParam {
+                    num_feature: num_feature.to_string(),
+                    num_class: num_class.to_string(),
+                    num_target: num_target.to_string(),
+                    base_score: base_score.to_string(),
+                    boost_from_average: None,
+                },
+                gradient_booster: GradientBooster {
+                    model: BoosterModel {
+                        trees,
+                        tree_info,
+                        cats: None,
+                    },
+                    gbtree: None,
+                    weight_drop: None,
+                },
+                objective: Objective {
+                    name: objective_name,
+                },
+            },
+        }
+    }
+}
+
+impl RegTreeJson {
+    /// Construct a [`RegTreeJson`] directly from already-decoded legacy node
+    /// columns. `split_type` defaults to all-numerical (`0`); the parse-wide
+    /// fields (categorical / leaf-vector) are left empty. Used by the legacy
+    /// loader (03-04) so it converges at the shared `build_tree` emission path.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn from_legacy_nodes(
+        num_nodes: i32,
+        left_children: Vec<i32>,
+        right_children: Vec<i32>,
+        split_indices: Vec<i32>,
+        split_conditions: Vec<f32>,
+        default_left: Vec<i32>,
+        loss_changes: Vec<f32>,
+        sum_hessian: Vec<f32>,
+    ) -> Self {
+        let n = left_children.len();
+        RegTreeJson {
+            tree_param: TreeParam {
+                num_nodes: num_nodes.to_string(),
+                num_feature: None,
+                size_leaf_vector: None,
+            },
+            left_children,
+            right_children,
+            split_indices,
+            split_type: vec![0; n],
+            split_conditions,
+            default_left,
+            loss_changes,
+            sum_hessian,
+            base_weights: Vec::new(),
+            leaf_weights: Vec::new(),
+            categories_segments: Vec::new(),
+            categories_sizes: Vec::new(),
+            categories_nodes: Vec::new(),
+            categories: Vec::new(),
+        }
+    }
+}
+
 /// `LearnerHandler` (`:916-919`): `learner_model_param`, `gradient_booster`,
 /// `objective`. `attributes` / `feature_names` / `feature_types` are ignored.
 #[derive(Deserialize)]

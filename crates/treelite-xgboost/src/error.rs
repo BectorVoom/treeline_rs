@@ -98,6 +98,28 @@ pub enum XgbError {
         detail: String,
     },
 
+    /// The XGBoost legacy-binary stream could not be decoded: a truncated read
+    /// (mid-`LearnerModelParam`, mid-struct, or a length-prefixed name/array
+    /// running past the buffer), an unsupported base64 (`bs64`) framing, a
+    /// struct-size mismatch, a non-`gbtree`/`dart` booster name, or an invalid
+    /// `num_nodes`/`num_roots`.
+    ///
+    /// The hand-rolled little-endian cursor (D-07/D-08) reads every field via a
+    /// bounds-checked `buf.get(pos..pos+N)` and validates each length/count
+    /// against the bytes remaining BEFORE allocating, so a truncated or hostile
+    /// stream surfaces here as a typed error rather than an out-of-bounds panic
+    /// or an OOM pre-allocation (ASVS V5, T-03-L01..L06). Fields are decoded with
+    /// `from_le_bytes` — never a native-endian `transmute`/`bytemuck::cast` onto
+    /// a `#[repr(C)]` struct (D-08).
+    #[error("malformed XGBoost legacy-binary at byte {pos}: {detail}")]
+    Legacy {
+        /// Byte offset into the legacy stream where decoding failed.
+        pos: usize,
+        /// Human-readable cause (truncation, bad magic, struct-size mismatch,
+        /// bad booster name, invalid node/root count).
+        detail: String,
+    },
+
     /// An error bubbled up from `treelite-core` (e.g. an unknown enum string).
     #[error(transparent)]
     Core(#[from] treelite_core::CoreError),
