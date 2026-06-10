@@ -29,10 +29,20 @@
 //! `model.ratio_c` are `f32` model fields on BOTH paths — they are cast into
 //! the element type at the operation site, never stored as the element type.
 //!
-//! `softmax` is the ONE exception: upstream `postprocessor.cc:59-73` hardcodes
-//! `float max_margin` / `float t` for EVERY `InputT`, so softmax stays `f32`
-//! even on an f64-input model (the f64 path narrows that row to f32, runs the
-//! `f32` [`softmax`], and widens back). There is deliberately NO `softmax_f64`.
+//! `softmax` is a PARTIAL exception: upstream `softmax<InputT>`
+//! (`postprocessor.cc:57-75`) hardcodes `float max_margin` and `float t` for
+//! EVERY `InputT`, but it still operates on the `InputT* row` in place — so for
+//! the `double` instantiation (`ApplyPostProcessor<double>`) the cell reads
+//! `row[i]` stay **f64**: `t = std::exp(row[i] - max_margin)` is
+//! `double - float -> double`, `std::exp` runs in **double** (narrowing only the
+//! result to `float t`), and the final `row[i] /= static_cast<float>(norm_const)`
+//! is a `double /= float` divide. Collapsing the whole row to f32 before the
+//! subtraction/exp/divide (the pre-05-08 path) shifts ULPs and was CR-01's exact
+//! defect, just for softmax. Therefore [`softmax`] (f32 cells, for
+//! `ApplyPostProcessor<float>`) and [`softmax_f64`] (f64 cells with the
+//! `max_margin`/`t`/divisor float split, for `ApplyPostProcessor<double>`) are
+//! BOTH shipped; only `max_margin`, `t`, and the final divisor are `f32` on
+//! either path.
 
 /// `identity` postprocessor (`postprocessor.cc:19-20`): returns the margin
 /// unchanged. The `_alpha` argument mirrors the upstream signature shape (the
@@ -179,6 +189,64 @@ pub fn softmax(row: &mut [f32]) {
         *cell = t;
     }
     let divisor = norm_const as f32;
+    for cell in row.iter_mut() {
+        *cell /= divisor;
+    }
+}
+
+/// f64 twin of [`softmax`] (`softmax<double>`, `postprocessor.cc:57-75`),
+/// ported VERBATIM with respect to the mixed f32/f64 placement — this ordering
+/// IS the 1e-5 cast-ordering contract, do not "simplify" by narrowing the row
+/// to f32 (that was CR-01).
+///
+/// For the `double` instantiation the upstream body keeps the `double* row`
+/// cells in **f64**; only `max_margin`, `t`, and the final divisor are `float`:
+///
+/// ```cpp
+/// float max_margin = row[0];        // double row[0] narrowed to float
+/// double norm_const = 0.0;
+/// float t;
+/// for (i = 1; i < n; ++i) if (row[i] > max_margin) max_margin = row[i];
+/// for (i = 0; i < n; ++i) { t = std::exp(row[i] - max_margin);   // double - float -> double; std::exp in double; narrow to float t
+///                           norm_const += t; row[i] = t; }        // double += float; double cell = float t
+/// for (i = 0; i < n; ++i) row[i] /= static_cast<float>(norm_const);  // double /= float
+/// ```
+///
+/// Cast-placement notes that must be preserved exactly:
+/// - The max loop compares `row[i] > max_margin` in **f64** (the `f32`
+///   `max_margin` promotes to `f64` for the comparison; the assignment narrows
+///   the `f64` cell back to `f32`).
+/// - `t = std::exp(row[i] - max_margin)`: the subtraction is `f64 - f32 -> f64`,
+///   `exp` runs in **f64**, and only the result narrows to the `f32` `t`.
+/// - The final divide is `*cell (f64) /= divisor (f64 derived from
+///   `norm_const as f32`)` — a `double /= float` divide, NOT an f32 divide
+///   (WR-03).
+///
+/// An empty row is a no-op (the upstream loops never execute for
+/// `num_class == 0`).
+pub fn softmax_f64(row: &mut [f64]) {
+    if row.is_empty() {
+        return;
+    }
+    // float max_margin = row[0];  (double -> float narrow)
+    let mut max_margin: f32 = row[0] as f32;
+    // if (row[i] > max_margin) max_margin = row[i];
+    // Comparison promotes max_margin (f32) to f64; assignment narrows row[i] to f32.
+    for &x in row.iter().skip(1) {
+        if x > max_margin as f64 {
+            max_margin = x as f32;
+        }
+    }
+    let mut norm_const: f64 = 0.0;
+    for cell in row.iter_mut() {
+        // t = std::exp(row[i] - max_margin): double - float -> double, exp in
+        // double, narrow the result to f32 t.
+        let t: f32 = (*cell - max_margin as f64).exp() as f32;
+        norm_const += t as f64; // norm_const (double) += t (float promotes)
+        *cell = t as f64; // row[i] (double) = t (float promotes)
+    }
+    // static_cast<float>(norm_const), then double /= float.
+    let divisor: f64 = norm_const as f32 as f64;
     for cell in row.iter_mut() {
         *cell /= divisor;
     }
@@ -444,6 +512,90 @@ mod tests {
     /// The f64 twins reduce to their f32 cousins' VALUE on small, exactly
     /// representable inputs (sanity: same math, just wider) — guards against a
     /// transcription error in a twin.
+    /// `softmax_f64` must keep its row cells in f64 for the subtraction/exp/
+    /// divide — so on a double-precision row whose values do NOT survive an f32
+    /// round-trip, it diverges from the collapsed path
+    /// `softmax(row narrowed to f32) widened back to f64` (CR-01 / WR-03). The
+    /// divergence sits in the ~1e-8 relative band (the regime that masked CR-01),
+    /// and the two paths must not be bit-identical on at least one cell.
+    #[test]
+    fn softmax_f64_diverges_from_collapsed_f32_on_precise_row() {
+        // A 4-class multiclass row with f64 fractional bits below the f32 ULP,
+        // plus a near-tie between the top two margins (the worst case for the
+        // max-subtraction). These mimic the leaf_vec_mc softprob margins.
+        let base = [12.300_000_017_3_f64, 12.300_000_009_1, -3.7, 5.55];
+
+        let mut f64_row = base;
+        softmax_f64(&mut f64_row);
+
+        let mut collapsed: Vec<f32> = base.iter().map(|&v| v as f32).collect();
+        softmax(&mut collapsed);
+        let collapsed_f64: Vec<f64> = collapsed.iter().map(|&v| v as f64).collect();
+
+        let mut any_bit_diff = false;
+        let mut max_rel = 0.0_f64;
+        for (a, b) in f64_row.iter().zip(collapsed_f64.iter()) {
+            if a.to_bits() != b.to_bits() {
+                any_bit_diff = true;
+            }
+            if *a != 0.0 {
+                max_rel = max_rel.max((a - b).abs() / a.abs());
+            }
+        }
+        assert!(
+            any_bit_diff,
+            "softmax_f64 was bit-identical to the collapsed-f32 path on every cell — \
+             the f64 softmax is not running its row cells in f64"
+        );
+        assert!(
+            max_rel > 1e-9,
+            "softmax_f64 max relative divergence from collapsed-f32 was {max_rel:.3e}, \
+             below the band that distinguishes a genuine f64 softmax"
+        );
+
+        // It is still a valid probability distribution (sums to ~1). The divisor
+        // is `norm_const as f32` (the upstream `static_cast<float>`), so the sum
+        // carries the f32 divisor's rounding — it is ~1, not bit-exactly 1.
+        let sum: f64 = f64_row.iter().sum();
+        assert!((sum - 1.0).abs() < 1e-6, "softmax_f64 row sums to {sum}");
+    }
+
+    /// `softmax_f64` matches the upstream `softmax<double>` body exactly on a
+    /// hand-computed reference (same f32 max_margin / f64 cell / f32 t / f64
+    /// accumulate / `double /= float` divide ordering). Guards against a
+    /// transcription error in the twin.
+    #[test]
+    fn softmax_f64_matches_upstream_ordering_reference() {
+        let mut row = [1.0_f64, 2.0, 3.0];
+        softmax_f64(&mut row);
+
+        // Reference: max_margin is f32(3.0); t = exp(cell - max_margin) in f64
+        // narrowed to f32; norm_const accumulates in f64; divisor = norm as f32.
+        let m: f32 = 3.0;
+        let t: [f32; 3] = [
+            (1.0_f64 - m as f64).exp() as f32,
+            (2.0_f64 - m as f64).exp() as f32,
+            (3.0_f64 - m as f64).exp() as f32,
+        ];
+        let norm: f64 = t[0] as f64 + t[1] as f64 + t[2] as f64;
+        let divisor: f64 = norm as f32 as f64;
+        for i in 0..3 {
+            let expected: f64 = (t[i] as f64) / divisor;
+            assert_eq!(
+                row[i].to_bits(),
+                expected.to_bits(),
+                "softmax_f64 class {i} differs from the upstream-ordered reference"
+            );
+        }
+    }
+
+    #[test]
+    fn softmax_f64_empty_row_is_noop() {
+        let mut row: [f64; 0] = [];
+        softmax_f64(&mut row);
+        assert_eq!(row.len(), 0);
+    }
+
     #[test]
     fn f64_twins_agree_with_f32_on_small_exact_inputs() {
         assert!((signed_square_f64(-3.0) - (-9.0)).abs() < 1e-12);

@@ -123,25 +123,17 @@ pub trait PredictOut: Copy + PartialOrd {
     /// (`InputT_view += double_view` ⇒ `(self as f64 + base) as Self`,
     /// `predict.cc:294-304`).
     fn add_base_score(self, base: f64) -> Self;
-    /// Narrow this element to `f32` for the softmax-only f32 boundary. For `O =
-    /// f32` this is the identity; for `O = f64` it narrows. softmax is the ONE
-    /// postprocessor whose f32 intermediate is upstream-correct on every
-    /// `InputT` (`postprocessor.cc:59-73`); see [`apply_named_postprocessor`].
-    fn out_to_f32(self) -> f32;
-    /// Widen an `f32` postprocessor result back into this element. Identity for
-    /// `O = f32`. Used only by the softmax f32-narrow arm.
-    fn out_from_f32(v: f32) -> Self;
-
     /// Apply the named postprocessor over the `(num_row, num_target,
     /// max_num_class)` `output` buffer in THIS element's own precision
     /// (`ApplyPostProcessor<InputT>`, `predict.cc:307-323`). For `O = f32` this
     /// runs the `f32` postprocessor bodies (`ApplyPostProcessor<float>`); for
     /// `O = f64` it runs the `*_f64` twins (`ApplyPostProcessor<double>`),
-    /// EXCEPT softmax, which narrows each row to `f32`, runs the `f32`
-    /// [`postprocessor::softmax`], and widens back (softmax hardcodes `float`
-    /// for every `InputT`). `sigmoid_alpha` / `ratio_c` are `f32` model fields
-    /// on both paths (cast into the element type at the operation site). Unknown
-    /// names are a typed [`GtilError::UnsupportedPostprocessor`].
+    /// including [`postprocessor::softmax_f64`] — softmax<double> keeps its row
+    /// cells in f64 for the subtraction/exp/divide (only `max_margin`/`t`/divisor
+    /// are f32), so it is NOT narrowed to f32 (CR-01 / WR-03). `sigmoid_alpha` /
+    /// `ratio_c` are `f32` model fields on both paths (cast into the element type
+    /// at the operation site). Unknown names are a typed
+    /// [`GtilError::UnsupportedPostprocessor`].
     fn apply_named_postprocessor(
         model: &Model,
         shape: &OutputLayout<'_>,
@@ -218,14 +210,6 @@ impl PredictOut for f32 {
         // float += double: promote f32→f64, add, narrow back to f32.
         (self as f64 + base) as f32
     }
-    #[inline]
-    fn out_to_f32(self) -> f32 {
-        self
-    }
-    #[inline]
-    fn out_from_f32(v: f32) -> Self {
-        v
-    }
 
     #[inline]
     fn apply_named_postprocessor(
@@ -293,14 +277,6 @@ impl PredictOut for f64 {
     fn add_base_score(self, base: f64) -> Self {
         // double += double.
         self + base
-    }
-    #[inline]
-    fn out_to_f32(self) -> f32 {
-        self as f32
-    }
-    #[inline]
-    fn out_from_f32(v: f32) -> Self {
-        v as f64
     }
 
     #[inline]
@@ -1312,15 +1288,15 @@ fn apply_postprocessor_f32(
 /// f64-buffer postprocessor application (`ApplyPostProcessor<double>`,
 /// `predict.cc:307-323` with `InputT == double`).
 ///
-/// Mirrors [`apply_postprocessor_f32`] arm-for-arm, but the non-softmax /
-/// non-identity bodies run in f64 (the `*_f64` twins in [`postprocessor`]) so an
-/// f64-input model runs its postprocessor at f64 precision (CR-01). `softmax` is
-/// the ONE exception: upstream hardcodes `float max_margin`/`t` for every
-/// `InputT` (`postprocessor.cc:59-73`), so each softmax row is narrowed to f32,
-/// run through the existing [`postprocessor::softmax`], and widened back —
-/// softmax is the only postprocessor where the f32 intermediate is correct.
-/// `sigmoid_alpha` / `ratio_c` stay f32 model fields, cast into f64 at the
-/// operation site inside the twins.
+/// Mirrors [`apply_postprocessor_f32`] arm-for-arm, but the non-identity bodies
+/// run in f64 (the `*_f64` twins in [`postprocessor`]) so an f64-input model runs
+/// its postprocessor at f64 precision (CR-01). `softmax` runs the
+/// [`postprocessor::softmax_f64`] twin: upstream `softmax<double>` keeps the
+/// `double* row` cells in f64 for the `row[i] - max_margin` subtraction,
+/// `std::exp`, and the final `double /= float` divide — only `max_margin`/`t`/the
+/// divisor are f32 (`postprocessor.cc:57-75`). The row is NOT narrowed to f32
+/// first (that was CR-01 / WR-03). `sigmoid_alpha` / `ratio_c` stay f32 model
+/// fields, cast into f64 at the operation site inside the twins.
 fn apply_postprocessor_f64(
     model: &Model,
     shape: &OutputLayout<'_>,
@@ -1367,8 +1343,11 @@ fn apply_postprocessor_f64(
             }
         }
         "softmax" => {
-            // softmax stays f32 on every InputT (postprocessor.cc:59-73): narrow
-            // each (row, target) span to f32, run the f32 softmax, widen back.
+            // softmax<double> (postprocessor.cc:57-75) keeps the `double* row`
+            // cells in f64 for the `row[i] - max_margin` subtraction, `std::exp`,
+            // and the final `double /= float` divide; only max_margin/t/divisor
+            // are f32. Run the f64 twin in place — do NOT narrow the row to f32
+            // first (that was CR-01 / WR-03).
             for r in 0..num_row {
                 for t in 0..shape.num_target {
                     let n = shape.num_class_of(t);
@@ -1377,11 +1356,7 @@ fn apply_postprocessor_f64(
                     }
                     let start = shape.idx(r, t, 0);
                     let end = start + n as usize;
-                    let mut tmp: Vec<f32> = output[start..end].iter().map(|&v| v as f32).collect();
-                    postprocessor::softmax(&mut tmp);
-                    for (dst, &src) in output[start..end].iter_mut().zip(tmp.iter()) {
-                        *dst = src as f64;
-                    }
+                    postprocessor::softmax_f64(&mut output[start..end]);
                 }
             }
         }
