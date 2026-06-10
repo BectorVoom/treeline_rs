@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 05-06-PLAN.md
-last_updated: "2026-06-10T09:15:00.000Z"
-last_activity: 2026-06-10 -- Completed 05-06 (CR-01 + WR-02..WR-05 engine gap closure)
+stopped_at: Completed 05-07-PLAN.md
+last_updated: "2026-06-10T09:22:07.231Z"
+last_activity: 2026-06-10 -- Completed 05-07 (CR-01 MEASURED + WR-01/WR-06 closed)
 progress:
   total_phases: 9
   completed_phases: 4
-  total_plans: 31
-  completed_plans: 29
-  percent: 47
+  total_plans: 30
+  completed_plans: 30
+  percent: 55
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 
 ## Current Position
 
-Phase: 05 (full-scalar-gtil-equivalence-harness) — EXECUTING
-Plan: 6 of 7 complete (05-07 remaining)
-Status: Executing Phase 05
-Last activity: 2026-06-10 -- Completed 05-06 (CR-01 + WR-02..WR-05 engine gap closure)
+Phase: 05 (full-scalar-gtil-equivalence-harness) — EXECUTING (all 7 plans done; awaiting phase verification by the orchestrator — NOT yet phase-complete)
+Plan: 7 of 7 complete
+Status: Executing Phase 05 (plans complete; orchestrator verification pending)
+Last activity: 2026-06-10 -- Completed 05-07 (CR-01 MEASURED + WR-01/WR-06 closed)
 
-Progress: [███████░] 86% (Phase 05 plans: 6/7)
+Progress: [████████] 100% (Phase 05 plans: 7/7 — phase verification pending)
 
 ## Performance Metrics
 
@@ -82,6 +82,7 @@ Progress: [███████░] 86% (Phase 05 plans: 6/7)
 | Phase 05 P04 | ~6min | 2 tasks | 5 files |
 | Phase 05 P05 | 30min | 2 tasks | 6 files |
 | Phase 05 P06 | ~22min | 3 tasks | 6 files |
+| Phase 05 P07 | 28min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -169,6 +170,9 @@ Recent decisions affecting current work:
 - [Phase ?]: Plan 05-05: minimal fn-pointer Backend/RunnerCase seam (four input-dtype slots, f64 output) — Phase 6 registers a cubecl runtime by adding a variant + constructor with no matrix-iteration change (D-11).
 - [05-06]: CR-01 closed ENGINE-SIDE — f64-input postprocessors run in f64 via PredictOut::apply_named_postprocessor + *_f64 twins (ApplyPostProcessor<double>); softmax stays f32 (narrows each row, postprocessor.cc:59-73); hinge runs directly in f64. f32 path byte-identical (255 workspace tests green). CR-01 divergence asserted at ~1e-8 RELATIVE + non-bit-identity (the band that masked it) — NOT the plan's 1e-7 absolute, which never trips on a correct f64 impl. The 1e-5 FIXTURE that drives CR-01 lands in 05-07.
 - [05-06]: has_leaf_vector / category_list_safe now return Result distinguishing absent/legitimately-empty (Ok) from present-but-inverted/out-of-range (typed MalformedLeafVector/MalformedCategoryList); next_node fallible → UnrecognizedOperator on kNone numerical node; 0-node tree → NodeIndexOutOfBounds{node:0} (WR-03/04/05, ERR-01). OutputLayout promoted to pub to avoid a private-interfaces leak in the public PredictOut method.
+- [Phase ?]: [05-07]: CR-01 MEASURED — large-margin f64 sigmoid fixture (16 f64 cells, worst |delta| 2.9e-6) passes the 1e-5 gate against the 05-06 sigmoid_f64 engine; CR-01 fully closed (engine + harness).
+- [Phase ?]: [05-07]: WR-01 closed — sparse goldens carry the real frozen CSR triple (data/indices/indptr); runner loads it verbatim via frozen_csr, never re-deriving from NaN-presence; build_csr survives only for the D-04 parity probe.
+- [Phase ?]: [05-07]: WR-06 closed — asserts the RUST f32-vs-f64 large_margin output divergence (5.5e-8), NOT golden-vs-golden (upstream goldens bit-identical across input dtype for <f32,f32> models; tree-sum accumulated in f64). Mutation-verified the gate fails on an f32->f64 pre-cast.
 
 ### Pending Todos
 
@@ -179,7 +183,7 @@ None yet.
 - [Phase 3] ~~serde_json rejects NaN/Inf by default; XGBoost JSON uses them~~ — RESOLVED in 03-02 via the string-safe replace_nonfinite pre-lexer + de_f32 sentinel adapter (D-02).
 - [Phase 5/6] cubecl control-flow constraints (`continue` unsupported, helpers must be `#[cube]`) and CPU-backend op gaps — spike a minimal kernel before the full port.
 - [Phase 5] Golden-vector reproducibility — store actual input matrices + a toolchain/libm/framework manifest, not just seeds.
-- [Phase 5] **CR-01 — ENGINE FIX LANDED in 05-06; 1e-5 FIXTURE OPEN (05-07).** `apply_postprocessor` no longer blanket-narrows the f64 buffer to f32: it dispatches via `PredictOut::apply_named_postprocessor` so f64 input runs the `*_f64` twins (`ApplyPostProcessor<double>`), softmax excepted (stays f32, narrowed per row). Proven by a unit divergence test (~1e-8 relative + non-bit-identity). REMAINING for 05-07: the large-margin f64 sigmoid/exponential FIXTURE asserted to 1e-5 (WR-06 paired divergence) that actually drives CR-01 against the gate. WR-02/WR-03/WR-04/WR-05 all CLOSED in 05-06 (shape/predict third-dim agreement; 0-node guard → NodeIndexOutOfBounds{node:0}; typed MalformedCategoryList/MalformedLeafVector; UnrecognizedOperator on kNone). STILL OPEN: WR-01 (sparse harness re-derives CSR from NaN-presence, never asserts a real captured CSR) — 05-07. See 05-REVIEW.md.
+- [Phase 5] **CR-01 / WR-01 / WR-06 ALL CLOSED in 05-07 (engine fix was 05-06).** CR-01 is now MEASURED: a committed large-margin f64 sigmoid fixture (16 f64 cells, worst |delta| 2.9e-6) passes the 1e-5 gate against the 05-06 `sigmoid_f64` engine. WR-01 closed: sparse goldens carry the real frozen CSR triple (data/indices/indptr); the runner loads it verbatim via `frozen_csr`, never re-deriving from NaN-presence (`build_csr` survives only for the D-04 parity probe). WR-06 closed: the large_margin f32-vs-f64 RUST output divergence (5.5e-8) is asserted — a silent f32→f64 pre-cast collapses it and fails (mutation-verified). NOTE (05-07 finding): upstream `treelite.gtil.predict` returns bit-identical output across input dtype for `<f32,f32>` models (tree-sum accumulated in f64; postprocessor follows leaf type), so WR-06 asserts the Rust-path divergence, not golden-vs-golden — see 05-07-SUMMARY deviation 1. WR-02/WR-03/WR-04/WR-05 were CLOSED in 05-06. All five 05-REVIEW gap items are now resolved across 05-06 + 05-07. (Phase 05 verification itself is the orchestrator's job — not yet phase-complete.)
 
 ## Deferred Items
 
@@ -191,6 +195,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T09:15:00.000Z
+Last session: 2026-06-10T09:21:40.827Z
 Stopped at: Completed 05-06-PLAN.md
 Resume file: None
