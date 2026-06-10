@@ -236,7 +236,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. End-to-End Spine | 4/4 | Complete    | 2026-06-09 |
 | 2. Builder & Serialization | 6/6 | Complete    | 2026-06-10 |
 | 3. Full XGBoost Loaders | 4/4 | Complete    | 2026-06-10 |
-| 4. LightGBM & scikit-learn Loaders | 8/8 | Complete   | 2026-06-10 |
+| 4. LightGBM & scikit-learn Loaders | 8/8 | Complete    | 2026-06-10 |
 | 5. Full Scalar GTIL & Equivalence Harness | 0/TBD | Not started | - |
 | 6. cubecl GTIL Kernels (CPU Backend) | 0/TBD | Not started | - |
 | 7. GPU Backend & Equivalence Report | 0/TBD | Not started | - |
