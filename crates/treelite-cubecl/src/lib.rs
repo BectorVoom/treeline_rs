@@ -42,7 +42,7 @@ use treelite_gtil::{Config, PredictKind, postprocessor};
 /// `apply_postprocessor_{f32,f64}` (same public `postprocessor::*` functions, so
 /// the result is byte-identical to the scalar reference). The output element
 /// EQUALS the input element regardless of the model preset (Pitfall 6).
-pub trait PredictCpuElem: Float + CubeElement + bytemuck::Pod {
+pub trait PredictCpuElem: Float + CubeElement + bytemuck::Pod + treelite_gtil::PredictOut {
     /// Apply the model's named postprocessor over the `(num_row, num_target,
     /// max_num_class)` `output` buffer in THIS element's precision, replicating
     /// `treelite_gtil::apply_postprocessor` arm-for-arm. `num_class` is the
@@ -254,10 +254,7 @@ pub fn predict_cpu<F: PredictCpuElem>(
     data: &[F],
     num_row: usize,
     cfg: &Config,
-) -> Result<Vec<F>, CubeclError>
-where
-    F: treelite_gtil::PredictOut,
-{
+) -> Result<Vec<F>, CubeclError> {
     // ---- 2. Categorical whole-model fallback gate (D-02 / Open Q1) ----
     // (validate_shape inside upload_forest performs step 1; but the categorical
     // gate must be checked BEFORE upload so a categorical model never reaches the
