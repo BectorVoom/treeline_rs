@@ -71,6 +71,7 @@ import scipy.sparse
 
 import treelite
 import xgboost  # capture-only pin (recorded in manifest); never in the Rust build graph
+import lightgbm  # capture-only pin (kLE numerical model class, CR-01); never in the Rust build graph
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT_DIR = os.path.join(HERE, "gtil")
@@ -342,22 +343,187 @@ def build_large_margin_model(seed):
     return model, n_feat, 2  # cat_col index for edge injection
 
 
-def _preset_of(model):
+def build_lgbm_numerical_model(seed):
+    """NUMERICAL-only LightGBM regressor -> the CR-01 kLE model class.
+
+    LightGBM emits ``Operator::kLE`` on EVERY numerical split (lightgbm.cc:585,
+    mirrored in crates/treelite-lightgbm/src/lib.rs:273), and the
+    ``treelite.frontend.load_lightgbm_model`` frontend yields the <f64,f64>
+    preset. This is precisely the model class CR-01's operator-coverage fallback
+    gate routes WHOLE to the scalar reference (the cubecl kernel implements only
+    kLT). Before 06-06 such a model silently reached the kLT-hardcoded kernel and
+    mis-routed every ``fv == threshold`` tie; this fixture proves the fallback
+    gate now produces upstream-correct predictions on the kLE class.
+
+    A handful of leaves/rounds is enough to exercise multiple kLE splits. NO
+    categorical_feature is set, so every split is a numerical kLE test (never a
+    bitset) — the matrix cell routes through the CR-01 fallback gate, not the
+    categorical gate. Returns (model, n_feat, cat_col) like the other authors.
+    """
+    import lightgbm
+    import tempfile
+
+    rng = np.random.RandomState(seed)
+    n, n_feat = 200, 4
+    X = rng.uniform(0.0, 5.0, size=(n, n_feat)).astype(np.float64)
+    # Target depends on several features so the booster builds real kLE splits.
+    y = (X[:, 0] * 1.5 - X[:, 1] + X[:, 2] * 0.7 - X[:, 3]).astype(np.float64)
+    train = lightgbm.Dataset(X, label=y, free_raw_data=False)
+    params = {
+        "objective": "regression",
+        "num_leaves": 15,
+        "min_data_in_leaf": 5,
+        "seed": seed,
+        "deterministic": True,
+        "verbose": -1,
+    }
+    booster = lightgbm.train(params, train, num_boost_round=8)
+    txt_path = os.path.join(tempfile.gettempdir(), f"lgbm_numerical_{seed}.txt")
+    booster.save_model(txt_path)
+    model = treelite.frontend.load_lightgbm_model(txt_path)
+    return model, n_feat, 2  # cat_col index for edge injection (purely numerical)
+
+
+# The f32-unrepresentable split threshold for the mixed-width stressor. 0.1 has
+# no exact binary fraction; rounded to f32 it becomes 0.10000000149011612 — a
+# DIFFERENT f64 value than the literal 0.1 the model stores. A kernel that
+# narrows the f64 threshold to f32 before comparing would compare against
+# 0.10000000149.., routing an input of float32(0.1) (== 0.10000000149.. in f64,
+# i.e. STRICTLY > 0.1) to the WRONG child. The CR-02 f64-promoted comparison
+# keeps the threshold at 0.1, so float32(0.1) correctly tests kLE-false (> 0.1)
+# and routes RIGHT, matching upstream Treelite (which promotes the f32 input to
+# f64 before the f64-threshold compare).
+_MIXEDWIDTH_THRESHOLD = 0.1
+
+
+def build_mixedwidth_model(seed):
+    """<f64,f64> single-split model whose threshold is NOT f32-representable.
+
+    Why 0.1: ``0.1`` is not exactly representable in binary floating point;
+    ``float32(0.1) == 0.10000000149011612`` as an f64 — a strictly LARGER value
+    than the literal ``0.1`` the model stores as an f64 threshold. The split uses
+    ``opname='<='`` (kLE), so an input equal to ``float32(0.1)`` tests
+    ``0.10000000149.. <= 0.1`` -> FALSE -> RIGHT child. A buggy kernel that
+    narrowed the f64 threshold to f32 (0.10000000149..) would instead test
+    ``0.10000000149.. <= 0.10000000149..`` -> TRUE -> LEFT child, diverging from
+    upstream. This is the exact CR-02 stressor: the f32-input cells of this
+    fixture only match the upstream golden if the kernel promotes BOTH operands
+    to f64 (the 06-06 fix). Authored via the treelite ModelBuilder with
+    ``threshold_type='float64'`` so the stored threshold is EXACTLY the f64
+    ``0.1`` (no frontend re-drift). Returns (model, n_feat, cat_col).
+    """
+    from treelite.model_builder import (
+        Metadata,
+        ModelBuilder,
+        PostProcessorFunc,
+        TreeAnnotation,
+    )
+
+    n_feat = 2
+    b = ModelBuilder(
+        threshold_type="float64",
+        leaf_output_type="float64",
+        metadata=Metadata(
+            num_feature=n_feat,
+            task_type="kRegressor",
+            average_tree_output=False,
+            num_target=1,
+            num_class=[1],
+            leaf_vector_shape=(1, 1),
+        ),
+        tree_annotation=TreeAnnotation(num_tree=1, target_id=[0], class_id=[0]),
+        postprocessor=PostProcessorFunc(name="identity"),
+        base_scores=[0.0],
+    )
+    b.start_tree()
+    b.start_node(0)
+    b.numerical_test(
+        0,
+        _MIXEDWIDTH_THRESHOLD,
+        default_left=True,
+        opname="<=",  # kLE — also rides the CR-01 fallback gate (non-kLT)
+        left_child_key=1,
+        right_child_key=2,
+    )
+    b.end_node()
+    b.start_node(1)
+    b.leaf(-1.0)
+    b.end_node()
+    b.start_node(2)
+    b.leaf(1.0)
+    b.end_node()
+    b.end_tree()
+    model = b.commit()
+    # Sanity: the literal 0.1 really is f32-unrepresentable (guards against a
+    # future numpy/platform surprise that would defang the CR-02 stressor).
+    assert float(np.float32(_MIXEDWIDTH_THRESHOLD)) != _MIXEDWIDTH_THRESHOLD, (
+        "0.1 unexpectedly f32-representable on this platform — pick another "
+        "f32-unrepresentable threshold for the mixed-width CR-02 stressor"
+    )
+    return model, n_feat, 0  # cat_col unused (custom matrix_builder supplies rows)
+
+
+def _build_mixedwidth_matrix(seed, n_rows, n_feat):
+    """Input rows that STRADDLE the f32-unrepresentable 0.1 threshold (CR-02).
+
+    Beyond a wide RandomState fill (so the matrix has the usual ~120-row body),
+    the leading rows are deliberately pinned to values around the f32/f64
+    boundary of 0.1 so a wrong f32 narrowing would route them to the wrong child:
+
+      row 0: float32(0.1) (== 0.10000000149.. in f64) — the canonical stressor:
+              f64-compare -> RIGHT, f32-narrowed-compare -> LEFT.
+      row 1: f32 value just below float32(0.1)        — both routes LEFT.
+      row 2: literal 0.1 (f64)                        — kLE-true -> LEFT.
+      row 3: 0.2                                       — clearly RIGHT.
+      row 4: NaN -> default-direction routing (GTIL-05).
+
+    The matrix is built in f64; ``capture_model`` casts it to the per-cell input
+    dtype, so the f32 cells materialize exactly the f32 bit patterns above.
+    """
+    rng = np.random.RandomState(seed)
+    X = rng.uniform(-1.0, 1.0, size=(n_rows, n_feat)).astype(np.float64)
+    f32_thr = float(np.float32(_MIXEDWIDTH_THRESHOLD))  # 0.10000000149011612
+    just_below = float(np.nextafter(np.float32(_MIXEDWIDTH_THRESHOLD), np.float32(-1)))
+    X[0, 0] = f32_thr  # the CR-02 stressor row
+    X[1, 0] = just_below
+    X[2, 0] = _MIXEDWIDTH_THRESHOLD
+    X[3, 0] = 0.2
+    X[4, 0] = np.nan  # missing -> default direction (GTIL-05)
+    return X
+
+
+def _preset_of(model, override=None):
     """Return the model's preset token (``f32`` / ``f64``) for the fixture name.
 
-    XGBoost-frontend models are the <f32,f32> preset; this is recorded for
-    provenance and the fixture name (the input-dtype axis is separate, D-05).
+    XGBoost-frontend models are the <f32,f32> preset; LightGBM-frontend and the
+    explicitly-f64 ModelBuilder models are the <f64,f64> preset. This is recorded
+    for provenance and the fixture name (the input-dtype axis is separate, D-05).
+    Callers that know the preset (LightGBM/ModelBuilder always f64) pass it via
+    ``override`` so the fixture name and manifest stay honest.
     """
+    if override is not None:
+        return override
     # treelite exposes leaf/threshold types via the model; XGBoost is f32/f32.
     return "f32"
 
 
-def capture_model(model_name, model, n_feat, cat_col):
-    """Freeze the full (dtype x kind x {dense,sparse} x seed) cross-product."""
-    preset = _preset_of(model)
+def capture_model(model_name, model, n_feat, cat_col, preset_override=None,
+                  matrix_builder=None):
+    """Freeze the full (dtype x kind x {dense,sparse} x seed) cross-product.
+
+    ``preset_override`` lets a caller that knows the model's preset (LightGBM and
+    the explicit-f64 ModelBuilder models are <f64,f64>) tag the fixture name +
+    manifest honestly. ``matrix_builder(seed, n_rows, n_feat) -> ndarray`` lets a
+    model supply its own input rows (e.g. the mixed-width straddle rows that
+    stress the f32/f64 threshold boundary); it defaults to ``_build_edge_matrix``.
+    """
+    preset = _preset_of(model, override=preset_override)
     n_rows = 140
     for seed in SEEDS:
-        X_full = _build_edge_matrix(seed, n_rows, n_feat, cat_col)
+        if matrix_builder is not None:
+            X_full = matrix_builder(seed, n_rows, n_feat)
+        else:
+            X_full = _build_edge_matrix(seed, n_rows, n_feat, cat_col)
         for indtype, np_dtype in (("f32", np.float32), ("f64", np.float64)):
             Xc = X_full.astype(np_dtype)
             dense_nan, csr, csr_triple = _dense_and_csr(X_full, np_dtype, seed)
@@ -455,6 +621,26 @@ def main():
     lm_model, lm_feat, lm_cat = build_large_margin_model(SEEDS[0])
     capture_model("large_margin", lm_model, lm_feat, lm_cat)
     _freeze_model_bin("large_margin.model.bin", lm_model)
+
+    # CR-01 kLE coverage (06-07): a NUMERICAL-only LightGBM model — every split is
+    # kLE, so predict_cpu's operator-coverage gate routes the WHOLE model to the
+    # scalar reference (D-02). The <f64,f64> preset is recorded honestly. Its
+    # model.bin is frozen from the SAME object that produced its goldens.
+    ln_model, ln_feat, ln_cat = build_lgbm_numerical_model(SEEDS[0])
+    capture_model("lgbm_numerical", ln_model, ln_feat, ln_cat, preset_override="f64")
+    _freeze_model_bin("lgbm_numerical.model.bin", ln_model)
+
+    # CR-02 mixed-width coverage (06-07): a <f64,f64> single-split model whose
+    # threshold (0.1) is f32-unrepresentable. The f32-input cells only match the
+    # upstream golden if the kernel promotes both operands to f64 before the kLE
+    # compare (the 06-06 CR-02 fix). Custom straddle rows guarantee the boundary
+    # is exercised. Its model.bin is frozen from the exact built object.
+    mw_model, mw_feat, mw_cat = build_mixedwidth_model(SEEDS[0])
+    capture_model(
+        "mixedwidth", mw_model, mw_feat, mw_cat,
+        preset_override="f64", matrix_builder=_build_mixedwidth_matrix,
+    )
+    _freeze_model_bin("mixedwidth.model.bin", mw_model)
 
     print("All GTIL matrix goldens captured (treelite-GTIL, scalar-cpu, D-07/D-09).")
 
