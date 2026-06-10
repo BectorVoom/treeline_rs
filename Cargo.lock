@@ -178,11 +178,13 @@ dependencies = [
 name = "treelite-xgboost"
 version = "0.1.0"
 dependencies = [
+ "approx",
  "serde",
  "serde_json",
  "thiserror",
  "treelite-builder",
  "treelite-core",
+ "treelite-gtil",
 ]
 
 [[package]]

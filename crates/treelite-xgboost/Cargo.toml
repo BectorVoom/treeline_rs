@@ -10,3 +10,11 @@ treelite-builder = { path = "../treelite-builder" }
 thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+# treelite-gtil + approx drive the JSON 1e-5 predict assertion in tests/json.rs.
+# NOTE: treelite-harness is deliberately NOT a dev-dependency here — it depends
+# on treelite-xgboost, so adding it would create a dependency cycle. The golden
+# is parsed locally in tests/json.rs instead.
+treelite-gtil = { path = "../treelite-gtil" }
+approx = { workspace = true }

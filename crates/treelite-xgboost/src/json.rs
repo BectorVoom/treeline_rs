@@ -25,8 +25,8 @@
 //! `str::parse`. Parallel node arrays (`split_conditions`, `left_children`, …)
 //! are real JSON arrays.
 
-use serde::de;
 use serde::Deserialize;
+use serde::de;
 
 // ---------------------------------------------------------------------------
 // D-02: string-safe NaN/Inf pre-lex + the de_f32 / de_vec_f32 adapters.

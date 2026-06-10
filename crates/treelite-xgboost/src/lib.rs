@@ -113,10 +113,20 @@ fn build_tree(
 
     // Validate every parallel array length == num_nodes before building.
     check_dim(tree_idx, "left_children", num_nodes, t.left_children.len())?;
-    check_dim(tree_idx, "right_children", num_nodes, t.right_children.len())?;
+    check_dim(
+        tree_idx,
+        "right_children",
+        num_nodes,
+        t.right_children.len(),
+    )?;
     check_dim(tree_idx, "split_indices", num_nodes, t.split_indices.len())?;
     check_dim(tree_idx, "split_type", num_nodes, t.split_type.len())?;
-    check_dim(tree_idx, "split_conditions", num_nodes, t.split_conditions.len())?;
+    check_dim(
+        tree_idx,
+        "split_conditions",
+        num_nodes,
+        t.split_conditions.len(),
+    )?;
     check_dim(tree_idx, "default_left", num_nodes, t.default_left.len())?;
     // D-10 stat arrays: present in the recognized key set; validate before use.
     check_dim(tree_idx, "sum_hessian", num_nodes, t.sum_hessian.len())?;

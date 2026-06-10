@@ -113,13 +113,13 @@ pub fn parse_base_score(
         elems.into_iter().map(|e| e as f64).collect()
     } else {
         // Scalar form: parse one f32, cast to f64, fill across expand_to.
-        let scalar: f32 = raw.parse().map_err(|e: std::num::ParseFloatError| {
-            XgbError::ParseScalar {
-                field: "base_score",
-                value: raw.to_string(),
-                source: Box::new(e),
-            }
-        })?;
+        let scalar: f32 =
+            raw.parse()
+                .map_err(|e: std::num::ParseFloatError| XgbError::ParseScalar {
+                    field: "base_score",
+                    value: raw.to_string(),
+                    source: Box::new(e),
+                })?;
         vec![scalar as f64; expand_to]
     };
 
