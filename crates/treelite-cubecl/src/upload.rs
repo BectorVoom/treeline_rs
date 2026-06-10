@@ -265,32 +265,87 @@ pub fn validate_shape<F: Copy>(
 /// within its tree's leaf-vector segment, HOST-side, BEFORE any device op
 /// (T-06-09; no out-of-bounds leaf-vector device read on a malformed model).
 ///
-/// The kernels read `leaf_vector[leafvec_off[t] + offset]` where `offset` ranges
-/// over `[begin, end)` (score_per_tree, `default_raw` scalar/per-target/per-class
-/// cases) and, for the multiclass broadcast case, over
-/// `[begin, begin + num_target * max_num_class)` (`default_raw`:108-158). The
-/// per-tree segment length for tree `t` is
+/// CR-01 (BLOCKER, Approach A — routing-aware bound): the `default_raw` kernel
+/// reads a DIFFERENT span per tree depending on that tree's
+/// `(target_id, class_id)` routing (`default_raw.rs:113-158`), so a single
+/// `begin + num_target * max_num_class <= seg_len` bound applied to EVERY node
+/// over-rejects valid non-broadcast models (e.g. a per-target leaf vector with
+/// `num_target == 1, max_num_class > 1`). This validator therefore bounds each
+/// leaf by the SAME span its tree's routing actually reads in the kernel:
+///
+///   - `(tid == -1, cid == -1)` full broadcast → reads up to
+///     `num_target * max_num_class` cells from `begin` (default_raw.rs:115-129);
+///   - `(tid == -1, cid >= 0)` per-target → reads `num_target` cells
+///     (default_raw.rs:131-139);
+///   - `(tid >= 0, cid == -1)` per-class → reads `num_class[tid]` cells
+///     (default_raw.rs:141-150);
+///   - `(tid >= 0, cid >= 0)` scalar → reads `1` cell (default_raw.rs:152-156).
+///
+/// The kernels also read `leaf_vector[leafvec_off[t] + offset]` over
+/// `[begin, end)` directly on the `score_per_tree` / `leaf_id` paths (no
+/// broadcast routing). On those paths the caller passes EMPTY `target_id` /
+/// `class_id` slices and the routing bound is skipped — only `begin <= end` and
+/// `end <= segment_len` apply, which already cover the `[begin, end)` device
+/// read.
+///
+/// The per-tree segment length for tree `t` is
 /// `tree_leafvec_offset[t+1] - tree_leafvec_offset[t]`. For EVERY leaf node
 /// (`cleft == -1`) with a non-empty span (`begin != end`) this asserts:
 ///   - `begin <= end` (not inverted), and
 ///   - `end <= segment_len` (the declared span fits the segment), and
-///   - `begin + num_target * max_num_class <= segment_len` (the broadcast span
-///     the launcher would read also fits — the bound the kernel's broadcast loops
-///     reach).
-/// Any violation returns [`CubeclError::MalformedLeafVector`]. A well-formed model
-/// (every existing fixture: begin == end scalar leaves, or end <= segment_len
-/// vector leaves) passes unchanged.
+///   - `begin + routing_read_span(tid, cid) <= segment_len` (the span the kernel
+///     would actually read for THIS tree's routing also fits).
+///
+/// Any violation returns [`CubeclError::MalformedLeafVector`]. A well-formed
+/// model — including a multi-target / `max_num_class > 1` per-target or per-class
+/// leaf vector — passes; only a genuinely out-of-range span is rejected. The
+/// no-OOB guarantee is preserved: every span the kernel reads is bounds-checked
+/// host-side before any device op.
 pub fn validate_leaf_vectors<F: Copy>(
     cols: &HostColumns<F>,
     num_target: usize,
     max_num_class: usize,
+    num_class: &[i32],
+    target_id: &[i32],
+    class_id: &[i32],
 ) -> Result<(), CubeclError> {
     let num_tree = cols.tree_node_offset.len().saturating_sub(1);
-    let broadcast_span = num_target.saturating_mul(max_num_class) as u32;
+    // Routing columns are present only on the broadcast (`default_raw`) path; the
+    // `score_per_tree` / `leaf_id` paths pass empty slices and read only
+    // `[begin, end)` (no broadcast), so the routing bound is skipped there.
+    let has_routing = !target_id.is_empty() && !class_id.is_empty();
     for t in 0..num_tree {
         let node_base = cols.tree_node_offset[t] as usize;
         let node_end = cols.tree_node_offset[t + 1] as usize;
-        let seg_len = cols.tree_leafvec_offset[t + 1] - cols.tree_leafvec_offset[t];
+        // WR-01: saturating subtraction — a non-monotonic (corrupt/hand-built)
+        // offset column must NOT underflow-panic; it yields seg_len == 0 and is
+        // rejected by the `end > seg_len` check below.
+        let seg_len =
+            cols.tree_leafvec_offset[t + 1].saturating_sub(cols.tree_leafvec_offset[t]);
+        // The span this tree's routing reads from `begin` (mirrors the four-way
+        // branch in default_raw.rs:113-158). Read defensively with the kernel's
+        // `-1` default for absent routing entries.
+        let tid = target_id.get(t).copied().unwrap_or(-1);
+        let cid = class_id.get(t).copied().unwrap_or(-1);
+        let routing_span: u32 = if !has_routing {
+            // No broadcast on this path; `[begin, end)` is the only read, already
+            // covered by `end <= seg_len`.
+            0
+        } else if tid == -1 && cid == -1 {
+            // Full broadcast: up to num_target * max_num_class cells.
+            num_target.saturating_mul(max_num_class) as u32
+        } else if tid == -1 {
+            // Per-target (cid >= 0): num_target cells.
+            num_target as u32
+        } else if cid == -1 {
+            // Per-class (tid >= 0): num_class[tid] cells (clamped to
+            // max_num_class as a defensive upper bound if the column is short).
+            let nc = num_class.get(tid as usize).copied().unwrap_or(0).max(0) as usize;
+            nc.min(max_num_class.max(nc)) as u32
+        } else {
+            // Scalar (tid >= 0, cid >= 0): a single cell.
+            1
+        };
         for n in node_base..node_end {
             // Internal node: cleft != -1, no leaf-vector access. Skip.
             if cols.cleft[n] != -1 {
@@ -319,15 +374,16 @@ pub fn validate_leaf_vectors<F: Copy>(
                     segment_len: seg_len,
                 });
             }
-            // The multiclass-broadcast span the launcher would read
-            // (default_raw.rs:108-158) must also fit the segment.
-            let broadcast_end = begin.saturating_add(broadcast_span);
-            if broadcast_end > seg_len {
+            // The span the kernel actually reads for THIS tree's routing
+            // (default_raw.rs:113-158) must also fit the segment. Only the
+            // full-broadcast arm can read past the declared `end`.
+            let routing_end = begin.saturating_add(routing_span);
+            if routing_end > seg_len {
                 return Err(CubeclError::MalformedLeafVector {
                     tree: t,
                     node: node_rel,
                     begin,
-                    end: broadcast_end,
+                    end: routing_end,
                     segment_len: seg_len,
                 });
             }
@@ -342,9 +398,14 @@ pub fn validate_leaf_vectors<F: Copy>(
 ///
 /// `num_row`/`data_len` describe the input matrix the kernel will read; they are
 /// validated here so a malformed model never reaches a device launch.
-/// `num_target`/`max_num_class` bound the multiclass leaf-vector broadcast span
-/// the kernel reads, so a malformed leaf-vector span is rejected with a typed
-/// [`CubeclError::MalformedLeafVector`] before any device op.
+/// `num_target`/`max_num_class`/`num_class` plus the per-tree `target_id` /
+/// `class_id` routing columns bound the leaf-vector span the kernel actually
+/// reads for each tree (CR-01, routing-aware), so a malformed leaf-vector span is
+/// rejected with a typed [`CubeclError::MalformedLeafVector`] before any device
+/// op. On the non-broadcast paths (`score_per_tree` / `leaf_id`) the caller
+/// passes empty `target_id` / `class_id` slices and only the `[begin, end)`
+/// bound applies.
+#[allow(clippy::too_many_arguments)]
 pub fn upload_forest<R: Runtime, F: Copy + bytemuck::Pod>(
     client: &ComputeClient<R>,
     preset: &ModelPreset<F>,
@@ -353,12 +414,16 @@ pub fn upload_forest<R: Runtime, F: Copy + bytemuck::Pod>(
     data_len: usize,
     num_target: usize,
     max_num_class: usize,
+    num_class: &[i32],
+    target_id: &[i32],
+    class_id: &[i32],
 ) -> Result<UploadedForest<R>, CubeclError> {
     let cols = concat_columns(preset);
     // VALIDATE BEFORE ANY DEVICE OP (no OOB device write on a malformed model).
     validate_shape(num_feature, num_row, data_len, &cols)?;
-    // Leaf-vector span validation (T-06-09: no OOB leaf-vector device read).
-    validate_leaf_vectors(&cols, num_target, max_num_class)?;
+    // Leaf-vector span validation (T-06-09: no OOB leaf-vector device read),
+    // routing-aware per tree (CR-01).
+    validate_leaf_vectors(&cols, num_target, max_num_class, num_class, target_id, class_id)?;
 
     let num_nodes_total = cols.cleft.len();
     let num_leafvec_total = cols.leaf_vector.len();

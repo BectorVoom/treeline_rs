@@ -413,7 +413,8 @@ fn run_default_raw<F: PredictCpuElem, T: Float + CubeElement + bytemuck::Pod + C
     // `num_target * max_num_class` cells from `[leaf_vector_begin, ...)`; pass
     // that span so validate_leaf_vectors rejects a span the kernel would overrun.
     let forest = upload::upload_forest::<CpuRuntime, T>(
-        client, preset, num_feature, num_row, data.len(), num_target, max_num_class,
+        client, preset, num_feature, num_row, data.len(), num_target, max_num_class, num_class,
+        target_id, class_id,
     )?;
     let num_tree = preset.trees.len();
     let cells_per_row = num_target * max_num_class;
@@ -489,7 +490,7 @@ fn run_leaf_id<F: PredictCpuElem, T: Float + CubeElement + bytemuck::Pod + Copy>
     // LeafId reads no leaf-vector elements (it returns the leaf node id), so the
     // broadcast span is 0; the begin<=end / end<=segment_len checks still apply.
     let forest = upload::upload_forest::<CpuRuntime, T>(
-        client, preset, num_feature, num_row, data.len(), 0, 0,
+        client, preset, num_feature, num_row, data.len(), 0, 0, &[], &[], &[],
     )?;
     let num_tree = preset.trees.len();
 
@@ -556,7 +557,7 @@ fn run_score_per_tree<F: PredictCpuElem, T: Float + CubeElement + bytemuck::Pod 
     // by the per-tree segment length, which the end<=segment_len check covers);
     // there is no (num_target, max_num_class) broadcast, so the broadcast span is 0.
     let forest = upload::upload_forest::<CpuRuntime, T>(
-        client, preset, num_feature, num_row, data.len(), 0, 0,
+        client, preset, num_feature, num_row, data.len(), 0, 0, &[], &[], &[],
     )?;
     let num_tree = preset.trees.len();
 

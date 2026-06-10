@@ -94,7 +94,9 @@ fn validate_leaf_vectors_rejects_end_past_segment() {
         tree_node_offset: vec![0, 1],
         tree_leafvec_offset: vec![0, 2],
     };
-    match validate_leaf_vectors(&cols, 1, 1) {
+    // Full-broadcast routing (tid == -1, cid == -1); the declared end (5) is
+    // already past the segment (2) regardless of routing span.
+    match validate_leaf_vectors(&cols, 1, 1, &[1], &[-1], &[-1]) {
         Err(CubeclError::MalformedLeafVector { tree, node, begin, end, segment_len }) => {
             assert_eq!((tree, node), (0, 0));
             assert_eq!((begin, end, segment_len), (0, 5, 2));
@@ -120,7 +122,7 @@ fn validate_leaf_vectors_rejects_inverted_span() {
         tree_node_offset: vec![0, 1],
         tree_leafvec_offset: vec![0, 3],
     };
-    match validate_leaf_vectors(&cols, 1, 1) {
+    match validate_leaf_vectors(&cols, 1, 1, &[1], &[-1], &[-1]) {
         Err(CubeclError::MalformedLeafVector { begin, end, .. }) => {
             assert_eq!((begin, end), (2, 1));
         }
@@ -147,10 +149,12 @@ fn validate_leaf_vectors_rejects_broadcast_overrun() {
         tree_node_offset: vec![0, 1],
         tree_leafvec_offset: vec![0, 2],
     };
-    // broadcast span 1 * 3 = 3 > segment length 2 → reject.
-    match validate_leaf_vectors(&cols, 1, 3) {
+    // Full-broadcast routing (tid == -1, cid == -1): the kernel reads
+    // num_target * max_num_class = 1 * 3 = 3 cells from begin > segment length 2
+    // → reject.
+    match validate_leaf_vectors(&cols, 1, 3, &[3], &[-1], &[-1]) {
         Err(CubeclError::MalformedLeafVector { end, segment_len, .. }) => {
-            assert_eq!((end, segment_len), (3, 2)); // broadcast_end = begin + 3
+            assert_eq!((end, segment_len), (3, 2)); // routing_end = begin + 3
         }
         other => panic!("expected MalformedLeafVector (broadcast overrun), got {other:?}"),
     }
@@ -174,7 +178,7 @@ fn validate_leaf_vectors_accepts_well_formed() {
         tree_node_offset: vec![0, 1],
         tree_leafvec_offset: vec![0, 3],
     };
-    assert!(validate_leaf_vectors(&cols, 1, 3).is_ok());
+    assert!(validate_leaf_vectors(&cols, 1, 3, &[3], &[-1], &[-1]).is_ok());
 
     // A scalar leaf (begin == end == 0) is always fine, regardless of broadcast.
     let scalar = HostColumns::<f32> {
@@ -191,5 +195,119 @@ fn validate_leaf_vectors_accepts_well_formed() {
         tree_node_offset: vec![0, 3],
         tree_leafvec_offset: vec![0, 0],
     };
-    assert!(validate_leaf_vectors(&scalar, 1, 1).is_ok());
+    assert!(validate_leaf_vectors(&scalar, 1, 1, &[1], &[-1], &[-1]).is_ok());
+}
+
+/// CR-01 (BLOCKER) regression: a WELL-FORMED multi-target / `max_num_class > 1`
+/// leaf-vector model that routes through a NON-broadcast arm must NOT be falsely
+/// rejected. Before the routing-aware fix, the validator applied a single
+/// `begin + num_target * max_num_class <= seg_len` bound to every node, which
+/// over-rejected these valid models (invisible to the suite because every other
+/// leaf-vector fixture uses `num_target == 1` full-broadcast routing).
+#[test]
+fn validate_leaf_vectors_accepts_per_target_multiclass() {
+    // num_target = 2, max_num_class = 3, but this tree's leaf vector is routed
+    // per-target (tid == -1, cid >= 0), so the kernel reads only `num_target == 2`
+    // cells from begin. A length-2 segment is therefore well-formed even though
+    // num_target * max_num_class == 6 > 2.
+    let cols = HostColumns::<f32> {
+        cleft: vec![-1],
+        cright: vec![-1],
+        split_index: vec![-1],
+        threshold: vec![0.0],
+        leaf_value: vec![0.0],
+        leaf_vector: vec![1.0, 2.0], // segment length 2 == num_target
+        leaf_vector_begin: vec![0],
+        leaf_vector_end: vec![2],
+        default_left: vec![0],
+        node_type: vec![0],
+        tree_node_offset: vec![0, 1],
+        tree_leafvec_offset: vec![0, 2],
+    };
+    // Per-target routing: tid == -1, cid == 1 (>= 0). Routing read span ==
+    // num_target == 2 <= seg_len 2 → MUST pass (the old broadcast bound 6 > 2
+    // falsely rejected this).
+    assert!(
+        validate_leaf_vectors(&cols, 2, 3, &[1, 2], &[-1], &[1]).is_ok(),
+        "well-formed per-target multiclass leaf vector must not be rejected (CR-01)"
+    );
+
+    // Per-class routing (tid >= 0, cid == -1): the kernel reads num_class[tid]
+    // cells. With num_class = [.., 2] and tid == 1 it reads 2 cells; a length-2
+    // segment fits even though num_target * max_num_class == 6.
+    let per_class = HostColumns::<f32> {
+        cleft: vec![-1],
+        cright: vec![-1],
+        split_index: vec![-1],
+        threshold: vec![0.0],
+        leaf_value: vec![0.0],
+        leaf_vector: vec![1.0, 2.0],
+        leaf_vector_begin: vec![0],
+        leaf_vector_end: vec![2],
+        default_left: vec![0],
+        node_type: vec![0],
+        tree_node_offset: vec![0, 1],
+        tree_leafvec_offset: vec![0, 2],
+    };
+    // tid == 1, cid == -1; num_class[1] == 2 <= seg_len 2 → pass.
+    assert!(
+        validate_leaf_vectors(&per_class, 2, 3, &[3, 2], &[1], &[-1]).is_ok(),
+        "well-formed per-class multiclass leaf vector must not be rejected (CR-01)"
+    );
+
+    // The no-OOB guarantee is NOT weakened: a genuinely out-of-range per-target
+    // span (begin 0, end 3 but segment 2, routed per-target reading 2 cells —
+    // here the declared end 3 already exceeds segment 2) is still rejected.
+    let oob = HostColumns::<f32> {
+        cleft: vec![-1],
+        cright: vec![-1],
+        split_index: vec![-1],
+        threshold: vec![0.0],
+        leaf_value: vec![0.0],
+        leaf_vector: vec![1.0, 2.0],
+        leaf_vector_begin: vec![0],
+        leaf_vector_end: vec![3], // past segment 2
+        default_left: vec![0],
+        node_type: vec![0],
+        tree_node_offset: vec![0, 1],
+        tree_leafvec_offset: vec![0, 2],
+    };
+    assert!(
+        matches!(
+            validate_leaf_vectors(&oob, 2, 3, &[1, 2], &[-1], &[1]),
+            Err(CubeclError::MalformedLeafVector { .. })
+        ),
+        "an out-of-range span must still be rejected (no-OOB guarantee preserved)"
+    );
+}
+
+/// WR-01 regression: `validate_leaf_vectors` is `pub` and runs on caller-supplied
+/// `HostColumns`. A non-monotonic `tree_leafvec_offset` (a corrupt/hand-built
+/// column) must NOT underflow-panic on the `seg_len` subtraction; it yields
+/// `seg_len == 0` (saturating) and the leaf's span is rejected with the typed
+/// error.
+#[test]
+fn validate_leaf_vectors_rejects_non_monotonic_offset_without_panic() {
+    let cols = HostColumns::<f32> {
+        cleft: vec![-1],
+        cright: vec![-1],
+        split_index: vec![-1],
+        threshold: vec![0.0],
+        leaf_value: vec![0.0],
+        leaf_vector: vec![0.0, 0.0],
+        leaf_vector_begin: vec![0],
+        leaf_vector_end: vec![1],
+        default_left: vec![0],
+        node_type: vec![0],
+        tree_node_offset: vec![0, 1],
+        // Non-monotonic: offset[1] (2) < offset[2]? No — here offset goes
+        // 5 -> 0, so seg_len = 0.saturating_sub(5)... arranged so the second
+        // entry is SMALLER than the first: [5, 0] → seg_len = 0 - 5 saturates to 0.
+        tree_leafvec_offset: vec![5, 0],
+    };
+    // Must return the typed error (seg_len saturates to 0, end 1 > 0), never panic.
+    assert!(matches!(
+        validate_leaf_vectors(&cols, 1, 1, &[1], &[-1], &[-1]),
+        Err(CubeclError::MalformedLeafVector { .. })
+    ));
 }
