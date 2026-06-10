@@ -210,7 +210,7 @@ Plans:
 Plans:
 **Wave 1** *(Wave 0 — crate scaffold + as_bytes + RED scaffolds; gates everything)*
 
-- [ ] 06-01-PLAN.md — treelite-cubecl crate scaffold + cubecl 0.10.0/bytemuck pin + TreeBuf::as_bytes() + RED test scaffolds (spike/upload/determinism/matrix sibling) (Wave 1)
+- [x] 06-01-PLAN.md — treelite-cubecl crate scaffold + cubecl 0.10.0/bytemuck pin + TreeBuf::as_bytes() + RED test scaffolds (spike/upload/determinism/matrix sibling) (Wave 1)
 
 **Wave 2** *(blocked on Wave 1 — the mandatory spike)*
 
@@ -284,7 +284,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. Full XGBoost Loaders | 4/4 | Complete    | 2026-06-10 |
 | 4. LightGBM & scikit-learn Loaders | 8/8 | Complete    | 2026-06-10 |
 | 5. Full Scalar GTIL & Equivalence Harness | 7/7 | Complete    | 2026-06-10 |
-| 6. cubecl GTIL Kernels (CPU Backend) | 0/TBD | Not started | - |
+| 6. cubecl GTIL Kernels (CPU Backend) | 1/5 | In Progress|  |
 | 7. GPU Backend & Equivalence Report | 0/TBD | Not started | - |
 | 8. PyO3 Python Binding | 0/TBD | Not started | - |
 | 9. Memory-Efficiency Hardening | 0/TBD | Not started | - |
