@@ -39,16 +39,16 @@ Requirements for the initial release. Each maps to a roadmap phase. All are hypo
 
 ### LightGBM Loader
 
-- [ ] **LGB-01**: User can load a LightGBM text-format model
-- [ ] **LGB-02**: Categorical splits decode correctly (bitset) with upstream-matching per-field precision
+- [x] **LGB-01**: User can load a LightGBM text-format model
+- [x] **LGB-02**: Categorical splits decode correctly (bitset) with upstream-matching per-field precision
 - [ ] **LGB-03**: LightGBM objective maps to the correct postprocessor (+ `sigmoid_alpha`), with `class_id` round-robin and `average_output` honored
 
 ### scikit-learn Loader
 
-- [ ] **SKL-01**: User can import `RandomForest` and `ExtraTrees` (classifier + regressor)
-- [ ] **SKL-02**: User can import `GradientBoosting` (classifier + regressor)
-- [ ] **SKL-03**: User can import `IsolationForest`
-- [ ] **SKL-04**: User can import `HistGradientBoosting` (classifier + regressor)
+- [x] **SKL-01**: User can import `RandomForest` and `ExtraTrees` (classifier + regressor)
+- [x] **SKL-02**: User can import `GradientBoosting` (classifier + regressor)
+- [x] **SKL-03**: User can import `IsolationForest`
+- [x] **SKL-04**: User can import `HistGradientBoosting` (classifier + regressor)
 
 ### GTIL Inference
 
@@ -156,13 +156,13 @@ Which phases cover which requirements.
 | XGB-03 | Phase 3 | Complete |
 | XGB-04 | Phase 3 | Complete |
 | XGB-05 | Phase 3 | Complete |
-| LGB-01 | Phase 4 | Pending |
-| LGB-02 | Phase 4 | Pending |
+| LGB-01 | Phase 4 | Complete |
+| LGB-02 | Phase 4 | Complete |
 | LGB-03 | Phase 4 | Pending |
-| SKL-01 | Phase 4 | Pending |
-| SKL-02 | Phase 4 | Pending |
-| SKL-03 | Phase 4 | Pending |
-| SKL-04 | Phase 4 | Pending |
+| SKL-01 | Phase 4 | Complete |
+| SKL-02 | Phase 4 | Complete |
+| SKL-03 | Phase 4 | Complete |
+| SKL-04 | Phase 4 | Complete |
 | GTIL-01 | Phase 5 | Pending |
 | GTIL-02 | Phase 5 | Pending |
 | GTIL-03 | Phase 5 | Pending |

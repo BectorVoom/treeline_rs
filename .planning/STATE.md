@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 4 context gathered
-last_updated: "2026-06-10T04:21:00.000Z"
-last_activity: 2026-06-10 -- Plan 04-02 complete
+stopped_at: Completed 04-03-PLAN.md
+last_updated: "2026-06-10T04:28:51.834Z"
+last_activity: 2026-06-10 -- Plan 04-03 complete
 progress:
   total_phases: 9
   completed_phases: 3
   total_plans: 22
-  completed_plans: 15
-  percent: 35
+  completed_plans: 17
+  percent: 33
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 04 (lightgbm-scikit-learn-loaders) — EXECUTING
-Plan: 3 of 8
-Status: Executing Phase 04 — Plan 04-02 complete (GTIL output-shaping + 4 postprocessors; D-03 gate open). Wave 1 remaining: 04-03 (frozen goldens).
-Last activity: 2026-06-10 -- Plan 04-02 complete
+Plan: 4 of 8
+Status: Executing Phase 04 — Plan 04-03 complete (Wave 1 done: frozen per-estimator goldens captured from upstream treelite.gtil.predict). Next: Wave 2 estimator slices (04-04 LightGBM loader onward).
+Last activity: 2026-06-10 -- Plan 04-03 complete
 
-Progress: [██░░░░░░] 25% (Phase 04 plans: 2/8)
+Progress: [███░░░░░] 38% (Phase 04 plans: 3/8)
 
 ## Performance Metrics
 
@@ -69,6 +69,7 @@ Progress: [██░░░░░░] 25% (Phase 04 plans: 2/8)
 | Phase 03 P04 | 30min | 2 tasks | 6 files |
 | Phase 04 P01 | 12min | 2 tasks | 10 files |
 | Phase 04 P02 | 5min | 2 tasks | 5 files |
+| Phase 04 P03 | 6min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -125,6 +126,10 @@ Recent decisions affecting current work:
 - [04-02]: gtil::predict widened to a FLAT row-major (num_row, num_target, max_num_class) buffer (the Array3DView storage) — binary stays length num_row, byte-identical to Phase 1; no new public entry-point. Four-way OutputLeafValue/OutputLeafVector branch on (target_id[tree]==-1, class_id[tree]==-1) ports predict.cc:174-229; RF averaging (predict.cc:259-293) + f64 2D base-score add (:294-304); serial tree-sum (GTIL-08) and T::to_f32 cast preserved.
 - [04-02]: four postprocessors ported verbatim cast-order — exponential_standard_ratio uses exp2 (BASE-2, not exp) with f32 ratio_c; softmax = f32 max-subtraction + f64 norm_const accumulate + f32 divide (the 1e-5 contract). signed_square/hinge/identity_multiclass/multiclass_ova deferred to Phase 5.
 - [04-02]: bounds-checked output routing → typed GtilError::OutputRouteOutOfBounds / LeafVectorTooShort (T-04-03 mitigated, never OOB write/panic); has_leaf_vector made bounds-safe in the gtil layer (absent/short CSR offsets → scalar path) so malformed/hand-crafted trees never panic (ERR-01).
+- [Phase ?]: [04-03]: Estimator goldens captured from treelite.gtil.predict default (post-processed) kind, NOT framework predict (D-07); each capture script asserts the GTIL default kind so an API default change is caught.
+- [Phase ?]: [04-03]: IsolationForest golden == -clf.score_samples(X) cross-checked at capture time (max delta 6.9e-9 < 1e-5) — the canonical Treelite-not-framework case (D-07).
+- [Phase ?]: [04-03]: HistGB packed node itemsize is 56 (64-bit feature-index variant) on this env; nodes frozen as base64; numerical fixture has identity features_map, categorical carries categories_map (Pitfall 4 split).
+- [Phase ?]: [04-03]: LightGBM numerical golden references vendored deep_lightgbm/model.txt (no dup); categorical model fit with max_cat_to_onehot=1 to force bitset splits (num_cat=3) for LGB-02.
 
 ### Pending Todos
 
@@ -146,6 +151,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T04:21:00.000Z
+Last session: 2026-06-10T04:28:35.123Z
 Stopped at: Completed 04-02-PLAN.md
 Resume file: None
