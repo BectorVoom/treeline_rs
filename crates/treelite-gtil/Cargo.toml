@@ -7,3 +7,6 @@ license.workspace = true
 [dependencies]
 treelite-core = { path = "../treelite-core" }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }
