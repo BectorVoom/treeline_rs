@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: 02-04 complete — next plan is 02-05 (Wave 3)
-last_updated: "2026-06-10T00:01:40.000Z"
-last_activity: 2026-06-10 -- 02-04 complete; DumpAsJSON (SER-03/D-04) + Model/Tree field accessors (SER-04), dump_json + fields tests green, workspace green
+stopped_at: 02-05 complete — Phase 2 plans 5/5 done; next is phase verification
+last_updated: "2026-06-10T00:30:00.000Z"
+last_activity: 2026-06-10 -- 02-05 complete; load_xgboost_json rewired through ModelBuilder (D-11), equivalence max |delta| = 0e0 < 1e-5, workspace green
 progress:
   total_phases: 9
   completed_phases: 1
   total_plans: 9
-  completed_plans: 8
+  completed_plans: 9
   percent: 11
 ---
 
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 
 ## Current Position
 
-Phase: 02 (builder-serialization) — EXECUTING
-Plan: 5 of 5
-Status: Plan 02-04 COMPLETE — DumpAsJSON (SER-03/D-04) + Model/Tree field accessors (SER-04) landed (8a0597c, bd1c747); json.rs mirrors json_serializer.cc, fields read-only (no setters); dump_json + fields tests green; next: 02-05 (Wave 3)
-Last activity: 2026-06-10 -- 02-04 complete; serialize/json.rs + serialize/fields.rs, 5 new tests, workspace green
+Phase: 02 (builder-serialization) — 5/5 PLANS COMPLETE (ready for phase verification)
+Plan: 5 of 5 — COMPLETE
+Status: Plan 02-05 COMPLETE — load_xgboost_json rewired through treelite_builder::ModelBuilder (D-11) at 5cfa84e; validators preserved ahead of builder emission, builder errors propagate as XgbError::Builder; 1e-5 regression gate green (max |delta| = 0e0); workspace green; next: Phase 2 verification then Phase 3 (Full XGBoost Loaders)
+Last activity: 2026-06-10 -- 02-05 complete; treelite-xgboost gains treelite-builder dep, loader emits 11 ModelBuilder calls / 0 TreeBuf::from_owned in build path, workspace green
 
-Progress: [█████░░░░░] 56%
+Progress: [██████░░░░] 56%
 
 ## Performance Metrics
 
@@ -59,6 +59,7 @@ Progress: [█████░░░░░] 56%
 | Phase 02 P02 | 7min | 2 tasks | 9 files |
 | Phase 02 P03 | 75min | 2 tasks | 10 files |
 | Phase 02 P04 | 6min | 2 tasks | 9 files |
+| Phase 02 P05 | 10min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -88,6 +89,8 @@ Recent decisions affecting current work:
 - [02-04]: DumpAsJSON reuses the existing enum as_str() spellings verbatim (D-04); no new strings invented; dump_as_json takes &mut Model to stage variant-derived type tags (mirrors upstream GetThresholdType()/GetLeafOutputType()).
 - [02-04]: D-04 equivalence asserted at the PARSED-value level, never by byte-comparing serialized JSON (RapidJSON vs serde_json float formatting differs, A4/Q3).
 - [02-04]: Model v5 bookkeeping readers promoted pub(crate)→pub (read-only, NO setter) as the SER-04 inspection surface, preserving field_accessor.cc Set-rejection fidelity (T-02-J02).
+- [02-05]: load_xgboost_json rewired through treelite_builder::ModelBuilder (D-11) — 11 builder calls, 0 TreeBuf::from_owned in build path; loader validators (require_non_negative/check_dim) run BEFORE builder emission; builder errors propagate as XgbError::Builder (thiserror transparent, no panic, no anyhow).
+- [02-05]: 1e-5 regression gate proves the rewiring is bit-identical — equivalence max |delta| = 0e0 < 1e-5 (Phase 2 success criterion 1, second half); objective→postprocessor map, f64 base_score margin transform, and F32-only variant all unchanged.
 
 ### Pending Todos
 
@@ -105,10 +108,10 @@ Items acknowledged and carried forward from previous milestone close:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| *(none)* | | | |
+| Loader fidelity | DEF-02-01: XGBoost loader→serialize byte-fidelity gap (serializer gate proven loader-independent via golden round-trip) | Deferred to Phase 3 | 02-03 |
 
 ## Session Continuity
 
-Last session: 2026-06-10T00:01:40.000Z
-Stopped at: 02-04 complete — next plan is 02-05 (Wave 3)
-Resume file: .planning/phases/02-builder-serialization/02-05-PLAN.md
+Last session: 2026-06-10T00:30:00.000Z
+Stopped at: 02-05 complete — Phase 2 plans 5/5 done; next is Phase 2 verification
+Resume file: .planning/phases/02-builder-serialization/ (phase verification)

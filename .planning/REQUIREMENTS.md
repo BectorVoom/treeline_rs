@@ -144,7 +144,7 @@ Which phases cover which requirements.
 | CORE-04 | Phase 1 | Complete |
 | ERR-01 | Phase 1 | Complete |
 | ERR-02 | Phase 1 | Complete |
-| BLD-01 | Phase 2 | Complete (02-02) |
+| BLD-01 | Phase 2 | Complete (02-02; exercised end-to-end via the rewired XGBoost-JSON loader in 02-05) |
 | BLD-02 | Phase 2 | Complete (02-02) |
 | BLD-03 | Phase 2 | Complete (02-02) |
 | SER-01 | Phase 2 | Complete |
@@ -201,4 +201,4 @@ Which phases cover which requirements.
 
 ---
 *Requirements defined: 2026-06-09*
-*Last updated: 2026-06-09 after roadmap creation (traceability populated, 45/45 mapped)*
+*Last updated: 2026-06-10 — Phase 2 complete (5/5); BLD-01 exercised end-to-end via the rewired XGBoost-JSON loader (02-05)*
