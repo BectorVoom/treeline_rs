@@ -442,12 +442,6 @@ impl ModelBuilder {
         let mut leaf_value = Vec::with_capacity(num_nodes);
         let mut threshold = Vec::with_capacity(num_nodes);
         let mut cmp = Vec::with_capacity(num_nodes);
-        let mut data_count = Vec::with_capacity(num_nodes);
-        let mut data_count_present = Vec::with_capacity(num_nodes);
-        let mut sum_hess = Vec::with_capacity(num_nodes);
-        let mut sum_hess_present = Vec::with_capacity(num_nodes);
-        let mut gain = Vec::with_capacity(num_nodes);
-        let mut gain_present = Vec::with_capacity(num_nodes);
 
         for (n, &(rl, rr)) in self.nodes.iter().zip(resolved.iter()) {
             node_type.push(n.node_type);
@@ -458,13 +452,28 @@ impl ModelBuilder {
             leaf_value.push(n.leaf_value);
             threshold.push(n.threshold);
             cmp.push(n.cmp);
-            data_count.push(n.data_count);
-            data_count_present.push(n.data_count_present);
-            sum_hess.push(n.sum_hess);
-            sum_hess_present.push(n.sum_hess_present);
-            gain.push(n.gain);
-            gain_present.push(n.gain_present);
         }
+
+        // CR-01: per-node columns upstream `AllocNode` pushes on EVERY node
+        // (`detail/tree.h:79-84`). For the builder's no-category / no-leaf-vector
+        // trees the `leaf_vector_`/`category_list_` value buffers stay empty, so
+        // `leaf_vector_.Size()` and `category_list_.Size()` are 0 for every node —
+        // begin/end offsets are all 0, and `category_list_right_child_` is `false`.
+        // These columns must be length num_nodes (not 0) to match upstream.
+        let category_list_right_child = vec![false; num_nodes]; // tree.h:79
+        let leaf_vector_begin = vec![0u64; num_nodes]; // tree.h:81 (leaf_vector_.Size() == 0)
+        let leaf_vector_end = vec![0u64; num_nodes]; // tree.h:82 (leaf_vector_.Size() == 0)
+        let category_list_begin = vec![0u64; num_nodes]; // tree.h:83 (category_list_.Size() == 0)
+        let category_list_end = vec![0u64; num_nodes]; // tree.h:84 (category_list_.Size() == 0)
+
+        // CR-02: empty-unless-set stat columns, ported from upstream `AllocNode`'s
+        // `if (!*_present_.Empty())` guards (`detail/tree.h:87-98`). Each stat pair
+        // is emitted only when AT LEAST ONE node set that specific stat; otherwise
+        // both the value and `_present` columns stay empty (length 0). Once any node
+        // sets a stat, every node carries a (value, present) entry (length num_nodes).
+        let any_data_count = self.nodes.iter().any(|n| n.data_count_present);
+        let any_sum_hess = self.nodes.iter().any(|n| n.sum_hess_present);
+        let any_gain = self.nodes.iter().any(|n| n.gain_present);
 
         let mut tree = Tree::<f32>::new();
         tree.node_type = TreeBuf::from_owned(node_type);
@@ -475,12 +484,38 @@ impl ModelBuilder {
         tree.leaf_value = TreeBuf::from_owned(leaf_value);
         tree.threshold = TreeBuf::from_owned(threshold);
         tree.cmp = TreeBuf::from_owned(cmp);
-        tree.data_count = TreeBuf::from_owned(data_count);
-        tree.data_count_present = TreeBuf::from_owned(data_count_present);
-        tree.sum_hess = TreeBuf::from_owned(sum_hess);
-        tree.sum_hess_present = TreeBuf::from_owned(sum_hess_present);
-        tree.gain = TreeBuf::from_owned(gain);
-        tree.gain_present = TreeBuf::from_owned(gain_present);
+        // CR-01 per-node AllocNode columns (tree.h:79-84).
+        tree.category_list_right_child = TreeBuf::from_owned(category_list_right_child);
+        tree.leaf_vector_begin = TreeBuf::from_owned(leaf_vector_begin);
+        tree.leaf_vector_end = TreeBuf::from_owned(leaf_vector_end);
+        tree.category_list_begin = TreeBuf::from_owned(category_list_begin);
+        tree.category_list_end = TreeBuf::from_owned(category_list_end);
+        // CR-02 empty-unless-set stat columns (tree.h:87-98).
+        if any_data_count {
+            tree.data_count =
+                TreeBuf::from_owned(self.nodes.iter().map(|n| n.data_count).collect());
+            tree.data_count_present =
+                TreeBuf::from_owned(self.nodes.iter().map(|n| n.data_count_present).collect());
+        } else {
+            tree.data_count = TreeBuf::empty();
+            tree.data_count_present = TreeBuf::empty();
+        }
+        if any_sum_hess {
+            tree.sum_hess = TreeBuf::from_owned(self.nodes.iter().map(|n| n.sum_hess).collect());
+            tree.sum_hess_present =
+                TreeBuf::from_owned(self.nodes.iter().map(|n| n.sum_hess_present).collect());
+        } else {
+            tree.sum_hess = TreeBuf::empty();
+            tree.sum_hess_present = TreeBuf::empty();
+        }
+        if any_gain {
+            tree.gain = TreeBuf::from_owned(self.nodes.iter().map(|n| n.gain).collect());
+            tree.gain_present =
+                TreeBuf::from_owned(self.nodes.iter().map(|n| n.gain_present).collect());
+        } else {
+            tree.gain = TreeBuf::empty();
+            tree.gain_present = TreeBuf::empty();
+        }
         tree.has_categorical_split = self
             .nodes
             .iter()
