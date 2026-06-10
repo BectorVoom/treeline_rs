@@ -140,9 +140,10 @@ pub fn check_manifest(manifest: &Manifest) {
     }
     // rustc drift is provenance-only (compiled-in vs captured); surface it so a
     // toolchain-sensitive 1e-5 miss is diagnosable.
-    if let (Some(captured), Some(running)) =
-        (manifest.rustc.as_deref(), option_env!("RUSTC_VERSION_AT_BUILD"))
-        && captured != running
+    if let (Some(captured), Some(running)) = (
+        manifest.rustc.as_deref(),
+        option_env!("RUSTC_VERSION_AT_BUILD"),
+    ) && captured != running
     {
         eprintln!(
             "WARNING: golden captured with rustc '{captured}' but built with \
