@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 07-02-PLAN.md
-last_updated: "2026-06-10T21:48:00.000Z"
-last_activity: 2026-06-10 -- Plan 07-02 complete (runtime-generic predict::<R,F>)
+last_updated: "2026-06-10T21:55:24.239Z"
+last_activity: "2026-06-10 -- Plan 07-02 complete (runtime-generic predict::<R,F>)"
 progress:
   total_phases: 9
   completed_phases: 6
   total_plans: 40
-  completed_plans: 38
-  percent: 68
+  completed_plans: 39
+  percent: 67
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 07 (gpu-backend-equivalence-report) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-06-10 -- Plan 07-02 complete (runtime-generic predict::<R,F>)
 
@@ -94,6 +94,7 @@ Progress: [██████████] Phase 06 complete (7/7 plans) — mil
 | Phase 06-cubecl-gtil-kernels-cpu-backend P07 | 6min | 2 tasks | 67 files |
 | Phase 07 P01 | 8min | 2 tasks | 5 files |
 | Phase 07 P02 | ~9min | 2 tasks | 1 file |
+| Phase 07 P03 | ~4min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -201,6 +202,8 @@ Recent decisions affecting current work:
 - [Phase ?]: [07-01]: GPU backends are crate-local additive cargo features (rocm/cuda/wgpu) forwarding to cubecl/* (cubecl table: rocm=[hip]); workspace root stays cubecl=features=[cpu] so default builds need no GPU libs (D-04/Pitfall 5). device.rs uses generic <R::Device>::default() — HipRuntime::Device is AmdDevice not HipDevice.
 - [07-02]: Phase-7's central code change is exactly ONE file — treelite_cubecl::lib.rs. predict::<R: Runtime, F> is the runtime-generic launcher (six ComputeClient<R> sigs, three launch::<F,T,R> sites, three upload_forest::<R,T> calls); kernels/* and upload.rs were ALREADY R-generic and stay untouched (the smell guard: git diff --stat = 0). Verified the generic path compiles under --features cuda → Plan 03 calls predict::<HipRuntime/CudaRuntime/WgpuRuntime, F> directly.
 - [07-02]: predict::<R> wires Plan-01's device::client::<R>(tag)? — DeviceUnavailable propagates via ?, NO silent CPU fallback (D-05/D-09). Tag = std::any::type_name::<R>() (the implemented client() signature needs a &'static str arg, unlike RESEARCH's no-arg device_and_client sketch). The model_routes_to_scalar_fallback (D-02) gate stays BEFORE client construction, so a categorical/non-kLT model on a device-less backend still returns via scalar. predict_cpu is now a one-line shim over predict::<CpuRuntime, F>; harness + gtil_matrix_cubecl 1e-5 gate byte-identical (untouched).
+- [Phase ?]: [07-03]: Three GPU backends registered into the harness — Backend::Rocm/Cuda/Wgpu + rocm_case/cuda_case/wgpu_case mirror cubecl_cpu_case: dense f32/f64 route through Plan-02 predict::<R,_>, sparse rides scalar fallback (D-02). Each #[cfg(feature)]-gated; RunnerCase seam + matrix iteration untouched (D-11).
+- [Phase ?]: [07-03]: cubecl is an OPTIONAL harness dep gated into rocm/cuda/wgpu features (dep:cubecl + cubecl/<backend>) so *_case() names cubecl::hip::HipRuntime directly; default cpu-only build never pulls cubecl. No device probe (A3: DeviceUnavailable propagates via ?, skip-not-fail, no silent CPU fallback). GPU-03 In Progress (registration done; on-hardware execution is Plan-04).
 
 ### Pending Todos
 
@@ -223,6 +226,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T21:48:00.000Z
+Last session: 2026-06-10T21:55:00.703Z
 Stopped at: Completed 07-02-PLAN.md
 Resume file: None

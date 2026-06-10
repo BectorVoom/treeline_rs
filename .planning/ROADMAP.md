@@ -260,7 +260,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 — needs predict::<R>)*
 
-- [ ] 07-03-PLAN.md — Register Backend::Rocm/Cuda/Wgpu + rocm_case()/cuda_case()/wgpu_case() in harness; ROCm selectable end-to-end (GPU-03/SC1) (Wave 2)
+- [x] 07-03-PLAN.md — Register Backend::Rocm/Cuda/Wgpu + rocm_case()/cuda_case()/wgpu_case() in harness; ROCm selectable end-to-end (GPU-03/SC1) (Wave 2)
 
 **Wave 3** *(blocked on Wave 2 — same harness lib.rs; hardware-gated checkpoint)*
 
@@ -310,6 +310,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 4. LightGBM & scikit-learn Loaders | 8/8 | Complete    | 2026-06-10 |
 | 5. Full Scalar GTIL & Equivalence Harness | 7/7 | Complete    | 2026-06-10 |
 | 6. cubecl GTIL Kernels (CPU Backend) | 7/7 | Complete    | 2026-06-10 |
-| 7. GPU Backend & Equivalence Report | 1/4 | In Progress|  |
+| 7. GPU Backend & Equivalence Report | 3/4 | In Progress|  |
 | 8. PyO3 Python Binding | 0/TBD | Not started | - |
 | 9. Memory-Efficiency Hardening | 0/TBD | Not started | - |
