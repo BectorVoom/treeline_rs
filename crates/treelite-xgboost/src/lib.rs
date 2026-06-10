@@ -18,6 +18,7 @@ mod detect;
 pub mod error;
 mod json;
 pub mod objective;
+mod ubjson;
 
 pub use detect::detect_xgboost_format;
 
@@ -27,6 +28,7 @@ pub use detect::detect_xgboost_format;
 #[doc(hidden)]
 pub mod test_support {
     pub use crate::json::{de_vec_f32_value, replace_nonfinite};
+    pub use crate::ubjson::decode_ubjson;
 }
 
 pub use error::XgbError;
@@ -281,5 +283,28 @@ pub(crate) fn build_model_from_parsed(parsed: XgbModelJson) -> Result<Model, Xgb
 pub fn load_xgboost_json(json: &str) -> Result<Model, XgbError> {
     let prelexed = json::replace_nonfinite(json);
     let parsed: XgbModelJson = serde_json::from_str(&prelexed)?;
+    build_model_from_parsed(parsed)
+}
+
+/// Load one XGBoost-UBJSON model into a [`treelite_core::Model`] (F32 variant).
+///
+/// Decodes the UBJSON byte stream via the hand-rolled tag decoder
+/// ([`ubjson::decode_ubjson`], D-03) into a `serde_json::Value` — emitting the
+/// SAME `"@NaN@"`/`"@Inf@"`/`"@-Inf@"` sentinel strings the JSON pre-lexer
+/// produces for non-finite floats — then `serde_json::from_value` into the SAME
+/// [`XgbModelJson`] structs and the SAME [`json::de_f32`] adapter the JSON path
+/// uses, and funnels through the shared [`build_model_from_parsed`] convergence
+/// path (D-01). The result is therefore the IDENTICAL [`Model`] a JSON load of
+/// the same logical model produces — byte-faithful to the single upstream golden
+/// blob (D-10) and predicting within 1e-5.
+///
+/// XGBoost stores scalar learner/tree params as UBJSON `S` strings (exactly as
+/// JSON stores them as JSON strings), so they deserialize into the `String`
+/// fields of [`XgbModelJson`] with no special-casing. A malformed stream
+/// (unknown tag, truncation, oversized `$`/`#` count) returns a typed
+/// [`XgbError::Ubjson`] rather than a panic or an OOM (ASVS V5, ERR-01).
+pub fn load_xgboost_ubjson(bytes: &[u8]) -> Result<Model, XgbError> {
+    let value = ubjson::decode_ubjson(bytes)?;
+    let parsed: XgbModelJson = serde_json::from_value(value)?;
     build_model_from_parsed(parsed)
 }

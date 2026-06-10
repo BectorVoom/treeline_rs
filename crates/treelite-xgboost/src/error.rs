@@ -81,6 +81,23 @@ pub enum XgbError {
     #[error("unrecognized XGBoost objective: {0:?}")]
     UnrecognizedObjective(String),
 
+    /// The UBJSON byte stream could not be decoded: an unknown type tag, a
+    /// truncated read (mid-tag / mid-string-length / mid-value), or a declared
+    /// `$`/`#` container count that exceeds the bytes remaining in the stream.
+    ///
+    /// The hand-rolled UBJSON decoder (D-03) reads every byte fallibly via
+    /// `bytes.get(..)` and validates each `#`count against the remaining stream
+    /// length BEFORE pre-allocating, so a truncated or hostile stream surfaces
+    /// here as a typed error rather than an out-of-bounds panic or an OOM
+    /// pre-allocation (ASVS V5, T-03-U01 / T-03-U02).
+    #[error("malformed XGBoost-UBJSON at byte {pos}: {detail}")]
+    Ubjson {
+        /// Byte offset into the UBJSON stream where decoding failed.
+        pos: usize,
+        /// Human-readable cause (unknown tag, truncation, count overflow).
+        detail: String,
+    },
+
     /// An error bubbled up from `treelite-core` (e.g. an unknown enum string).
     #[error(transparent)]
     Core(#[from] treelite_core::CoreError),
