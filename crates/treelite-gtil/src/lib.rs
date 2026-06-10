@@ -6,11 +6,13 @@
 //! function — there is NO `Predictor`/backend trait in Phase 1 (deferred to
 //! Phase 6).
 
+pub mod accessor;
 pub mod config;
 pub mod error;
 pub mod postprocessor;
 pub mod shape;
 
+pub use accessor::SparseCsr;
 pub use config::{Config, PredictKind};
 pub use error::GtilError;
 pub use shape::{Shape, output_shape};
@@ -517,6 +519,43 @@ fn has_leaf_vector<T: Copy>(tree: &Tree<T>, leaf: usize) -> bool {
     }
 }
 
+/// A per-row feature-view producer shared by the dense and sparse predict
+/// paths (the upstream `DenseMatrixAccessor` / `SparseMatrixAccessor` split,
+/// `predict.cc:38-97`).
+///
+/// Both variants materialize row `r` into a caller-owned scratch `&mut [O]` of
+/// length `num_feature`, which `predict_preset` then hands to `evaluate_tree`
+/// VERBATIM. Because the traversal sees an identical contiguous row regardless
+/// of source, dense==sparse parity on identical logical data is structural
+/// (D-04): the only difference is how the row is filled.
+enum RowSource<'a, O> {
+    /// Dense row-major `num_row × num_feature` buffer; row `r` is the slice
+    /// `data[r * num_feature .. (r + 1) * num_feature]` (`DenseMatrixAccessor`,
+    /// `predict.cc:38-56`). The caller has already validated `data.len() >=
+    /// num_row * num_feature`.
+    Dense { data: &'a [O], num_feature: usize },
+    /// Borrowed CSR view; row `r` is NaN-materialized via
+    /// [`SparseCsr::get_row`] (absent = NaN, `predict.cc:80-85`). The caller has
+    /// already `validate`d the CSR, so `get_row` is in bounds.
+    Sparse(SparseCsr<'a, O>),
+}
+
+impl<O: PredictOut> RowSource<'_, O> {
+    /// Fill `scratch` (length `num_feature`) with row `r`'s feature values.
+    #[inline]
+    fn materialize(&self, r: usize, scratch: &mut [O]) {
+        match self {
+            RowSource::Dense { data, num_feature } => {
+                // Copy the row slice into scratch so both paths traverse the
+                // same owned contiguous buffer (structural D-04 parity).
+                let begin = r * num_feature;
+                scratch.copy_from_slice(&data[begin..begin + num_feature]);
+            }
+            RowSource::Sparse(csr) => csr.get_row(r, scratch),
+        }
+    }
+}
+
 /// Per-preset prediction body, generic over the leaf/threshold type `T`.
 ///
 /// Implements the `PredictRaw` assembly order EXACTLY (`predict.cc:231-305`) —
@@ -541,7 +580,7 @@ fn has_leaf_vector<T: Copy>(tree: &Tree<T>, leaf: usize) -> bool {
 fn predict_preset<T: PredictScalar + PartialOrd, O: PredictOut>(
     trees: &[Tree<T>],
     shape: &OutputLayout<'_>,
-    data: &[O],
+    rows: &RowSource<'_, O>,
     num_row: usize,
     num_feature: usize,
 ) -> Result<Vec<O>, GtilError> {
@@ -549,8 +588,16 @@ fn predict_preset<T: PredictScalar + PartialOrd, O: PredictOut>(
     let mut output = vec![O::zero(); num_row * cells_per_row];
     let num_tree = trees.len();
 
+    // A single reusable scratch row, exactly the upstream `dense_row_` (one row
+    // per thread; scalar single-thread ⇒ one row). The sparse accessor
+    // NaN-materializes into it per row; the dense accessor copies the row slice
+    // into it. Either way `evaluate_tree` walks the SAME contiguous `&[O]`, so
+    // the dense and sparse paths are structurally identical (D-04).
+    let mut scratch = vec![O::nan(); num_feature];
+
     for r in 0..num_row {
-        let row = &data[r * num_feature..(r + 1) * num_feature];
+        rows.materialize(r, &mut scratch);
+        let row: &[O] = &scratch;
         // Serial tree accumulation in tree_id order — do NOT parallelize/reorder.
         for (tree_id, tree) in trees.iter().enumerate() {
             let leaf = evaluate_tree(tree, row)?;
@@ -785,20 +832,6 @@ pub fn predict<O: PredictOut>(
     num_row: usize,
     config: &Config,
 ) -> Result<Vec<O>, GtilError> {
-    // Per-kind dispatch (PredictImpl, predict.cc:380-396). Default/Raw share the
-    // sum-over-trees body and differ only in whether the postprocessor runs;
-    // LeafId/ScorePerTree are wired in Plan 05-04 and return a typed error here.
-    match config.kind {
-        PredictKind::Default | PredictKind::Raw => {}
-        PredictKind::LeafId => {
-            return Err(GtilError::UnsupportedPredictKind { kind: "LeafId" });
-        }
-        PredictKind::ScorePerTree => {
-            return Err(GtilError::UnsupportedPredictKind {
-                kind: "ScorePerTree",
-            });
-        }
-    }
     // `model.num_feature` is loader-produced/untrusted. A negative value casts
     // to a huge `usize` and overflows the row-slice math; treat it as a (0-sized,
     // impossible) shape so the buffer-length check below rejects it instead of
@@ -813,7 +846,7 @@ pub fn predict<O: PredictOut>(
     }
     let num_feature = model.num_feature as usize;
 
-    // Validate the input buffer up front: `predict_preset` slices
+    // Validate the input buffer up front: the dense accessor slices
     // `data[r * num_feature..(r + 1) * num_feature]` per row, which would panic
     // on a malformed model whose `num_feature` exceeds the data actually
     // supplied (WR-01 / T-03-01). Saturate the product so an overflow can never
@@ -827,6 +860,83 @@ pub fn predict<O: PredictOut>(
             required,
             got: data.len(),
         });
+    }
+
+    let rows = RowSource::Dense { data, num_feature };
+    predict_rows(model, &rows, num_row, num_feature, config)
+}
+
+/// Single-threaded SPARSE-CSR predict (GTIL-02, D-04).
+///
+/// The sparse analogue of [`predict`] (`PredictSparse`, `predict.cc:406-414`):
+/// the `csr` view's present `(col_ind, data)` pairs name the non-absent feature
+/// cells; every ABSENT cell is materialized as `O::nan()` per row
+/// (`SparseMatrixAccessor::GetRow`, `predict.cc:80-85`) — NOT `0`. The
+/// NaN-materialized row is then fed through the exact same
+/// [`evaluate_tree`]/per-kind body the dense path uses, so on identical logical
+/// data `predict_sparse(csr)` equals `predict(dense_with_nan)` structurally
+/// (D-04 parity).
+///
+/// `num_row` is the number of rows; `csr.row_ptr` must have `num_row + 1`
+/// entries. The CSR is validated once up front (`SparseCsr::validate`): a
+/// malformed `col_ind` (≥ `num_feature`) or `row_ptr` (non-monotone / wrong
+/// length / past the backing arrays) surfaces as a typed
+/// [`GtilError::SparseColumnOutOfBounds`] / [`GtilError::SparseRowPtrInvalid`]
+/// rather than an out-of-bounds access (T-05-09 / T-05-10).
+pub fn predict_sparse<O: PredictOut>(
+    model: &Model,
+    csr: SparseCsr<'_, O>,
+    num_row: usize,
+    config: &Config,
+) -> Result<Vec<O>, GtilError> {
+    // Same negative-num_feature guard as the dense path.
+    if model.num_feature < 0 {
+        return Err(GtilError::InvalidInputShape {
+            num_row,
+            num_feature: 0,
+            required: usize::MAX,
+            got: csr.data.len(),
+        });
+    }
+    let num_feature = model.num_feature as usize;
+
+    // Validate the entire CSR structure ONCE before any row is materialized, so
+    // `get_row` is in-bounds for every row (never an OOB scratch write / data
+    // slice). This subsumes the dense path's input-shape check.
+    csr.validate(num_row, num_feature)?;
+
+    let rows = RowSource::Sparse(csr);
+    predict_rows(model, &rows, num_row, num_feature, config)
+}
+
+/// Shared per-kind predict body over an already-validated [`RowSource`]
+/// (`PredictImpl`, `predict.cc:380-396`). Both [`predict`] and
+/// [`predict_sparse`] funnel here after validating their input view, so the
+/// kind dispatch + traversal + assembly is written exactly once and the dense
+/// and sparse paths are guaranteed identical (D-04).
+fn predict_rows<O: PredictOut>(
+    model: &Model,
+    rows: &RowSource<'_, O>,
+    num_row: usize,
+    num_feature: usize,
+    config: &Config,
+) -> Result<Vec<O>, GtilError> {
+    // Per-kind dispatch (PredictImpl, predict.cc:380-396). `LeafId` and
+    // `ScorePerTree` write raw leaf data with NO postprocess/average/base-score
+    // and have their own output shapes, so they branch out before the
+    // sum-over-trees body.
+    match config.kind {
+        PredictKind::Default | PredictKind::Raw => {}
+        // LeafId/ScorePerTree are wired in Task 2 of this plan; until then they
+        // surface as a typed error (no silent/wrong output).
+        PredictKind::LeafId => {
+            return Err(GtilError::UnsupportedPredictKind { kind: "LeafId" });
+        }
+        PredictKind::ScorePerTree => {
+            return Err(GtilError::UnsupportedPredictKind {
+                kind: "ScorePerTree",
+            });
+        }
     }
 
     // Output shape = (num_row, num_target, max_num_class). `max_num_class` is
@@ -848,10 +958,10 @@ pub fn predict<O: PredictOut>(
 
     let mut output = match &model.variant {
         ModelVariant::F32(preset) => {
-            predict_preset(&preset.trees, &shape, data, num_row, num_feature)?
+            predict_preset(&preset.trees, &shape, rows, num_row, num_feature)?
         }
         ModelVariant::F64(preset) => {
-            predict_preset(&preset.trees, &shape, data, num_row, num_feature)?
+            predict_preset(&preset.trees, &shape, rows, num_row, num_feature)?
         }
     };
 

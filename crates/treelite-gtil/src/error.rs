@@ -98,6 +98,38 @@ pub enum GtilError {
         kind: &'static str,
     },
 
+    /// A sparse-CSR `col_ind[k]` names a feature column outside
+    /// `[0, num_feature)`. Upstream would write `scratch[col_ind[k]]` unchecked
+    /// (`SparseMatrixAccessor::GetRow`, `predict.cc:84`); here the column is
+    /// validated before the scratch write so a corrupt `col_ind` can never
+    /// produce an out-of-bounds write (T-05-09).
+    #[error("sparse column index {col} is out of bounds (num_feature = {num_feature})")]
+    SparseColumnOutOfBounds {
+        /// The offending column index read from `col_ind`.
+        col: u64,
+        /// The number of feature columns (`model.num_feature`).
+        num_feature: u64,
+    },
+
+    /// A sparse-CSR `row_ptr` is malformed: wrong length (`!= num_row + 1`),
+    /// non-monotone, or its trailing fence exceeds the `data`/`col_ind` backing
+    /// length. Upstream slices `data[row_ptr[r]..row_ptr[r+1]]` unchecked
+    /// (`predict.cc:76-79`); here `row_ptr` is validated up front so a corrupt
+    /// offset array can never produce an out-of-bounds / inverted slice
+    /// (T-05-10).
+    #[error("sparse row_ptr is invalid at index {index}: value {value} violates limit {limit}")]
+    SparseRowPtrInvalid {
+        /// The `row_ptr` index where the violation was detected (the offending
+        /// fence, or `num_row` for a length / trailing-fence violation).
+        index: usize,
+        /// The offending value (the fence, the `row_ptr` length, or the
+        /// trailing total).
+        value: u64,
+        /// The limit it violated (the previous fence for monotonicity, the
+        /// required length, or the backing-array length).
+        limit: u64,
+    },
+
     /// An error bubbled up from `treelite-core`.
     #[error(transparent)]
     Core(#[from] treelite_core::CoreError),
