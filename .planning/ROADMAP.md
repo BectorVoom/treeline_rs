@@ -164,8 +164,27 @@ Plans:
   3. Output shaping is correct — `GetOutputShape` per kind, leaf-vector broadcast, tree averaging, f64 base-score addition — and per-row tree summation is serial in `tree_id` order (parallelism only across rows).
   4. The harness generates random seeded dense + sparse CSR inputs, compares against C++-captured golden vectors (committed with a toolchain/libm manifest) across model types, both presets, and all predict kinds, asserting within 1e-5 and reporting the max observed deviation.
 
-**Plans**: TBD
-**Research flag:** Needs research-phase — leaf-vector broadcast (4 cases); mixed-precision softmax details; cubecl control-flow constraints spike before kernel authoring.
+**Plans**: 5 plans
+Plans:
+**Wave 1** *(Wave 0 — frozen contract; gates everything)*
+
+- [ ] 05-01-PLAN.md — Seeded exhaustive-matrix capture (dense + CSR, both input dtypes, all 4 kinds, edge-seeded) + frozen `fixtures/gtil/` goldens with `backend: scalar-cpu` manifest + RED matrix test & unit scaffolds (EQV-01/EQV-02)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 05-02-PLAN.md — GTIL foundation: typed `Config`/`PredictKind` (D-06) + public `Shape`/`output_shape` (D-07) + `O`-generic input/output element (f64 input over both presets, D-05); internal `Shape`→`OutputLayout` rename (GTIL-01/GTIL-03/GTIL-07/GTIL-08)
+
+**Wave 3** *(blocked on Wave 2 — same lib.rs)*
+
+- [ ] 05-03-PLAN.md — 3 remaining postprocessors (`signed_square`/`hinge`/`multiclass_ova`) verbatim + full categorical float-representability guard (2^24 f32 / 2^32-1 f64) + child polarity; NaN→default routing confirmed (GTIL-04/GTIL-05/GTIL-06)
+
+**Wave 4** *(blocked on Wave 3 — same lib.rs)*
+
+- [ ] 05-04-PLAN.md — Sparse CSR accessor (absent=NaN, dense==sparse parity D-04) + `LeafId`/`ScorePerTree` predict kinds; bounds-checked `col_ind`/`row_ptr` → typed errors (GTIL-02/GTIL-03)
+
+**Wave 5** *(blocked on Wave 4 — full GTIL surface)*
+
+- [ ] 05-05-PLAN.md — Exhaustive equivalence-matrix runner (1e-5 across model×preset×dtype×kind×{dense,sparse}×seed) + dense==sparse parity + max-dev report + `Manifest` `backend` field & backend-parameterized seam (D-09/D-11) (EQV-03/EQV-04)
 
 ### Phase 6: cubecl GTIL Kernels (CPU Backend)
 
@@ -237,7 +256,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 2. Builder & Serialization | 6/6 | Complete    | 2026-06-10 |
 | 3. Full XGBoost Loaders | 4/4 | Complete    | 2026-06-10 |
 | 4. LightGBM & scikit-learn Loaders | 8/8 | Complete    | 2026-06-10 |
-| 5. Full Scalar GTIL & Equivalence Harness | 0/TBD | Not started | - |
+| 5. Full Scalar GTIL & Equivalence Harness | 0/5 | Planned | - |
 | 6. cubecl GTIL Kernels (CPU Backend) | 0/TBD | Not started | - |
 | 7. GPU Backend & Equivalence Report | 0/TBD | Not started | - |
 | 8. PyO3 Python Binding | 0/TBD | Not started | - |
