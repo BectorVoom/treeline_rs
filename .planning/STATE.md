@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-03-PLAN.md
-last_updated: "2026-06-10T02:11:46.000Z"
-last_activity: 2026-06-10 -- Completed Phase 03 Plan 03 (UBJSON loader + auto-detect: hand-rolled tag decoder sharing the JSON path, DetectXGBoostFormat, UBJSON byte-fidelity + 1e-5)
+stopped_at: Completed 03-04-PLAN.md
+last_updated: "2026-06-10T03:00:00.000Z"
+last_activity: 2026-06-10 -- Completed Phase 03 Plan 04 (legacy-binary loader via from_le_bytes cursor; DEF-02-01/D-10 closed across all three formats; three_format_equivalence + workspace green)
 progress:
   total_phases: 9
   completed_phases: 2
   total_plans: 14
-  completed_plans: 13
-  percent: 28
+  completed_plans: 14
+  percent: 30
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 
 ## Current Position
 
-Phase: 03 (full-xgboost-loaders) — EXECUTING
+Phase: 03 (full-xgboost-loaders) — EXECUTION COMPLETE (4 of 4 plans)
 Plan: 4 of 4
-Status: Executing Phase 03 (Plans 01-03 complete)
-Last activity: 2026-06-10 -- Completed Phase 03 Plan 03 (UBJSON loader + auto-detect: hand-rolled tag decoder sharing the JSON path, DetectXGBoostFormat, UBJSON byte-fidelity + 1e-5)
+Status: Phase 03 plans 01-04 all complete; all three XGBoost formats load + predict 1e-5 + byte-identical
+Last activity: 2026-06-10 -- Completed Phase 03 Plan 04 (legacy-binary loader via from_le_bytes cursor; DEF-02-01/D-10 closed across all three formats; three_format_equivalence + workspace green)
 
-Progress: [████████░░] 75%
+Progress: [██████████] 100% (Phase 03 plans)
 
 ## Performance Metrics
 
@@ -65,6 +65,7 @@ Progress: [████████░░] 75%
 | Phase 03 P01 | 12min | 3 tasks | 8 files |
 | Phase 03 P02 | 18min | 2 tasks | 7 files |
 | Phase 03 P03 | 22min | 2 tasks | 6 files |
+| Phase 03 P04 | 30min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -110,6 +111,10 @@ Recent decisions affecting current work:
 - [03-03]: UBJSON shares the JSON numeric path (D-01/D-03) — decode_ubjson emits serde_json::Value (with @NaN@/@Inf@/@-Inf@ sentinel STRINGS for non-finite d/D floats, Pitfall 5) → from_value into the SAME XgbModelJson + de_f32 adapter → build_model_from_parsed. UBJSON load == JSON load == golden_v5_3format.bin byte-for-byte (D-10).
 - [03-03]: $/# strongly-typed optimized-container fast path (Pitfall 4) is mandatory — XGBoost emits [$<type>#<count> everywhere (split_conditions etc.); per-element tags omitted. $/# counts validated against remaining bytes before pre-alloc (T-03-U01); fallible cursor for truncation (T-03-U02) → typed XgbError::Ubjson, never OOB/OOM.
 - [03-03]: DetectXGBoostFormat ported verbatim (D-09) returns json/ubjson/unknown only — legacy is NOT auto-detected (reached via explicit load_xgboost_legacy in 03-04, matching upstream's API split).
+- [03-04]: Legacy binary decodes field-by-field via a from_le_bytes Cursor (D-07/D-08) — no native-endian struct reinterpret (grep gate). Converges at build_model_from_parsed via XgbModelJson::from_legacy_fields, producing a Model byte-identical to JSON/UBJSON; sindex bit-unpack (&0x7FFFFFFF / >>31), cleft==-1 leaf, info-union f32 reinterpret ported exactly (Pitfall 6).
+- [03-04]: GBTreeModelParam is 160 BYTES, not 168 (RESEARCH transcription error) — upstream struct is 4×i32+i64+2×i32+i32[32]=160, no trailing padding; confirmed against mushroom.model (header@173 + 160 + 1168 == 1501). Rule-1 fix caught by the mushroom smoke test.
+- [03-04]: Version gate mapped by setting version=[major_version] so the shared path's version[0]>=1 gate reproduces the legacy major_version>=1 gate (XGB-05); mushroom (major_version 0) is the negative case, verified ±.
+- [03-04]: DEF-02-01/D-10 CLOSED across all three formats — serialize(load_json)==serialize(load_ubjson)==serialize(load_legacy)==golden_v5_3format.bin; three_format_equivalence + golden_v5 loader assertion promoted to fatal; cargo test --workspace fully green.
 
 ### Pending Todos
 
@@ -127,10 +132,10 @@ Items acknowledged and carried forward from previous milestone close:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| Loader fidelity | DEF-02-01: XGBoost loader→serialize byte-fidelity gap | JSON path CLOSED in 03-02; UBJSON path CLOSED in 03-03 (serialize(load_xgboost_ubjson)==golden_v5_3format.bin); legacy path closes in 03-04 | 02-03 |
+| Loader fidelity | DEF-02-01: XGBoost loader→serialize byte-fidelity gap | FULLY CLOSED in 03-04 — JSON (03-02) + UBJSON (03-03) + legacy (03-04) all serialize to golden_v5_3format.bin byte-for-byte; cross-format single-golden assertion is fatal and green | 02-03 |
 
 ## Session Continuity
 
-Last session: 2026-06-10T02:11:46.000Z
-Stopped at: Completed 03-03-PLAN.md
+Last session: 2026-06-10T03:00:00.000Z
+Stopped at: Completed 03-04-PLAN.md
 Resume file: None

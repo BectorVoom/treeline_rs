@@ -114,7 +114,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 03-04-PLAN.md — Legacy-binary slice: LE byte cursor + PeekableReader (no transmute) + close DEF-02-01/D-10 across all three formats (XGB-03/XGB-05) (Wave 3)
+- [x] 03-04-PLAN.md — Legacy-binary slice: LE byte cursor + PeekableReader (no transmute) + close DEF-02-01/D-10 across all three formats (XGB-03/XGB-05) (Wave 3) — DONE (2/2 tasks; load_xgboost_legacy via from_le_bytes cursor; mushroom smoke 1501B; DEF-02-01 fully closed: serialize(load_json)==serialize(load_ubjson)==serialize(load_legacy)==golden_v5_3format.bin; three_format_equivalence + cargo test --workspace fully green)
 
 ### Phase 4: LightGBM & scikit-learn Loaders
 
