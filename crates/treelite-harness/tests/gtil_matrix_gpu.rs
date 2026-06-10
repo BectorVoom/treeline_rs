@@ -311,6 +311,11 @@ struct ClassAcc {
     /// Max ROCm |delta| seen across this class's DENSE (kernel) cells, or `None`
     /// if no ROCm cell ran (device absent everywhere).
     rocm_max: Option<f64>,
+    /// Whether any ROCm-kernel cell in this class produced a got/want length
+    /// (output-shape) mismatch — `max_abs_delta_report_mode`'s `f64::NAN`
+    /// sentinel (WR-03). A real GPU correctness defect, surfaced into the
+    /// committed artifact rather than dropped behind the `is_finite()` guard.
+    shape_mismatch: bool,
     /// Whether this class routes to the scalar fallback / f64 twin (D-02, WR-04).
     f64_fallback_used: bool,
 }
@@ -409,6 +414,7 @@ fn gtil_matrix_gpu() -> anyhow::Result<()> {
             .or_insert_with(|| ClassAcc {
                 postprocessor: model.postprocessor.clone(),
                 rocm_max: None,
+                shape_mismatch: false,
                 f64_fallback_used: false,
             });
         // The class is flagged as using the scalar/f64 fallback if ANY of its
@@ -426,9 +432,17 @@ fn gtil_matrix_gpu() -> anyhow::Result<()> {
                 // CPU and GPU provenance in the report's central column.
                 // Among GPU cells, only a finite recorded deviation contributes
                 // to the class max (IN-01: a plain `.max(...)`); a non-finite
-                // length-mismatch sentinel is surfaced separately, not folded in.
-                if ran_on_gpu && max_dev.is_finite() {
-                    acc.rocm_max = Some(acc.rocm_max.unwrap_or(0.0).max(max_dev));
+                // length-mismatch (output-shape) sentinel is SURFACED into the
+                // committed artifact as `shape_mismatch` (WR-03) rather than
+                // dropped — a wrong output shape is a real GPU correctness defect
+                // that must leave a trace in the report, not just stderr.
+                if ran_on_gpu {
+                    if max_dev.is_finite() {
+                        acc.rocm_max = Some(acc.rocm_max.unwrap_or(0.0).max(max_dev));
+                    } else {
+                        // NaN sentinel from a got/want length mismatch (report.rs).
+                        acc.shape_mismatch = true;
+                    }
                 }
                 eprintln!(
                     "{fname} [{}/{}/{}] ({}): max |delta| = {max_dev:e} (RECORDED, observational)",
@@ -460,6 +474,7 @@ fn gtil_matrix_gpu() -> anyhow::Result<()> {
             model_class: model_class.clone(),
             postprocessor: acc.postprocessor.clone(),
             rocm_max_abs_delta: acc.rocm_max,
+            shape_mismatch: acc.shape_mismatch,
             f64_fallback_used: acc.f64_fallback_used,
             cuda_max_abs_delta: None,
             wgpu_max_abs_delta: None,

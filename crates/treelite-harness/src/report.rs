@@ -94,6 +94,14 @@ pub struct ReportRow {
     /// The measured ROCm max finite `|delta|` against the f64 scalar reference,
     /// or `None` when ROCm did not run on this host (device absent — D-05).
     pub rocm_max_abs_delta: Option<f64>,
+    /// Whether any ROCm-kernel cell in this class produced a NON-COMPARABLE
+    /// result — a got/want length (output-shape) mismatch, surfaced by
+    /// [`max_abs_delta_report_mode`] as its `f64::NAN` sentinel (WR-03). A shape
+    /// mismatch is a real GPU correctness defect; recording it here keeps it
+    /// VISIBLE in the committed artifact (rendered "shape mismatch" in the ROCm
+    /// column) instead of vanishing behind an `is_finite()` guard + a transient
+    /// `eprintln!`.
+    pub shape_mismatch: bool,
     /// Whether the f64 twin / scalar-fallback path produced the asserted vector
     /// for this class (D-02 — recorded from the executed routing, WR-04).
     pub f64_fallback_used: bool,
@@ -146,6 +154,18 @@ fn measured_cell(v: Option<f64>) -> String {
     }
 }
 
+/// Render the ROCm column for a class (WR-03). A recorded shape mismatch is
+/// surfaced as visible data: `"shape mismatch"` when no comparable cell ran, or
+/// the measured max with a `" (+shape mismatch)"` suffix when both a comparable
+/// deviation AND a non-comparable shape mismatch occurred in the same class.
+fn rocm_measured_cell(v: Option<f64>, shape_mismatch: bool) -> String {
+    match (v, shape_mismatch) {
+        (_, false) => measured_cell(v),
+        (None, true) => "shape mismatch".to_string(),
+        (Some(d), true) => format!("{d:e} (+shape mismatch)"),
+    }
+}
+
 /// Render the predicted band cell, or `"n/a"` for an unknown postprocessor.
 fn predicted_cell(low: f64, high: f64) -> String {
     if low == 0.0 && high == 0.0 {
@@ -192,12 +212,17 @@ pub fn render_markdown(rows: &[ReportRow], manifest: &Manifest, device_name: &st
         "|-------------|---------------|--------------------|--------------------|------|------|-----------------------|"
     );
     for r in rows {
+        // A shape mismatch on a ROCm-kernel cell (WR-03) is rendered explicitly
+        // in the ROCm column so a non-comparable output shape is VISIBLE in the
+        // committed artifact rather than silently dropped. If a class hit both a
+        // shape mismatch AND a comparable cell, both facts are surfaced.
+        let rocm_cell = rocm_measured_cell(r.rocm_max_abs_delta, r.shape_mismatch);
         let _ = writeln!(
             s,
             "| {model} | {post} | {rocm} | {fb} | {cuda} | {wgpu} | {band} |",
             model = r.model_class,
             post = r.postprocessor,
-            rocm = measured_cell(r.rocm_max_abs_delta),
+            rocm = rocm_cell,
             fb = if r.f64_fallback_used { "yes" } else { "no" },
             cuda = measured_cell(r.cuda_max_abs_delta),
             wgpu = measured_cell(r.wgpu_max_abs_delta),
@@ -237,6 +262,7 @@ pub fn render_json(rows: &[ReportRow]) -> serde_json::Value {
                 "postprocessor": r.postprocessor,
                 "backend": "rocm",
                 "max_abs_delta": r.rocm_max_abs_delta,
+                "shape_mismatch": r.shape_mismatch,
                 "f64_fallback": r.f64_fallback_used,
                 "cuda_max_abs_delta": r.cuda_max_abs_delta,
                 "wgpu_max_abs_delta": r.wgpu_max_abs_delta,
@@ -313,6 +339,19 @@ mod tests {
     fn length_mismatch_is_a_recordable_nan_not_a_panic() {
         let d = max_abs_delta_report_mode(&[1.0, 2.0], &[1.0]);
         assert!(d.is_nan());
+    }
+
+    #[test]
+    fn rocm_cell_surfaces_shape_mismatch_into_the_artifact() {
+        // No mismatch: renders the measured value / "not run" exactly as before.
+        assert_eq!(rocm_measured_cell(Some(3e-6), false), measured_cell(Some(3e-6)));
+        assert_eq!(rocm_measured_cell(None, false), "not run — no device");
+        // Mismatch with no comparable cell: surfaced as visible data (WR-03).
+        assert_eq!(rocm_measured_cell(None, true), "shape mismatch");
+        // Mismatch alongside a comparable deviation: both facts are surfaced.
+        let both = rocm_measured_cell(Some(3e-6), true);
+        assert!(both.contains("shape mismatch"), "got {both}");
+        assert!(both.contains(&format!("{:e}", 3e-6)), "got {both}");
     }
 
     #[test]
