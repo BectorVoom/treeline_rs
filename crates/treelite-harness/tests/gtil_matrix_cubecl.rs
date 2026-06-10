@@ -324,33 +324,19 @@ fn assert_within(got: &[f64], want: &[f64], eps: f64, ctx: &str) -> anyhow::Resu
 }
 
 /// Does `model` route the WHOLE model to the scalar fallback inside
-/// `predict_cpu`? Two whole-model fallback gates fire (D-02): a categorical split
-/// (the existing gate) OR any internal node with a non-`kLT` comparison operator
-/// (CR-01 — the cubecl `descend` kernel implements only kLT, so e.g. a LightGBM
-/// kLE model defers whole to the scalar reference). Such a cell ran the scalar
-/// fallback, so its provenance is `"scalar-fallback"` — recorded from the
-/// executed path (T-06-12), never the layout alone. The `kernel_cells > 0` guard
-/// still credits only true cubecl-kernel cells.
+/// `predict_cpu`?
+///
+/// WR-04: this is NOT a re-derived parallel copy of the gate. It delegates to
+/// [`treelite_cubecl::model_routes_to_scalar_fallback`] — the SAME predicate
+/// `predict_cpu` itself consults to decide whether to defer to the scalar
+/// reference (D-02: categorical split OR any internal node with a non-`kLT`
+/// operator). Because both the executed routing decision and this provenance tag
+/// read the one function, they cannot drift (the "green while buggy" failure D-06
+/// guards against). Such a cell ran the scalar fallback, so its provenance is
+/// `"scalar-fallback"` — observed from the executed path (T-06-12), never the
+/// layout alone.
 fn model_routes_to_fallback(model: &Model) -> bool {
-    use treelite_core::{ModelVariant, Operator};
-    fn has_non_klt<V: Copy>(trees: &[treelite_core::Tree<V>]) -> bool {
-        trees.iter().any(|t| {
-            let cleft = t.cleft.as_slice();
-            let cmp = t.cmp.as_slice();
-            cleft
-                .iter()
-                .zip(cmp.iter())
-                .any(|(&cl, &op)| cl != -1 && op != Operator::kLT)
-        })
-    }
-    match &model.variant {
-        ModelVariant::F32(p) => {
-            p.trees.iter().any(|t| t.has_categorical_split) || has_non_klt(&p.trees)
-        }
-        ModelVariant::F64(p) => {
-            p.trees.iter().any(|t| t.has_categorical_split) || has_non_klt(&p.trees)
-        }
-    }
+    treelite_cubecl::model_routes_to_scalar_fallback(model)
 }
 
 /// GPU-02 / D-06: drive every frozen `fixtures/gtil/*.golden.json` cell through

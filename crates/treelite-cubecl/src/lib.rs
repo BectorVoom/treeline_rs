@@ -231,6 +231,48 @@ impl PredictCpuElem for f64 {
     }
 }
 
+/// Whole-model scalar-fallback predicate — the SINGLE source of truth for which
+/// dense models defer entirely to [`treelite_gtil::predict`] (D-02) rather than
+/// running the cubecl kLT kernels.
+///
+/// Two gates fire:
+/// 1. **Categorical** (D-02 / Open Q1): any tree with a categorical split — the
+///    numerical-only kernels cannot route a categorical test.
+/// 2. **Non-`kLT` operator** (CR-01): any INTERNAL node (`cleft != -1`) whose
+///    comparison operator is not `kLT`. The cubecl `descend` kernel reproduces
+///    ONLY `fv < threshold` (predict.cc / traversal.rs), whereas the scalar
+///    reference `next_node` dispatches per node on the stored `Operator`
+///    (kLT/kLE/kEQ/kGT/kGE). E.g. EVERY LightGBM numerical model emits
+///    `Operator::kLE`; reaching the kLT-hardcoded kernel would mis-route every
+///    `fv == threshold` tie (kLT right, kLE left). Such a model defers WHOLE to
+///    the proven scalar reference for exact 1e-5 fidelity. Only internal nodes
+///    are inspected, so a leaf sentinel's unset/`kNone` operator never spuriously
+///    trips the gate.
+///
+/// WR-04: `predict_cpu` and the `gtil_matrix_cubecl` provenance gate BOTH call
+/// this function, so the two cannot drift — the test observes the executed
+/// routing decision instead of re-deriving it from a parallel hand-rolled copy.
+pub fn model_routes_to_scalar_fallback(model: &Model) -> bool {
+    fn has_non_klt_split<V: Copy>(trees: &[treelite_core::Tree<V>]) -> bool {
+        trees.iter().any(|t| {
+            let cleft = t.cleft.as_slice();
+            let cmp = t.cmp.as_slice();
+            cleft.iter().zip(cmp.iter()).any(|(&cl, &op)| {
+                // Internal node only (cleft != -1); the kernel reproduces kLT only.
+                cl != -1 && op != treelite_core::Operator::kLT
+            })
+        })
+    }
+    match &model.variant {
+        ModelVariant::F32(p) => {
+            p.trees.iter().any(|t| t.has_categorical_split) || has_non_klt_split(&p.trees)
+        }
+        ModelVariant::F64(p) => {
+            p.trees.iter().any(|t| t.has_categorical_split) || has_non_klt_split(&p.trees)
+        }
+    }
+}
+
 /// Host launcher for cubecl CPU-backend prediction.
 ///
 /// Mirrors [`treelite_gtil::predict`]:
@@ -255,49 +297,14 @@ pub fn predict_cpu<F: PredictCpuElem>(
     num_row: usize,
     cfg: &Config,
 ) -> Result<Vec<F>, CubeclError> {
-    // ---- 2. Categorical whole-model fallback gate (D-02 / Open Q1) ----
-    // (validate_shape inside upload_forest performs step 1; but the categorical
-    // gate must be checked BEFORE upload so a categorical model never reaches the
-    // numerical-only kernels. The fallback's own predict re-validates the shape.)
-    let has_categorical = match &model.variant {
-        ModelVariant::F32(p) => p.trees.iter().any(|t| t.has_categorical_split),
-        ModelVariant::F64(p) => p.trees.iter().any(|t| t.has_categorical_split),
-    };
-    if has_categorical {
-        return treelite_gtil::predict::<F>(model, data, num_row, cfg)
-            .map_err(|e| CubeclError::Unsupported(format!("scalar fallback: {e}")));
-    }
-
-    // ---- Operator-coverage whole-model fallback gate (CR-01 / D-02) ----
-    // The cubecl `descend` kernel implements ONLY the `kLT` predicate
-    // (`fv < threshold`, predict.cc / traversal.rs). The scalar reference
-    // `next_node` (treelite-gtil/src/lib.rs:333-355) dispatches per node on the
-    // stored `Operator` (kLT/kLE/kEQ/kGT/kGE) and is the source of truth. Any
-    // model carrying a non-`kLT` internal-node operator — e.g. EVERY LightGBM
-    // numerical model, which always emits `Operator::kLE`
-    // (treelite-lightgbm/src/lib.rs) — would otherwise silently reach the
-    // kLT-hardcoded kernel and mis-route every `fv == threshold` tie (kLT routes
-    // right, kLE routes left). This is the OPERATOR analog of the categorical
-    // gate above: such a model defers WHOLE to the proven scalar reference for
-    // exact 1e-5 fidelity (consistent with D-02 — the raggedest shapes ride the
-    // scalar fallback this phase; we never touch the hot kernel). Only INTERNAL
-    // nodes (`cleft != -1`) are inspected, so a leaf sentinel's unset/kNone
-    // operator never spuriously trips the gate.
-    fn has_non_klt_split<V: Copy>(trees: &[treelite_core::Tree<V>]) -> bool {
-        trees.iter().any(|t| {
-            let cleft = t.cleft.as_slice();
-            let cmp = t.cmp.as_slice();
-            cleft.iter().zip(cmp.iter()).any(|(&cl, &op)| {
-                // Internal node only (cleft != -1); the kernel reproduces kLT only.
-                cl != -1 && op != treelite_core::Operator::kLT
-            })
-        })
-    }
-    let has_non_klt = match &model.variant {
-        ModelVariant::F32(p) => has_non_klt_split(&p.trees),
-        ModelVariant::F64(p) => has_non_klt_split(&p.trees),
-    };
-    if has_non_klt {
+    // ---- Whole-model scalar fallback gate (D-02 / Open Q1 + CR-01) ----
+    // (validate_shape inside upload_forest performs step 1; but the fallback gate
+    // must be checked BEFORE upload so a categorical / non-kLT model never reaches
+    // the numerical-only kLT kernels. The fallback's own predict re-validates the
+    // shape.) The predicate is the single source of truth in
+    // [`model_routes_to_scalar_fallback`]; the provenance test observes THAT same
+    // function rather than maintaining a parallel hand-rolled copy (WR-04).
+    if model_routes_to_scalar_fallback(model) {
         return treelite_gtil::predict::<F>(model, data, num_row, cfg)
             .map_err(|e| CubeclError::Unsupported(format!("scalar fallback: {e}")));
     }
