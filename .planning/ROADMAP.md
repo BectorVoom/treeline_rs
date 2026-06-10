@@ -106,7 +106,7 @@ Plans:
 
 **Wave 1** *(blocked on Wave 0)*
 
-- [ ] 03-02-PLAN.md — JSON slice: widen recognized key set, NaN/Inf (D-02), shared build_model_from_parsed, sum_hess/gain/attributes (D-10 JSON leg), scalar/vector base_score version gate (XGB-01/XGB-05) (Wave 1)
+- [x] 03-02-PLAN.md — JSON slice: widen recognized key set, NaN/Inf (D-02), shared build_model_from_parsed, sum_hess/gain/attributes (D-10 JSON leg), scalar/vector base_score version gate (XGB-01/XGB-05) (Wave 1) — DONE (2/2 tasks; DEF-02-01 JSON byte-fidelity closed; json_/nan_inf_ tests green, no workspace regression)
 
 **Wave 2** *(blocked on Wave 1)*
 

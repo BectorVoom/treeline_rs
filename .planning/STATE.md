@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-01-PLAN.md
-last_updated: "2026-06-10T10:52:00.000Z"
-last_activity: 2026-06-10 -- Completed Phase 03 Plan 01 (3-format fixtures + RED scaffold)
+stopped_at: Completed 03-02-PLAN.md
+last_updated: "2026-06-10T11:10:00.000Z"
+last_activity: 2026-06-10 -- Completed Phase 03 Plan 02 (JSON vertical slice: widen + D-02 NaN/Inf + XGB-05 + DEF-02-01 JSON close)
 progress:
   total_phases: 9
   completed_phases: 2
   total_plans: 14
-  completed_plans: 11
-  percent: 24
+  completed_plans: 12
+  percent: 26
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 03 (full-xgboost-loaders) — EXECUTING
-Plan: 2 of 4
-Status: Executing Phase 03 (Plan 01 complete)
-Last activity: 2026-06-10 -- Completed Phase 03 Plan 01 (3-format fixtures + RED scaffold)
+Plan: 3 of 4
+Status: Executing Phase 03 (Plans 01-02 complete)
+Last activity: 2026-06-10 -- Completed Phase 03 Plan 02 (JSON vertical slice: widen + D-02 NaN/Inf + XGB-05 + DEF-02-01 JSON close)
 
 Progress: [██████░░░░] 58%
 
@@ -36,7 +36,7 @@ Progress: [██████░░░░] 58%
 
 **Velocity:**
 
-- Total plans completed: 11
+- Total plans completed: 12
 - Average duration: ~5 min
 - Total execution time: 0.1 hours
 
@@ -63,6 +63,7 @@ Progress: [██████░░░░] 58%
 | Phase 02 P05 | 10min | 2 tasks | 3 files |
 | Phase 02 P06 | 6min | 2 tasks | 2 files |
 | Phase 03 P01 | 12min | 3 tasks | 8 files |
+| Phase 03 P02 | 18min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -99,6 +100,11 @@ Recent decisions affecting current work:
 - [03-01]: A1 settled empirically — xgboost 1.7.6 writes genuine legacy binary (a 4-byte `binf` magic prefix + 136-byte LearnerModelParam; base_score=0.5 @0, num_feature=4 @4). Spike resolved autonomously, no human checkpoint; 1.6.2/0.90 fallbacks not needed.
 - [03-01]: base_score=0.5 (A2) makes the version-gated sigmoid margin transform a no-op, so all three XGBoost formats serialize to ONE identical v5 blob (golden_v5_3format.bin, 7775 bytes, sha256 ae53fbf8…) — proven at generation time by the A2 cross-format same-blob assert.
 - [03-01]: Legacy binary uses treelite's separate load_xgboost_model_legacy_binary entry point (not load_xgboost_model, which only handles JSON/UBJSON and mis-sniffs the binf-prefixed legacy file) — mirrors upstream's D-09 API split; the Rust load_xgboost_legacy must handle the binf magic per D-07.
+- [03-02]: D-02 NaN/Inf resolved via a string-safe value-position pre-lexer (replace_nonfinite) that rewrites bare NaN/Infinity/-Infinity to sentinel STRINGS recovered by de_f32 — never a numeric literal (serde_json rejects out-of-range); string contents are byte-unchanged. Closes the Phase-3 NaN/Inf blocker.
+- [03-02]: Shared build_model_from_parsed(XgbModelJson) is the single convergence path (D-01) for all three formats; load_xgboost_json = replace_nonfinite → from_str → build_model_from_parsed. 03-03 (UBJSON via from_value) and 03-04 (legacy) reuse it.
+- [03-02]: DEF-02-01 closed for the JSON path — serialize(load_xgboost_json(xgb_3format.json)) == golden_v5_3format.bin byte-for-byte, achieved by emitting sum_hess on every node + gain on internal nodes + attributes:None (→ "{}").
+- [03-02]: parse_base_score handles scalar AND vector base_score forms; xgb_3format.json uses the vector form ("[5E-1]"), so the vector path is exercised by the real byte-fidelity/predict tests. expand_to = num_target * max(num_class,1); cast f32→f64 BEFORE the element-wise version-gated transform (Pitfall 3).
+- [03-02]: treelite-harness is NOT a dev-dep of treelite-xgboost (cycle: harness depends on xgboost); the JSON predict test parses the golden locally instead.
 
 ### Pending Todos
 
@@ -106,7 +112,7 @@ None yet.
 
 ### Blockers/Concerns
 
-- [Phase 3] serde_json rejects NaN/Inf by default; XGBoost JSON uses them — resolve in the XGBoost loader research-phase.
+- [Phase 3] ~~serde_json rejects NaN/Inf by default; XGBoost JSON uses them~~ — RESOLVED in 03-02 via the string-safe replace_nonfinite pre-lexer + de_f32 sentinel adapter (D-02).
 - [Phase 5/6] cubecl control-flow constraints (`continue` unsupported, helpers must be `#[cube]`) and CPU-backend op gaps — spike a minimal kernel before the full port.
 - [Phase 5] Golden-vector reproducibility — store actual input matrices + a toolchain/libm/framework manifest, not just seeds.
 
@@ -116,10 +122,10 @@ Items acknowledged and carried forward from previous milestone close:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| Loader fidelity | DEF-02-01: XGBoost loader→serialize byte-fidelity gap (serializer gate proven loader-independent via golden round-trip) | Deferred to Phase 3 | 02-03 |
+| Loader fidelity | DEF-02-01: XGBoost loader→serialize byte-fidelity gap | JSON path CLOSED in 03-02 (serialize(load_json)==golden_v5_3format.bin); UBJSON/legacy paths close in 03-03/03-04 | 02-03 |
 
 ## Session Continuity
 
-Last session: 2026-06-10T10:52:00.000Z
-Stopped at: Completed 03-01-PLAN.md
+Last session: 2026-06-10T11:10:00.000Z
+Stopped at: Completed 03-02-PLAN.md
 Resume file: None
