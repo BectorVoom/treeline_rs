@@ -264,7 +264,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 — same harness lib.rs; hardware-gated checkpoint)*
 
-- [ ] 07-04-PLAN.md — report.rs + gtil_matrix_gpu.rs sibling → committed GPU_EQUIVALENCE_REPORT.md (GPU-04/SC2) + gpu_crossover.rs → GPU_CROSSOVER.md (SC3/D-09/D-10); regenerated on ROCm hardware (Wave 3)
+- [x] 07-04-PLAN.md — report.rs + gtil_matrix_gpu.rs sibling → committed GPU_EQUIVALENCE_REPORT.md (GPU-04/SC2) + gpu_crossover.rs → GPU_CROSSOVER.md (SC3/D-09/D-10); regenerated on ROCm hardware (Wave 3)
 
 **Research flag (resolved):** GPU transcendental/FMA divergence profiling + cubecl FMA contraction completed in 07-RESEARCH.md (FMA has ~0 surface on the pure-add tree-sum; divergence is transcendental-only, predicted-deviation model in the report's predicted column).
 
@@ -310,6 +310,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 4. LightGBM & scikit-learn Loaders | 8/8 | Complete    | 2026-06-10 |
 | 5. Full Scalar GTIL & Equivalence Harness | 7/7 | Complete    | 2026-06-10 |
 | 6. cubecl GTIL Kernels (CPU Backend) | 7/7 | Complete    | 2026-06-10 |
-| 7. GPU Backend & Equivalence Report | 3/4 | In Progress|  |
+| 7. GPU Backend & Equivalence Report | 4/4 | Complete   | 2026-06-10 |
 | 8. PyO3 Python Binding | 0/TBD | Not started | - |
 | 9. Memory-Efficiency Hardening | 0/TBD | Not started | - |

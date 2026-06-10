@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 07-02-PLAN.md
-last_updated: "2026-06-10T21:55:24.239Z"
-last_activity: "2026-06-10 -- Plan 07-02 complete (runtime-generic predict::<R,F>)"
+status: verifying
+stopped_at: Completed 07-04-PLAN.md
+last_updated: "2026-06-11T00:00:00.000Z"
+last_activity: "2026-06-11 -- Plan 07-04 complete (GPU equivalence report regenerated on ROCm hardware; GPU-03/GPU-04 satisfied)"
 progress:
   total_phases: 9
   completed_phases: 6
   total_plans: 40
-  completed_plans: 39
+  completed_plans: 40
   percent: 67
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 
 ## Current Position
 
-Phase: 07 (gpu-backend-equivalence-report) — EXECUTING
+Phase: 07 (gpu-backend-equivalence-report) — EXECUTING (all 4 plans built; awaiting orchestrator verification)
 Plan: 4 of 4
-Status: Ready to execute
-Last activity: 2026-06-10 -- Plan 07-02 complete (runtime-generic predict::<R,F>)
+Status: All plans built — ready for verification (phase NOT yet verified/complete)
+Last activity: 2026-06-11 -- Plan 07-04 complete (GPU equivalence report regenerated on ROCm hardware; GPU-03/GPU-04 satisfied)
 
 Progress: [██████████] Phase 06 complete (7/7 plans) — milestone 6/9 phases
 
@@ -95,6 +95,7 @@ Progress: [██████████] Phase 06 complete (7/7 plans) — mil
 | Phase 07 P01 | 8min | 2 tasks | 5 files |
 | Phase 07 P02 | ~9min | 2 tasks | 1 file |
 | Phase 07 P03 | ~4min | 2 tasks | 2 files |
+| Phase 07 P04 | 12min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -204,6 +205,8 @@ Recent decisions affecting current work:
 - [07-02]: predict::<R> wires Plan-01's device::client::<R>(tag)? — DeviceUnavailable propagates via ?, NO silent CPU fallback (D-05/D-09). Tag = std::any::type_name::<R>() (the implemented client() signature needs a &'static str arg, unlike RESEARCH's no-arg device_and_client sketch). The model_routes_to_scalar_fallback (D-02) gate stays BEFORE client construction, so a categorical/non-kLT model on a device-less backend still returns via scalar. predict_cpu is now a one-line shim over predict::<CpuRuntime, F>; harness + gtil_matrix_cubecl 1e-5 gate byte-identical (untouched).
 - [Phase ?]: [07-03]: Three GPU backends registered into the harness — Backend::Rocm/Cuda/Wgpu + rocm_case/cuda_case/wgpu_case mirror cubecl_cpu_case: dense f32/f64 route through Plan-02 predict::<R,_>, sparse rides scalar fallback (D-02). Each #[cfg(feature)]-gated; RunnerCase seam + matrix iteration untouched (D-11).
 - [Phase ?]: [07-03]: cubecl is an OPTIONAL harness dep gated into rocm/cuda/wgpu features (dep:cubecl + cubecl/<backend>) so *_case() names cubecl::hip::HipRuntime directly; default cpu-only build never pulls cubecl. No device probe (A3: DeviceUnavailable propagates via ?, skip-not-fail, no silent CPU fallback). GPU-03 In Progress (registration done; on-hardware execution is Plan-04).
+- [Phase 07-04]: GPU equivalence report regenerated ON-HARDWARE (AMD/ROCm) — 160 cells ran, worst max|delta|=2.9e-6 « 1e-5, observational (D-01). CUDA/wgpu not run (no device). Crossover: ROCm beats CPU at ~100k rows (documented-only, D-09). GPU-03+GPU-04 satisfied on-hardware.
+- [Phase 07-04]: Artifact writers create_dir_all(docs/) before write (checkpoint write-failure root cause); crossover reads model.num_feature instead of hardcoded 4 (under-sized synth input for the 5-feature forest).
 
 ### Pending Todos
 
@@ -226,6 +229,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T21:55:00.703Z
+Last session: 2026-06-10T22:16:34.502Z
 Stopped at: Completed 07-02-PLAN.md
 Resume file: None
