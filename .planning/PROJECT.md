@@ -16,14 +16,14 @@ A from-scratch Rust rewrite of [Treelite](https://github.com/dmlc/treelite) — 
      The upstream C++ in treelite-mainline/ is the reference SPEC, not validated Rust capability. -->
 
 - [x] Programmatic `ModelBuilder` API with topology/orphan validation — *Validated in Phase 2 (BLD-01/02/03): fluent strict state machine, `ConcatenateModelObjects`, `BulkConstructTree`; XGBoost-JSON loader rewired through it, still within 1e-5.*
-- [x] Serialization: binary + JSON round-trip for the current (v5) format generation — *Validated in Phase 2 (SER-01..04): byte-for-byte golden v5 match, bounds-checked v5-only deserialize, zero-copy PyBuffer frames, `DumpAsJSON`, typed field accessors. (XGBoost loader→serialize byte-fidelity deferred to Phase 3 as DEF-02-01.)*
+- [x] Serialization: binary + JSON round-trip for the current (v5) format generation — *Validated in Phase 2 (SER-01..04): byte-for-byte golden v5 match, bounds-checked v5-only deserialize, zero-copy PyBuffer frames, `DumpAsJSON`, typed field accessors. (XGBoost loader→serialize byte-fidelity, DEF-02-01, now closed in Phase 3.)*
+- [x] Import XGBoost models: JSON, UBJSON, and legacy binary formats — *Validated in Phase 3 (XGB-01..05): all three formats load one logical `binary:logistic` model, predict within 1e-5 of a shared golden, and serialize byte-identically to a single upstream v5 golden blob (closes DEF-02-01 across all three formats). Auto-detect (JSON/UBJSON), NaN/Inf-tolerant numeric path, explicit little-endian legacy decoder (no native-endian transmute), version-gated scalar+vector base_score margin transform. Parse-wide/verify-narrow: categorical/multiclass parsed but their prediction parity deferred to Phase 5. 4 critical untrusted-input hardening findings (panic/overflow/recursion) fixed with regression tests.*
 
 ### Active
 
 <!-- v1 scope. All hypotheses until shipped and validated against the 1e-5 equivalence harness. -->
 
 - [ ] Cargo workspace with modular crates, one responsibility each (core model, enums, loaders, builder, GTIL, serialization, Python binding)
-- [ ] Import XGBoost models: JSON, UBJSON, and legacy binary formats
 - [ ] Import LightGBM text-format models
 - [ ] Import scikit-learn estimators — RandomForest, ExtraTrees, GradientBoosting, IsolationForest, AND HistGradientBoosting (incl. the bulk tree-construction path)
 - [ ] In-memory struct-of-arrays `Model` / `Tree` representation parameterized over float32/float64
@@ -97,4 +97,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-10 — Phase 2 (Builder & Serialization) complete; ModelBuilder + v5 serialization validated.*
+*Last updated: 2026-06-10 — Phase 3 (Full XGBoost Loaders) complete; all three XGBoost formats load → predict 1e-5 → serialize byte-identically (DEF-02-01 closed); untrusted-input hardening applied. Next: Phase 4 (LightGBM & scikit-learn loaders).*
