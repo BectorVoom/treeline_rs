@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Pending CR-01 gap closure — f64-input postprocessors run at f32 (upstream runs in f64); see 05-REVIEW.md
-stopped_at: Completed 05-04-PLAN.md
-last_updated: "2026-06-10T08:42:52.856Z"
-last_activity: 2026-06-10 -- Phase 05 code review found CR-01; gap closure planned
+status: executing
+stopped_at: Completed 05-06-PLAN.md
+last_updated: "2026-06-10T09:15:00.000Z"
+last_activity: 2026-06-10 -- Completed 05-06 (CR-01 + WR-02..WR-05 engine gap closure)
 progress:
   total_phases: 9
   completed_phases: 4
-  total_plans: 27
-  completed_plans: 27
-  percent: 44
+  total_plans: 31
+  completed_plans: 29
+  percent: 47
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 
 ## Current Position
 
-Phase: 05 (full-scalar-gtil-equivalence-harness) — GAP CLOSURE
-Plan: 5 of 5 built (not yet verified)
-Status: Pending CR-01 gap closure — f64-input postprocessors run at f32 (upstream runs in f64); see 05-REVIEW.md
-Last activity: 2026-06-10 -- Phase 05 code review found CR-01; gap closure planned
+Phase: 05 (full-scalar-gtil-equivalence-harness) — EXECUTING
+Plan: 6 of 7 complete (05-07 remaining)
+Status: Executing Phase 05
+Last activity: 2026-06-10 -- Completed 05-06 (CR-01 + WR-02..WR-05 engine gap closure)
 
-Progress: [████████] 100% (Phase 04 plans: 8/8)
+Progress: [███████░] 86% (Phase 05 plans: 6/7)
 
 ## Performance Metrics
 
@@ -81,6 +81,7 @@ Progress: [████████] 100% (Phase 04 plans: 8/8)
 | Phase 05 P03 | ~8min | 2 tasks | 3 files |
 | Phase 05 P04 | ~6min | 2 tasks | 5 files |
 | Phase 05 P05 | 30min | 2 tasks | 6 files |
+| Phase 05 P06 | ~22min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -166,6 +167,8 @@ Recent decisions affecting current work:
 - [Phase ?]: LeafId/ScorePerTree size output on actual trees.len() (GetNumTree), not the staged num_tree() header field
 - [Phase ?]: Plan 05-05: committed treelite v5 model bytes loaded via treelite_core::deserialize (the exact model the goldens were captured from); frozen goldens untouched — Rule 3 fix for Plan-01's discarded in-script models.
 - [Phase ?]: Plan 05-05: minimal fn-pointer Backend/RunnerCase seam (four input-dtype slots, f64 output) — Phase 6 registers a cubecl runtime by adding a variant + constructor with no matrix-iteration change (D-11).
+- [05-06]: CR-01 closed ENGINE-SIDE — f64-input postprocessors run in f64 via PredictOut::apply_named_postprocessor + *_f64 twins (ApplyPostProcessor<double>); softmax stays f32 (narrows each row, postprocessor.cc:59-73); hinge runs directly in f64. f32 path byte-identical (255 workspace tests green). CR-01 divergence asserted at ~1e-8 RELATIVE + non-bit-identity (the band that masked it) — NOT the plan's 1e-7 absolute, which never trips on a correct f64 impl. The 1e-5 FIXTURE that drives CR-01 lands in 05-07.
+- [05-06]: has_leaf_vector / category_list_safe now return Result distinguishing absent/legitimately-empty (Ok) from present-but-inverted/out-of-range (typed MalformedLeafVector/MalformedCategoryList); next_node fallible → UnrecognizedOperator on kNone numerical node; 0-node tree → NodeIndexOutOfBounds{node:0} (WR-03/04/05, ERR-01). OutputLayout promoted to pub to avoid a private-interfaces leak in the public PredictOut method.
 
 ### Pending Todos
 
@@ -176,7 +179,7 @@ None yet.
 - [Phase 3] ~~serde_json rejects NaN/Inf by default; XGBoost JSON uses them~~ — RESOLVED in 03-02 via the string-safe replace_nonfinite pre-lexer + de_f32 sentinel adapter (D-02).
 - [Phase 5/6] cubecl control-flow constraints (`continue` unsupported, helpers must be `#[cube]`) and CPU-backend op gaps — spike a minimal kernel before the full port.
 - [Phase 5] Golden-vector reproducibility — store actual input matrices + a toolchain/libm/framework manifest, not just seeds.
-- [Phase 5] **CR-01 (BLOCKER, OPEN)** — `apply_postprocessor` (gtil/src/lib.rs:1138) narrows every f64 output cell to f32, runs the postprocessor in f32, then widens back. Upstream `postprocessor.cc` templates sigmoid/exponential/exponential_standard_ratio/logarithm_one_plus_exp/signed_square/multiclass_ova/hinge on `InputT`, so they run in **f64** for f64 input (only `softmax` hardcodes f32). The f64×non-identity/non-softmax postprocessor surface therefore runs at wrong precision — a latent 1e-5 violation masked only because current f64 sigmoid goldens sit ~1e-7 inside band. Known deferral from 05-02 that 05-03 claimed to close but did NOT wire. Fix = make postprocessors O-generic (softmax stays f32) + capture an f64 fixture that actually stresses the path. Also open: WR-01 (sparse harness re-derives CSR from NaN-presence, never asserts a real captured CSR), WR-03 (evaluate_tree no node-0 bounds check → panic on 0-node tree, violates ERR-01), WR-02 (predict_score_by_tree lvs.max(1) vs output_shape disagree), WR-04/WR-05 (silent fallbacks mask wrong predictions). See 05-REVIEW.md.
+- [Phase 5] **CR-01 — ENGINE FIX LANDED in 05-06; 1e-5 FIXTURE OPEN (05-07).** `apply_postprocessor` no longer blanket-narrows the f64 buffer to f32: it dispatches via `PredictOut::apply_named_postprocessor` so f64 input runs the `*_f64` twins (`ApplyPostProcessor<double>`), softmax excepted (stays f32, narrowed per row). Proven by a unit divergence test (~1e-8 relative + non-bit-identity). REMAINING for 05-07: the large-margin f64 sigmoid/exponential FIXTURE asserted to 1e-5 (WR-06 paired divergence) that actually drives CR-01 against the gate. WR-02/WR-03/WR-04/WR-05 all CLOSED in 05-06 (shape/predict third-dim agreement; 0-node guard → NodeIndexOutOfBounds{node:0}; typed MalformedCategoryList/MalformedLeafVector; UnrecognizedOperator on kNone). STILL OPEN: WR-01 (sparse harness re-derives CSR from NaN-presence, never asserts a real captured CSR) — 05-07. See 05-REVIEW.md.
 
 ## Deferred Items
 
@@ -188,6 +191,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T07:40:37.101Z
-Stopped at: Completed 05-04-PLAN.md
+Last session: 2026-06-10T09:15:00.000Z
+Stopped at: Completed 05-06-PLAN.md
 Resume file: None

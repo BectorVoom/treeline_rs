@@ -188,7 +188,7 @@ Plans:
 
 **Wave 6** *(gap closure — engine fixes; blocked on the shipped GTIL surface)*
 
-- [ ] 05-06-PLAN.md — CR-01 f64-input postprocessors run in f64 (softmax stays f32) + WR-02 shape/predict third-dim clamp agreement + WR-03 0-node-tree guard + WR-04 typed errors for malformed category-list/leaf-vector offsets + WR-05 `UnrecognizedOperator` on `kNone` (GTIL-04/05/06/07, ERR-01)
+- [x] 05-06-PLAN.md — CR-01 f64-input postprocessors run in f64 (softmax stays f32) + WR-02 shape/predict third-dim clamp agreement + WR-03 0-node-tree guard + WR-04 typed errors for malformed category-list/leaf-vector offsets + WR-05 `UnrecognizedOperator` on `kNone` (GTIL-04/05/06/07, ERR-01)
 
 **Wave 7** *(gap closure — fixtures + harness; blocked on 05-06 engine fixes)*
 
