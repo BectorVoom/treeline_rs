@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Full XGBoost Loaders** - JSON + UBJSON + legacy binary with auto-detect and version-gated base_score margin transform (completed 2026-06-10)
 - [x] **Phase 4: LightGBM & scikit-learn Loaders** - LightGBM text + RF/ET/GBM/IsolationForest + HistGradientBoosting (completed 2026-06-10)
 - [x] **Phase 5: Full Scalar GTIL & Equivalence Harness** - All 4 predict kinds, 10 postprocessors, sparse CSR, categoricals, output shaping, seeded golden harness at 1e-5 (plans 5/5 built + 2 gap-closure plans 05-06/05-07 for CR-01 + WR-01…WR-06) (completed 2026-06-10)
-- [ ] **Phase 6: cubecl GTIL Kernels (CPU Backend)** - Traversal + postprocessor kernels; CPU backend default, validated to 1e-5 with zero-copy SoA upload
+- [x] **Phase 6: cubecl GTIL Kernels (CPU Backend)** - Traversal + postprocessor kernels; CPU backend default, validated to 1e-5 with zero-copy SoA upload (completed 2026-06-10)
 - [ ] **Phase 7: GPU Backend & Equivalence Report** - Runtime-selectable GPU backend (CUDA/wgpu/ROCm) with a documented per-model-class deviation report
 - [ ] **Phase 8: PyO3 Python Binding** - load/predict/serialize/dump from Python with zero-copy numpy I/O and abi3 wheel
 - [ ] **Phase 9: Memory-Efficiency Hardening** - bytemuck zero-copy recast, smallvec/compact_str, custom global allocator
@@ -234,7 +234,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 — real-upstream-golden lock)*
 
-- [ ] 06-07-PLAN.md — Gap closure: capture kLE LightGBM-numerical + f32-unrepresentable-threshold mixed-width fixtures from upstream Treelite, re-run cubecl matrix gate within 1e-5 on the previously-uncovered classes, full workspace green (Wave 7)
+- [x] 06-07-PLAN.md — Gap closure: capture kLE LightGBM-numerical + f32-unrepresentable-threshold mixed-width fixtures from upstream Treelite, re-run cubecl matrix gate within 1e-5 on the previously-uncovered classes, full workspace green (Wave 7)
 
 ### Phase 7: GPU Backend & Equivalence Report
 
@@ -292,7 +292,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 3. Full XGBoost Loaders | 4/4 | Complete    | 2026-06-10 |
 | 4. LightGBM & scikit-learn Loaders | 8/8 | Complete    | 2026-06-10 |
 | 5. Full Scalar GTIL & Equivalence Harness | 7/7 | Complete    | 2026-06-10 |
-| 6. cubecl GTIL Kernels (CPU Backend) | 6/7 | In Progress|  |
+| 6. cubecl GTIL Kernels (CPU Backend) | 7/7 | Complete   | 2026-06-10 |
 | 7. GPU Backend & Equivalence Report | 0/TBD | Not started | - |
 | 8. PyO3 Python Binding | 0/TBD | Not started | - |
 | 9. Memory-Efficiency Hardening | 0/TBD | Not started | - |
