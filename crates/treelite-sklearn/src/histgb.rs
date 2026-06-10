@@ -380,8 +380,14 @@ fn build_tree(
         let node = decode_node(rec, layout)?;
 
         builder.start_node(node_id as i32)?;
-        // leaf iff left <= 0 (NOT == -1) — sklearn.cc:320.
-        if node.left == 0 {
+        // leaf iff left <= 0 (NOT == -1) — sklearn.cc:317,320. Upstream reads the
+        // child id as `static_cast<int>(node.left)` (signed) before the `<= 0`
+        // test, so a `node.left` in `[2^31, 2^32)` reinterprets as negative and
+        // is treated as a LEAF. Replicate that signed-cast semantics here rather
+        // than testing the raw `u32 == 0`.
+        let left_child_id = node.left as i32;
+        let right_child_id = node.right as i32;
+        if left_child_id <= 0 {
             builder.leaf_scalar_f64(node.value)?;
         } else {
             // split_index = features_map[feature_idx] — ALWAYS remap (Pitfall 4).
@@ -401,8 +407,8 @@ fn build_tree(
                 ),
             })?;
             let default_left = node.missing_go_to_left == 1;
-            let left_child = node.left as i32;
-            let right_child = node.right as i32;
+            let left_child = left_child_id;
+            let right_child = right_child_id;
 
             if node.is_categorical == 1 {
                 let left_categories = decode_categorical(
