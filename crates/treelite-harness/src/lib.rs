@@ -62,7 +62,34 @@ pub enum Backend {
     /// additively in Phase 6 (a new variant + the [`cubecl_cpu_case`]
     /// constructor) with NO change to the matrix iteration (D-11).
     CubeclCpu,
-    // Phase 7: Cuda, Wgpu, Rocm — added as further registrations.
+    /// The cubecl ROCm (AMD HIP) GPU-backend GTIL engine
+    /// (`treelite_cubecl::predict::<cubecl::hip::HipRuntime, _>`) for the dense
+    /// numerical path; sparse/categorical cells fall back to the scalar
+    /// `treelite_gtil::predict_sparse`/`predict` (D-02). Registered additively in
+    /// Phase 7 (this variant + the [`rocm_case`] constructor) with NO change to
+    /// the matrix iteration (D-11). **Explicit-selection only** — there is no
+    /// auto-detect / "best available" resolver; the caller names the backend
+    /// (D-04). A missing device surfaces as the typed `DeviceUnavailable` skip
+    /// from `predict::<R, _>` (D-05), never a silent CPU fallback.
+    Rocm,
+    /// The cubecl CUDA GPU-backend GTIL engine
+    /// (`treelite_cubecl::predict::<cubecl::cuda::CudaRuntime, _>`) for the dense
+    /// numerical path; sparse/categorical cells fall back to the scalar engine
+    /// (D-02). Registered additively in Phase 7 (this variant + the [`cuda_case`]
+    /// constructor) with NO change to the matrix iteration (D-11).
+    /// **Explicit-selection only** (no auto-detect, D-04). A missing device
+    /// surfaces as the typed `DeviceUnavailable` skip (D-05), never a silent CPU
+    /// fallback.
+    Cuda,
+    /// The cubecl wgpu GPU-backend GTIL engine
+    /// (`treelite_cubecl::predict::<cubecl::wgpu::WgpuRuntime, _>`) for the dense
+    /// numerical path; sparse/categorical cells fall back to the scalar engine
+    /// (D-02). Registered additively in Phase 7 (this variant + the [`wgpu_case`]
+    /// constructor) with NO change to the matrix iteration (D-11).
+    /// **Explicit-selection only** (no auto-detect, D-04). A missing adapter
+    /// surfaces as the typed `DeviceUnavailable` skip (D-05), never a silent CPU
+    /// fallback.
+    Wgpu,
 }
 
 /// Dense predict over an **f32-input** matrix (D-05). The output element type is

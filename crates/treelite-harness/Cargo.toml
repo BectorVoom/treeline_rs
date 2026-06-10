@@ -4,6 +4,17 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+# GPU backends (D-04, explicit-selection only): default = cpu-only. Each feature
+# forwards to the matching Plan-01 `treelite-cubecl` feature so e.g.
+# `cargo test -p treelite-harness --features rocm` pulls the HIP runtime, while
+# the default harness build / `cargo test --workspace` stay cpu-only and need no
+# GPU system libs. The `*_case()` constructors are `#[cfg(feature = …)]`-gated.
+[features]
+default = []
+rocm = ["treelite-cubecl/rocm"]
+cuda = ["treelite-cubecl/cuda"]
+wgpu = ["treelite-cubecl/wgpu"]
+
 [dependencies]
 treelite-core = { path = "../treelite-core" }
 treelite-xgboost = { path = "../treelite-xgboost" }
