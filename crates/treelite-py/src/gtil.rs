@@ -39,6 +39,21 @@ struct SendModelRef<'a>(&'a treelite_core::Model);
 // and the underlying model + numpy borrow both outlive the closure.
 unsafe impl Send for SendModelRef<'_> {}
 
+impl<'a> SendModelRef<'a> {
+    /// Consume the `Send` wrapper and yield the wrapped `&Model` (IN-04). Taking
+    /// `self` BY VALUE forces the detach closure to capture the whole
+    /// `SendModelRef` struct rather than the disjoint bare `&Model` field (which
+    /// is `!Send` and would fail the `Ungil` bound). This replaces the inscrutable
+    /// `let inner = inner;` rebind that existed solely to defeat disjoint capture —
+    /// a future edit removing the "redundant" rebind would silently reintroduce a
+    /// `!Send` capture. The named consuming method makes the whole-struct move
+    /// self-documenting.
+    #[inline]
+    fn into_ref(self) -> &'a treelite_core::Model {
+        self.0
+    }
+}
+
 /// Build a GTIL [`Config`] from the Python kwargs. `pred_margin=True` selects the
 /// raw-margin kind (skip post-processing); `nthread` is recorded but unused by the
 /// scalar reference engine (config.rs note).
@@ -226,8 +241,10 @@ pub fn predict_f32<'py>(
     // compute is wrapped in `guard_assert` so a trapped panic becomes a catchable
     // `TreeliteError` (D-07), never an FFI abort.
     let out = py.detach(move || {
-        let inner = inner;
-        guard_assert(|| dispatch_backend::<f32>(&backend, inner.0, slice, num_row, &cfg))
+        // `into_ref` consumes the whole `SendModelRef` (IN-04: self-documenting
+        // whole-struct move; no disjoint `!Send` capture of the bare `&Model`).
+        let model = inner.into_ref();
+        guard_assert(|| dispatch_backend::<f32>(&backend, model, slice, num_row, &cfg))
     })?;
     Ok(out.into_pyarray(py))
 }
@@ -254,8 +271,9 @@ pub fn predict_f64<'py>(
     let inner = SendModelRef(&model.inner);
     let backend = backend.to_string();
     let out = py.detach(move || {
-        let inner = inner;
-        guard_assert(|| dispatch_backend::<f64>(&backend, inner.0, slice, num_row, &cfg))
+        // See `predict_f32`: consume the whole `SendModelRef` (IN-04).
+        let model = inner.into_ref();
+        guard_assert(|| dispatch_backend::<f64>(&backend, model, slice, num_row, &cfg))
     })?;
     Ok(out.into_pyarray(py))
 }
