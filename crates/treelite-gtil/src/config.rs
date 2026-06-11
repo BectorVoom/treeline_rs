@@ -36,17 +36,24 @@ impl Default for PredictKind {
 
 /// GTIL predictor configuration (`struct Configuration`, `gtil.h:49-55`).
 ///
-/// `nthread <= 0` means "use all threads" upstream
-/// (`detail/threading_utils.h:74-80`). The scalar reference engine is
-/// single-threaded, so `nthread` is **accepted and recorded but never used to
-/// allocate** — there is no thread-count-driven allocation and therefore no DoS
-/// amplification surface (RESEARCH Pitfall 6 / threat T-05-05).
+/// `nthread` sizes the rayon worker pool the scalar engine row-parallelizes over
+/// (Phase 10, PAR-04):
+/// - `nthread <= 0` → use ALL cores (the global rayon pool, upstream
+///   `MaxNumThread` "use all threads" semantics, `detail/threading_utils.h:74-80`);
+/// - `nthread > 0` → a per-call SCOPED pool bounded to exactly `nthread` workers
+///   (`rayon::ThreadPoolBuilder::num_threads(n)`).
+///
+/// The per-worker scratch is `num_feature`-sized (NOT `nthread`-driven heap
+/// growth), so a large `nthread` bounds the worker count but creates no DoS
+/// amplification surface (T-10-01). A pool-build failure surfaces as the typed
+/// `GtilError::ThreadPool`, never a panic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Config {
     /// Which prediction to produce. Defaults to [`PredictKind::Default`].
     pub kind: PredictKind,
-    /// Requested thread count. `<= 0` means "all threads" upstream; the scalar
-    /// reference ignores it for allocation (recorded only).
+    /// Requested worker-thread count for the row-parallel scalar engine.
+    /// `<= 0` means "use all cores" (global pool); `N > 0` bounds a scoped pool
+    /// to exactly `N` workers (PAR-04).
     pub nthread: i32,
 }
 

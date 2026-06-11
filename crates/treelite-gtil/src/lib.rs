@@ -768,36 +768,44 @@ fn predict_preset<T: PredictScalar + PartialOrd + Sync, O: PredictOut>(
                     [target_id as usize * shape.max_num_class as usize + class_id as usize] += 1;
             }
         }
-        for r in 0..num_row {
-            for t in 0..shape.num_target {
-                for c in 0..shape.num_class_of(t) {
-                    let factor =
-                        average_factor[t as usize * shape.max_num_class as usize + c as usize];
-                    if factor != 0 {
-                        let cell = shape.idx(r, t, c);
-                        output[cell] = output[cell].div_by_count(factor);
+        // Per-row independent divide — parallelize over the row chunks (Pattern 3,
+        // upstream predict.cc:284). `average_factor` is built once above and shared
+        // read-only across workers; each row chunk is disjoint.
+        run_with_nthread(nthread, || {
+            output.par_chunks_mut(cells_per_row).for_each(|cells| {
+                for t in 0..shape.num_target {
+                    for c in 0..shape.num_class_of(t) {
+                        let factor = average_factor[shape.cell_in_row(t, c)];
+                        if factor != 0 {
+                            let cell = shape.cell_in_row(t, c);
+                            cells[cell] = cells[cell].div_by_count(factor);
+                        }
                     }
                 }
-            }
-        }
+            });
+            Ok::<(), GtilError>(())
+        })?;
     }
 
     // Base scores: 2D f64 add per (target, class) cell, broadcast over rows
     // (predict.cc:294-304). base_scores is f64; mirror upstream
     // `InputT_view += double_view` — for f32 output this promotes f32→f64, adds,
     // and narrows back to f32; for f64 output it is a plain f64 add (PredictOut::
-    // add_base_score encodes each).
-    for r in 0..num_row {
-        for t in 0..shape.num_target {
-            for c in 0..shape.num_class_of(t) {
-                let bi = t as usize * shape.max_num_class as usize + c as usize;
-                if let Some(&base) = shape.base_scores.get(bi) {
-                    let cell = shape.idx(r, t, c);
-                    output[cell] = output[cell].add_base_score(base);
+    // add_base_score encodes each). Per-row independent → row-chunk parallel
+    // (Pattern 3, upstream predict.cc:297).
+    run_with_nthread(nthread, || {
+        output.par_chunks_mut(cells_per_row).for_each(|cells| {
+            for t in 0..shape.num_target {
+                for c in 0..shape.num_class_of(t) {
+                    let bi = shape.cell_in_row(t, c);
+                    if let Some(&base) = shape.base_scores.get(bi) {
+                        cells[bi] = cells[bi].add_base_score(base);
+                    }
                 }
             }
-        }
-    }
+        });
+        Ok::<(), GtilError>(())
+    })?;
 
     Ok(output)
 }
@@ -1054,9 +1062,11 @@ fn predict_rows<O: PredictOut>(
         // LeafId/ScorePerTree write RAW leaf data with NO postprocess/average/
         // base-score and have their own output shapes (predict.cc:325-378), so
         // they return directly from their own bodies.
-        PredictKind::LeafId => return predict_leaf(model, rows, num_row, num_feature),
+        PredictKind::LeafId => {
+            return predict_leaf(model, rows, num_row, num_feature, config.nthread);
+        }
         PredictKind::ScorePerTree => {
-            return predict_score_by_tree(model, rows, num_row, num_feature);
+            return predict_score_by_tree(model, rows, num_row, num_feature, config.nthread);
         }
     }
 
@@ -1119,37 +1129,54 @@ fn predict_leaf<O: PredictOut>(
     rows: &RowSource<'_, O>,
     num_row: usize,
     num_feature: usize,
+    nthread: i32,
 ) -> Result<Vec<O>, GtilError> {
-    let mut scratch = vec![O::nan(); num_feature];
     match &model.variant {
         ModelVariant::F32(preset) => {
-            predict_leaf_preset(&preset.trees, rows, num_row, &mut scratch)
+            predict_leaf_preset(&preset.trees, rows, num_row, num_feature, nthread)
         }
         ModelVariant::F64(preset) => {
-            predict_leaf_preset(&preset.trees, rows, num_row, &mut scratch)
+            predict_leaf_preset(&preset.trees, rows, num_row, num_feature, nthread)
         }
     }
 }
 
 /// `T`-monomorphic body of [`predict_leaf`].
-fn predict_leaf_preset<T: PredictScalar + PartialOrd, O: PredictOut>(
+///
+/// Row-parallel over a `num_row * num_tree` buffer, chunk width `num_tree`
+/// (Loop 4a). Each row chunk is disjoint (`par_chunks_mut`); `map_init`
+/// allocates one scratch row per worker (Pitfall 2). The inner per-tree loop is
+/// independent writes (one cell per tree) — no GTIL-08 accumulation concern, but
+/// it stays under the same `nthread` pool.
+fn predict_leaf_preset<T: PredictScalar + PartialOrd + Sync, O: PredictOut>(
     trees: &[Tree<T>],
     rows: &RowSource<'_, O>,
     num_row: usize,
-    scratch: &mut [O],
+    num_feature: usize,
+    nthread: i32,
 ) -> Result<Vec<O>, GtilError> {
     let num_tree = trees.len();
     let mut output = vec![O::zero(); num_row * num_tree];
-    for r in 0..num_row {
-        rows.materialize(r, scratch);
-        let row: &[O] = scratch;
-        for (tree_id, tree) in trees.iter().enumerate() {
-            let leaf = evaluate_tree(tree, row)?;
-            // output_view(row_id, tree_id) = leaf_id (predict.cc:340). The leaf
-            // node id is cast into the InputT output buffer (A4).
-            output[r * num_tree + tree_id] = O::from_leaf_f64(leaf as f64);
-        }
-    }
+    run_with_nthread(nthread, || {
+        output
+            .par_chunks_mut(num_tree.max(1))
+            .enumerate()
+            .map_init(
+                || vec![O::nan(); num_feature],
+                |scratch, (r, cells)| {
+                    rows.materialize(r, scratch);
+                    let row: &[O] = scratch;
+                    for (tree_id, tree) in trees.iter().enumerate() {
+                        let leaf = evaluate_tree(tree, row)?;
+                        // output_view(row_id, tree_id) = leaf_id (predict.cc:340).
+                        // The leaf node id is cast into the InputT output buffer (A4).
+                        cells[tree_id] = O::from_leaf_f64(leaf as f64);
+                    }
+                    Ok(())
+                },
+            )
+            .collect::<Result<(), GtilError>>()
+    })?;
     Ok(output)
 }
 
@@ -1176,6 +1203,7 @@ fn predict_score_by_tree<O: PredictOut>(
     rows: &RowSource<'_, O>,
     num_row: usize,
     num_feature: usize,
+    nthread: i32,
 ) -> Result<Vec<O>, GtilError> {
     // lvs = leaf_vector_shape[0] * leaf_vector_shape[1]; clamp to >= 1 so a
     // scalar-leaf model (shape [1,1]) writes at index 0 and a degenerate /
@@ -1183,61 +1211,77 @@ fn predict_score_by_tree<O: PredictOut>(
     let a = model.leaf_vector_shape.first().copied().unwrap_or(1).max(0) as usize;
     let b = model.leaf_vector_shape.get(1).copied().unwrap_or(1).max(0) as usize;
     let lvs = (a * b).max(1);
-    let mut scratch = vec![O::nan(); num_feature];
     match &model.variant {
         ModelVariant::F32(preset) => {
-            predict_score_by_tree_preset(&preset.trees, rows, num_row, lvs, &mut scratch)
+            predict_score_by_tree_preset(&preset.trees, rows, num_row, lvs, num_feature, nthread)
         }
         ModelVariant::F64(preset) => {
-            predict_score_by_tree_preset(&preset.trees, rows, num_row, lvs, &mut scratch)
+            predict_score_by_tree_preset(&preset.trees, rows, num_row, lvs, num_feature, nthread)
         }
     }
 }
 
 /// `T`-monomorphic body of [`predict_score_by_tree`].
-fn predict_score_by_tree_preset<T: PredictScalar + PartialOrd, O: PredictOut>(
+///
+/// Row-parallel over a `num_row * num_tree * lvs` buffer, chunk width
+/// `num_tree * lvs` (Loop 4b). Each row chunk is disjoint (`par_chunks_mut`);
+/// `map_init` allocates one scratch row per worker (Pitfall 2). The
+/// `LeafVectorTooShort` error propagates via the `collect::<Result>`
+/// short-circuit (Pitfall 3 / WR-04). The inner per-tree writes are independent
+/// (each tree owns its `lvs`-wide slot), no GTIL-08 concern.
+fn predict_score_by_tree_preset<T: PredictScalar + PartialOrd + Sync, O: PredictOut>(
     trees: &[Tree<T>],
     rows: &RowSource<'_, O>,
     num_row: usize,
     lvs: usize,
-    scratch: &mut [O],
+    num_feature: usize,
+    nthread: i32,
 ) -> Result<Vec<O>, GtilError> {
     let num_tree = trees.len();
     // Filled with 0's (predict.cc:355 `std::fill_n(.., InputT{})`); the scalar
     // path only writes index 0 of each (row, tree) slot, leaving any padding
     // columns at 0.
     let mut output = vec![O::zero(); num_row * num_tree * lvs];
-    for r in 0..num_row {
-        rows.materialize(r, scratch);
-        let row: &[O] = scratch;
-        for (tree_id, tree) in trees.iter().enumerate() {
-            let leaf = evaluate_tree(tree, row)?;
-            let base = (r * num_tree + tree_id) * lvs;
-            if has_leaf_vector(tree, leaf)? {
-                // Write each leaf-vector element at (row, tree, i)
-                // (predict.cc:367-370). Bounds-checked against lvs.
-                let leafvec = tree.leaf_vector(leaf);
-                for (i, &v) in leafvec.iter().enumerate() {
-                    if i >= lvs {
-                        // The leaf vector overflows the per-tree output slot of
-                        // width `lvs`. Report the overflow POINT, mirroring the
-                        // precise `needed: li + 1` reporting in
-                        // `output_leaf_vector` (this arm errors on the first
-                        // `i == lvs`, so `i + 1` names the slot that overflowed
-                        // and `got: lvs` is the declared capacity). WR-04.
-                        return Err(GtilError::LeafVectorTooShort {
-                            needed: i + 1,
-                            got: lvs,
-                        });
+    let chunk = (num_tree * lvs).max(1);
+    run_with_nthread(nthread, || {
+        output
+            .par_chunks_mut(chunk)
+            .enumerate()
+            .map_init(
+                || vec![O::nan(); num_feature],
+                |scratch, (_r, cells)| {
+                    rows.materialize(_r, scratch);
+                    let row: &[O] = scratch;
+                    for (tree_id, tree) in trees.iter().enumerate() {
+                        let leaf = evaluate_tree(tree, row)?;
+                        let base = tree_id * lvs;
+                        if has_leaf_vector(tree, leaf)? {
+                            // Write each leaf-vector element at (row, tree, i)
+                            // (predict.cc:367-370). Bounds-checked against lvs.
+                            let leafvec = tree.leaf_vector(leaf);
+                            for (i, &v) in leafvec.iter().enumerate() {
+                                if i >= lvs {
+                                    // The leaf vector overflows the per-tree output
+                                    // slot of width `lvs`. Report the overflow POINT
+                                    // (`needed: i + 1`, `got: lvs`). WR-04.
+                                    return Err(GtilError::LeafVectorTooShort {
+                                        needed: i + 1,
+                                        got: lvs,
+                                    });
+                                }
+                                cells[base + i] = leaf_as_out(v);
+                            }
+                        } else {
+                            // Scalar leaf → write at index 0 (predict.cc:372;
+                            // Pitfall 5).
+                            cells[base] = leaf_as_out(tree.leaf_value(leaf));
+                        }
                     }
-                    output[base + i] = leaf_as_out(v);
-                }
-            } else {
-                // Scalar leaf → write at index 0 (predict.cc:372; Pitfall 5).
-                output[base] = leaf_as_out(tree.leaf_value(leaf));
-            }
-        }
-    }
+                    Ok(())
+                },
+            )
+            .collect::<Result<(), GtilError>>()
+    })?;
     Ok(output)
 }
 

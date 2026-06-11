@@ -55,8 +55,9 @@ impl<'a> SendModelRef<'a> {
 }
 
 /// Build a GTIL [`Config`] from the Python kwargs. `pred_margin=True` selects the
-/// raw-margin kind (skip post-processing); `nthread` is recorded but unused by the
-/// scalar reference engine (config.rs note).
+/// raw-margin kind (skip post-processing); `nthread` now drives the scalar
+/// predict path end-to-end (Phase 10, PAR-04) — `<= 0` uses all cores, `N` bounds
+/// a scoped rayon pool to `N` workers (config.rs note).
 #[inline]
 fn make_config(nthread: i32, pred_margin: bool) -> Config {
     Config {
