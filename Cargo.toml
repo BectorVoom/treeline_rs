@@ -34,6 +34,11 @@ smallvec = { version = "1.15.1", features = ["const_new", "union"] }
 compact_str = "0.9.1"
 # Allocator crates — referenced ONLY by treelite-harness bin/bench targets behind
 # the non-default `jemalloc`/`mimalloc` features (D-08: never reach the abi3 wheel).
-tikv-jemallocator = "0.7.0"
-tikv-jemalloc-ctl = "0.7.0"
+# `stats` builds jemalloc with statistics collection so `stats::{allocated,resident}`
+# return live numbers (off by default — without it the ctl readers report zero).
+tikv-jemallocator = { version = "0.7.0", features = ["stats"] }
+# `stats` exposes the `stats::{allocated,resident}` readers the memory_report bin
+# uses (epoch-then-read, Pitfall 5); `use_std` provides the std error path so the
+# reads propagate through `?`/`anyhow`. Both are off by default in 0.7.0.
+tikv-jemalloc-ctl = { version = "0.7.0", features = ["stats", "use_std"] }
 mimalloc = "0.1.52"
