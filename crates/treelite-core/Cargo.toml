@@ -9,3 +9,5 @@ thiserror = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 bytemuck = { workspace = true }
+smallvec = { workspace = true }
+compact_str = { workspace = true }

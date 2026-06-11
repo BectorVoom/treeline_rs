@@ -22,12 +22,12 @@ fn meta(num_feature: i32) -> BuilderMetadata {
         task_type: TaskType::kRegressor,
         average_tree_output: false,
         num_target: 1,
-        num_class: vec![1],
-        leaf_vector_shape: vec![1, 1],
-        target_id: vec![0],
-        class_id: vec![0],
-        postprocessor: "identity".to_string(),
-        base_scores: vec![0.0],
+        num_class: vec![1].into(),
+        leaf_vector_shape: vec![1, 1].into(),
+        target_id: vec![0].into(),
+        class_id: vec![0].into(),
+        postprocessor: "identity".into(),
+        base_scores: vec![0.0].into(),
         attributes: None,
     }
 }

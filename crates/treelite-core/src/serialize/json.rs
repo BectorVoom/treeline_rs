@@ -63,19 +63,22 @@ pub fn dump_as_json(m: &mut Model) -> Value {
 
     // SerializeTaskParametersToJSON (json_serializer.cc:135-143).
     obj.insert("num_target".into(), Value::from(m.num_target));
-    obj.insert("num_class".into(), json!(m.num_class));
-    obj.insert("leaf_vector_shape".into(), json!(m.leaf_vector_shape));
+    // MEM-02: deref the migrated `SmallVec` fields to `&[i32]`/`&[f64]` and the
+    // `CompactString` fields to `&str` so `json!`/`Value::from` operate on the
+    // slice/str (no `serde` feature on SmallVec/CompactString, A4) — identical JSON.
+    obj.insert("num_class".into(), json!(&m.num_class[..]));
+    obj.insert("leaf_vector_shape".into(), json!(&m.leaf_vector_shape[..]));
 
     // json_serializer.cc:198-201 — target_id, class_id.
-    obj.insert("target_id".into(), json!(m.target_id));
-    obj.insert("class_id".into(), json!(m.class_id));
+    obj.insert("target_id".into(), json!(&m.target_id[..]));
+    obj.insert("class_id".into(), json!(&m.class_id[..]));
 
     // SerializeModelParametersToJSON (json_serializer.cc:145-157).
-    obj.insert("postprocessor".into(), Value::from(m.postprocessor.clone()));
+    obj.insert("postprocessor".into(), Value::from(m.postprocessor.as_str()));
     obj.insert("sigmoid_alpha".into(), json!(m.sigmoid_alpha as f64));
     obj.insert("ratio_c".into(), json!(m.ratio_c as f64));
-    obj.insert("base_scores".into(), json!(m.base_scores));
-    obj.insert("attributes".into(), Value::from(m.attributes.clone()));
+    obj.insert("base_scores".into(), json!(&m.base_scores[..]));
+    obj.insert("attributes".into(), Value::from(m.attributes.as_str()));
 
     // json_serializer.cc:205-214 — trees array (std::visit over the variant).
     let trees: Vec<Value> = match &m.variant {

@@ -11,6 +11,7 @@
 //! copy-from-`objs[0]`. This port matches that exactly; no upstream-absent checks
 //! are added.
 
+use smallvec::SmallVec;
 use treelite_core::{Model, ModelPreset, ModelVariant, Tree};
 
 use crate::error::BuilderError;
@@ -87,8 +88,11 @@ pub fn concatenate(objs: &[&Model]) -> Result<Option<Model>, BuilderError> {
     let first_tag = variant_tag(first);
 
     // Per-input checks + deep-clone trees + Extend ids (`model_concat.cc:46-65`).
-    let mut target_id: Vec<i32> = Vec::new();
-    let mut class_id: Vec<i32> = Vec::new();
+    // SmallVec<[i32; 1]> matches the migrated `Model` field type (MEM-02), so the
+    // `extend_from_slice(&m.target_id)` (deref-transparent) and the field assigns
+    // below stay verbatim — no `.into()` needed.
+    let mut target_id: SmallVec<[i32; 1]> = SmallVec::new();
+    let mut class_id: SmallVec<[i32; 1]> = SmallVec::new();
 
     // Collect cloned trees into a typed vec matching the variant.
     enum Acc {

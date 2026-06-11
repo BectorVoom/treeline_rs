@@ -26,12 +26,12 @@ fn meta(num_feature: i32, expected_num_tree: usize) -> BuilderMetadata {
         task_type: TaskType::kRegressor,
         average_tree_output: false,
         num_target: 1,
-        num_class: vec![1],
-        leaf_vector_shape: vec![1, 1],
-        target_id: vec![0; expected_num_tree],
-        class_id: vec![0; expected_num_tree],
-        postprocessor: "identity".to_string(),
-        base_scores: vec![0.0],
+        num_class: vec![1].into(),
+        leaf_vector_shape: vec![1, 1].into(),
+        target_id: vec![0; expected_num_tree].into(),
+        class_id: vec![0; expected_num_tree].into(),
+        postprocessor: "identity".into(),
+        base_scores: vec![0.0].into(),
         attributes: None,
     }
 }

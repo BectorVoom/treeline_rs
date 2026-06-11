@@ -20,6 +20,7 @@ use treelite_core::enums::{Operator, TreeNodeType};
 use treelite_core::{Model, ModelPreset, ModelVariant, Tree, TreeBuf};
 
 use crate::BuilderMetadata;
+use compact_str::CompactString;
 
 /// Bulk-construct a `Tree<f64>` from pre-validated sklearn-shaped arrays
 /// (`sklearn_bulk.cc:36-211`), bypassing per-node validation (D-09).
@@ -232,7 +233,9 @@ pub fn bulk_to_model(trees: Vec<Tree<f64>>, metadata: BuilderMetadata) -> Model 
     model.class_id = metadata.class_id;
     model.postprocessor = metadata.postprocessor;
     model.base_scores = metadata.base_scores;
-    model.attributes = metadata.attributes.unwrap_or_else(|| "{}".to_string());
+    model.attributes = metadata
+        .attributes
+        .unwrap_or_else(|| CompactString::from("{}"));
     // sigmoid_alpha / ratio_c stay at the Model::new defaults (1.0).
     model
 }

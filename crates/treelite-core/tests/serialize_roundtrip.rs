@@ -61,13 +61,13 @@ fn sample_model() -> Model {
     model.num_feature = 2;
     model.task_type = TaskType::kBinaryClf;
     model.num_target = 1;
-    model.num_class = vec![1];
-    model.leaf_vector_shape = vec![1, 1];
-    model.target_id = vec![0];
-    model.class_id = vec![0];
-    model.postprocessor = "sigmoid".to_string();
-    model.base_scores = vec![-1.0986122886681098];
-    model.attributes = "{}".to_string();
+    model.num_class = vec![1].into();
+    model.leaf_vector_shape = vec![1, 1].into();
+    model.target_id = vec![0].into();
+    model.class_id = vec![0].into();
+    model.postprocessor = "sigmoid".into();
+    model.base_scores = vec![-1.0986122886681098].into();
+    model.attributes = "{}".into();
     model
 }
 

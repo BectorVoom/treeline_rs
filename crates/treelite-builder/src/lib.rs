@@ -21,6 +21,8 @@ pub use error::BuilderError;
 
 use std::collections::BTreeMap;
 
+use compact_str::CompactString;
+use smallvec::SmallVec;
 use treelite_core::enums::{Operator, TaskType, TreeNodeType};
 use treelite_core::{Model, ModelPreset, ModelVariant, Tree, TreeBuf};
 
@@ -56,19 +58,21 @@ pub struct BuilderMetadata {
     /// Number of targets.
     pub num_target: i32,
     /// Per-target class counts (`tree.h:543`).
-    pub num_class: Vec<i32>,
+    /// Migrated to `SmallVec<[i32; 1]>` in lockstep with `Model` (MEM-02) so the
+    /// `commit_model` assign block needs no per-field `.into()` churn.
+    pub num_class: SmallVec<[i32; 1]>,
     /// Leaf-vector shape (`tree.h:544`); product is the expected leaf size.
-    pub leaf_vector_shape: Vec<i32>,
+    pub leaf_vector_shape: SmallVec<[i32; 2]>,
     /// Per-tree target id.
-    pub target_id: Vec<i32>,
+    pub target_id: SmallVec<[i32; 1]>,
     /// Per-tree class id.
-    pub class_id: Vec<i32>,
+    pub class_id: SmallVec<[i32; 1]>,
     /// Postprocessor name.
-    pub postprocessor: String,
+    pub postprocessor: CompactString,
     /// Margin-transformed base scores.
-    pub base_scores: Vec<f64>,
+    pub base_scores: SmallVec<[f64; 1]>,
     /// Free-form attributes blob (`"{}"` when omitted).
-    pub attributes: Option<String>,
+    pub attributes: Option<CompactString>,
 }
 
 // Raw per-node staging columns for the tree currently under construction.
@@ -771,7 +775,9 @@ impl ModelBuilder {
         model.class_id = metadata.class_id;
         model.postprocessor = metadata.postprocessor;
         model.base_scores = metadata.base_scores;
-        model.attributes = metadata.attributes.unwrap_or_else(|| "{}".to_string());
+        model.attributes = metadata
+            .attributes
+            .unwrap_or_else(|| CompactString::from("{}"));
         Ok(model)
     }
 

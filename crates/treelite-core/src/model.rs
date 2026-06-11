@@ -15,6 +15,8 @@
 
 use crate::enums::{DType, TaskType};
 use crate::tree::Tree;
+use compact_str::CompactString;
+use smallvec::SmallVec;
 
 /// A typed container for a vector of trees (`ModelPreset<T,T>` upstream).
 pub struct ModelPreset<T: Copy> {
@@ -65,23 +67,32 @@ pub struct Model {
     /// Number of targets (tree.h:542).
     pub num_target: i32,
     /// Per-target class counts (tree.h:543) — ARRAY, `[1]` for binary clf.
-    pub num_class: Vec<i32>,
+    /// `SmallVec<[i32; 1]>` (MEM-02): the dominant binary-clf/regression shape is a
+    /// single element, stored inline (no heap allocation). Derefs to `&[i32]`.
+    pub num_class: SmallVec<[i32; 1]>,
     /// Leaf-vector shape (tree.h:544) — ARRAY, `[1,1]` for binary clf.
-    pub leaf_vector_shape: Vec<i32>,
+    /// `SmallVec<[i32; 2]>` (MEM-02): always a 2-tuple `[rows, cols]`, inline.
+    pub leaf_vector_shape: SmallVec<[i32; 2]>,
     /// Per-tree target id (tree.h:546) — ARRAY, `[0]` for single-target.
-    pub target_id: Vec<i32>,
+    /// `SmallVec<[i32; 1]>` (MEM-02): len == num_tree; small single-target case
+    /// inline, spills to the heap for large ensembles (harmless).
+    pub target_id: SmallVec<[i32; 1]>,
     /// Per-tree class id (tree.h:547) — ARRAY, `[0]` for binary clf.
-    pub class_id: Vec<i32>,
+    /// `SmallVec<[i32; 1]>` (MEM-02): same scaling as `target_id`.
+    pub class_id: SmallVec<[i32; 1]>,
     /// Postprocessor name (tree.h:549) — e.g. `"sigmoid"`.
-    pub postprocessor: String,
+    /// `CompactString` (MEM-02): names ≤24B are stored inline.
+    pub postprocessor: CompactString,
     /// Sigmoid scaling factor (tree.h:550); default `1.0`.
     pub sigmoid_alpha: f32,
     /// Tweedie/exponential ratio (tree.h:551); default `1.0`.
     pub ratio_c: f32,
     /// Margin-transformed base scores (tree.h:552) — f64.
-    pub base_scores: Vec<f64>,
+    /// `SmallVec<[f64; 1]>` (MEM-02): the scalar base_score is the dominant shape.
+    pub base_scores: SmallVec<[f64; 1]>,
     /// Free-form attributes JSON blob (tree.h:553); may be empty.
-    pub attributes: String,
+    /// `CompactString` (MEM-02): `"{}"` is stored inline; large JSON spills (D-06).
+    pub attributes: CompactString,
 
     // --- private serialization bookkeeping (tree.h:556-567) ---
     // These are NOT loaded from any source; they are recomputed at serialize
@@ -115,15 +126,15 @@ impl Model {
             task_type: TaskType::kRegressor,
             average_tree_output: false,
             num_target: 0,
-            num_class: Vec::new(),
-            leaf_vector_shape: Vec::new(),
-            target_id: Vec::new(),
-            class_id: Vec::new(),
-            postprocessor: String::new(),
+            num_class: SmallVec::new(),
+            leaf_vector_shape: SmallVec::new(),
+            target_id: SmallVec::new(),
+            class_id: SmallVec::new(),
+            postprocessor: CompactString::new(""),
             sigmoid_alpha: 1.0,
             ratio_c: 1.0,
-            base_scores: Vec::new(),
-            attributes: String::new(),
+            base_scores: SmallVec::new(),
+            attributes: CompactString::new(""),
             // Inert defaults; overwritten by `stage_serialization_fields` at
             // serialize time. Type tags start `kInvalid` exactly like upstream
             // (`tree.h:566-567`, `TypeInfo::kInvalid`).

@@ -89,24 +89,24 @@ fn model_header_metadata_array_typed_round_trip() {
     model.task_type = TaskType::kBinaryClf;
     model.average_tree_output = false;
     model.num_target = 1;
-    model.num_class = vec![1];
-    model.leaf_vector_shape = vec![1, 1];
-    model.target_id = vec![0];
-    model.class_id = vec![0];
-    model.postprocessor = "sigmoid".to_string();
-    model.base_scores = vec![0.0f64];
+    model.num_class = vec![1].into();
+    model.leaf_vector_shape = vec![1, 1].into();
+    model.target_id = vec![0].into();
+    model.class_id = vec![0].into();
+    model.postprocessor = "sigmoid".into();
+    model.base_scores = vec![0.0f64].into();
 
     assert_eq!(model.num_feature, 2);
     assert_eq!(model.task_type, TaskType::kBinaryClf);
     assert!(!model.average_tree_output);
     assert_eq!(model.num_target, 1);
-    // Array-typed (Vec<i32>), not scalar.
-    assert_eq!(model.num_class, vec![1]);
-    assert_eq!(model.leaf_vector_shape, vec![1, 1]);
-    assert_eq!(model.target_id, vec![0]);
-    assert_eq!(model.class_id, vec![0]);
+    // Array-typed (SmallVec<[i32; N]>), not scalar — compare via the slice deref.
+    assert_eq!(model.num_class.as_slice(), &[1]);
+    assert_eq!(model.leaf_vector_shape.as_slice(), &[1, 1]);
+    assert_eq!(model.target_id.as_slice(), &[0]);
+    assert_eq!(model.class_id.as_slice(), &[0]);
     assert_eq!(model.postprocessor, "sigmoid");
-    assert_eq!(model.base_scores, vec![0.0f64]);
+    assert_eq!(model.base_scores.as_slice(), &[0.0f64]);
     // Defaults.
     assert_eq!(model.sigmoid_alpha, 1.0);
     assert_eq!(model.ratio_c, 1.0);

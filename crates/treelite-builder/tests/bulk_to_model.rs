@@ -37,12 +37,12 @@ fn rf_meta() -> BuilderMetadata {
         task_type: TaskType::kRegressor,
         average_tree_output: true, // RF averages
         num_target: 1,
-        num_class: vec![1],
-        leaf_vector_shape: vec![1, 1],
-        target_id: vec![0, 0],
-        class_id: vec![0, 0],
-        postprocessor: "identity".to_string(),
-        base_scores: vec![0.0],
+        num_class: vec![1].into(),
+        leaf_vector_shape: vec![1, 1].into(),
+        target_id: vec![0, 0].into(),
+        class_id: vec![0, 0].into(),
+        postprocessor: "identity".into(),
+        base_scores: vec![0.0].into(),
         attributes: None,
     }
 }
@@ -62,12 +62,12 @@ fn bulk_to_model_assembles_f64_model_with_all_metadata() {
     // All 10 metadata fields equal the passed values.
     assert_eq!(model.num_feature, 4);
     assert_eq!(model.task_type, TaskType::kRegressor);
-    assert_eq!(model.num_class, vec![1]);
-    assert_eq!(model.leaf_vector_shape, vec![1, 1]);
-    assert_eq!(model.target_id, vec![0, 0]);
-    assert_eq!(model.class_id, vec![0, 0]);
+    assert_eq!(model.num_class.as_slice(), &[1]);
+    assert_eq!(model.leaf_vector_shape.as_slice(), &[1, 1]);
+    assert_eq!(model.target_id.as_slice(), &[0, 0]);
+    assert_eq!(model.class_id.as_slice(), &[0, 0]);
     assert_eq!(model.postprocessor, "identity");
-    assert_eq!(model.base_scores, vec![0.0]);
+    assert_eq!(model.base_scores.as_slice(), &[0.0]);
     assert_eq!(model.num_target, 1);
 
     // sigmoid_alpha / ratio_c carry the model defaults (1.0).
@@ -80,8 +80,8 @@ fn bulk_to_model_preserves_average_tree_output() {
     // RF needs average_tree_output=true (Pitfall 6 averaging gate downstream).
     let trees = vec![small_bulk_tree()];
     let mut meta = rf_meta();
-    meta.target_id = vec![0];
-    meta.class_id = vec![0];
+    meta.target_id = vec![0].into();
+    meta.class_id = vec![0].into();
     meta.average_tree_output = true;
     let model = bulk_to_model(trees, meta);
     assert!(model.average_tree_output);
@@ -89,8 +89,8 @@ fn bulk_to_model_preserves_average_tree_output() {
     // And the false case round-trips too.
     let trees2 = vec![small_bulk_tree()];
     let mut meta2 = rf_meta();
-    meta2.target_id = vec![0];
-    meta2.class_id = vec![0];
+    meta2.target_id = vec![0].into();
+    meta2.class_id = vec![0].into();
     meta2.average_tree_output = false;
     let model2 = bulk_to_model(trees2, meta2);
     assert!(!model2.average_tree_output);

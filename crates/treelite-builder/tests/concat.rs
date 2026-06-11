@@ -15,12 +15,12 @@ fn build_n_leaf_model(n: usize) -> Model {
         task_type: TaskType::kRegressor,
         average_tree_output: false,
         num_target: 1,
-        num_class: vec![1],
-        leaf_vector_shape: vec![1, 1],
-        target_id: vec![0; n],
-        class_id: vec![0; n],
-        postprocessor: "identity".to_string(),
-        base_scores: vec![0.0],
+        num_class: vec![1].into(),
+        leaf_vector_shape: vec![1, 1].into(),
+        target_id: vec![0; n].into(),
+        class_id: vec![0; n].into(),
+        postprocessor: "identity".into(),
+        base_scores: vec![0.0].into(),
         attributes: None,
     };
     let mut b = ModelBuilder::new(meta).unwrap();
@@ -48,7 +48,7 @@ fn merge_two_models_sums_trees_and_extends_ids() {
     // Header copied from objs[0].
     assert_eq!(merged.num_feature, 4);
     assert_eq!(merged.num_target, 1);
-    assert_eq!(merged.num_class, vec![1]);
+    assert_eq!(merged.num_class.as_slice(), &[1]);
 }
 
 #[test]

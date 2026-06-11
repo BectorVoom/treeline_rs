@@ -352,15 +352,19 @@ pub fn deserialize(buf: &[u8]) -> Result<Model, SerializeError> {
     model.task_type = task_type;
     model.average_tree_output = average_tree_output;
     model.num_target = num_target;
-    model.num_class = num_class;
-    model.leaf_vector_shape = leaf_vector_shape;
-    model.target_id = target_id;
-    model.class_id = class_id;
-    model.postprocessor = postprocessor;
+    // MEM-02: `r.array(..)`/`r.string()` still return `Vec`/`String`; the migrated
+    // `Model` fields are `SmallVec`/`CompactString`. `.into()` converts via the
+    // `SmallVec: From<Vec<T>>` / `CompactString: From<String>` impls (zero behavior
+    // change — the bytes already decoded element-wise; this is the storage move).
+    model.num_class = num_class.into();
+    model.leaf_vector_shape = leaf_vector_shape.into();
+    model.target_id = target_id.into();
+    model.class_id = class_id.into();
+    model.postprocessor = postprocessor.into();
     model.sigmoid_alpha = sigmoid_alpha;
     model.ratio_c = ratio_c;
-    model.base_scores = base_scores;
-    model.attributes = attributes;
+    model.base_scores = base_scores.into();
+    model.attributes = attributes.into();
     Ok(model)
 }
 
