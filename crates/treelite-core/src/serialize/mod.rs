@@ -69,15 +69,23 @@ fn emit_array<B: SerializerBackend>(b: &mut B, count: usize, payload: &[u8]) {
     b.array_u64_prefixed(count, payload);
 }
 
-/// Reinterpret a `&[T]` of plain-old-data as its little-endian byte image.
+/// Reinterpret a `&[T]` POD column as its native-LE byte image (D-02: LE-host only).
 ///
-/// On the x86-64 manifest host (little-endian) this is the upstream `memcpy`
-/// image byte-for-byte (RESEARCH A2). `T: Copy` mirrors the upstream POD bound;
-/// no padding is introduced because every column element is a packed scalar.
-fn le_bytes_of<T: Copy>(slice: &[T]) -> &[u8] {
-    // SAFETY: `T: Copy` POD scalars have no padding/invalid bit patterns when
-    // viewed as bytes; the lifetime is tied to `slice`; length is exact.
-    unsafe { std::slice::from_raw_parts(slice.as_ptr() as *const u8, std::mem::size_of_val(slice)) }
+/// Routes through the same validated [`bytemuck::cast_slice`] seam as
+/// `tree_buf.rs::as_bytes` (D-01): no hand-rolled `from_raw_parts`/transmute.
+/// `cast_slice` yields the platform's native-endian bytes, which on the
+/// x86-64/ROCm manifest host (little-endian) are byte-identical to the old
+/// `from_raw_parts` transmute and to upstream's `memcpy` image — gated by
+/// `fixtures/golden_v5.bin` / `golden_v5_3format.bin` (D-03). There is NO
+/// big-endian byte-swap path (D-02, out of scope); a big-endian host would emit
+/// a different image and is unsupported for v1. The `T: bytemuck::Pod` bound
+/// (narrowed from the old `T: Copy`) guarantees no padding/invalid bit patterns,
+/// and every call site passes an `i32`/`f64`/`i64` Pod column, so the bound
+/// change is mechanical. This recast is restricted to the safe `&[T] → &[u8]`
+/// EMIT direction; the untrusted deserialize read path (`binary.rs Reader::array`)
+/// keeps its element-wise bounds-checked decode and is NOT recast (V5 security).
+fn le_bytes_of<T: bytemuck::Pod>(slice: &[T]) -> &[u8] {
+    bytemuck::cast_slice(slice)
 }
 
 /// Walk the 20 header fields in EXACT `SerializeHeader` order (D-01).
@@ -139,7 +147,7 @@ pub(crate) fn serialize_trees<B: SerializerBackend>(m: &Model, b: &mut B) {
 /// BEFORE `threshold`, and the node-statistics group (`data_count` …
 /// `gain_present`) is emitted LAST, with each value column immediately followed
 /// by its present-flag column (Pitfall 2).
-pub(crate) fn serialize_tree<T: Copy, B: SerializerBackend>(t: &Tree<T>, b: &mut B) {
+pub(crate) fn serialize_tree<T: Copy + bytemuck::Pod, B: SerializerBackend>(t: &Tree<T>, b: &mut B) {
     b.scalar_le(&t.num_nodes.to_le_bytes()); // serializer.cc:142
     b.scalar_le(&[t.has_categorical_split as u8]); // serializer.cc:143
 
