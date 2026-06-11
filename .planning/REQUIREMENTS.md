@@ -80,7 +80,7 @@ Requirements for the initial release. Each maps to a roadmap phase. All are hypo
 
 - [ ] **PY-01**: From Python, a user can load XGBoost / LightGBM / scikit-learn models
 - [x] **PY-02**: From Python, a user can predict over numpy arrays with zero-copy buffer I/O
-- [ ] **PY-03**: From Python, a user can serialize/deserialize and JSON-dump a model
+- [x] **PY-03**: From Python, a user can serialize/deserialize and JSON-dump a model
 - [ ] **PY-04**: A Python `sklearn.import_model` entry point marshals fitted estimators
 - [ ] **PY-05**: Library `thiserror` errors translate into Python exceptions
 - [x] **PY-06**: The binding builds as an abi3 wheel via maturin
@@ -182,7 +182,7 @@ Which phases cover which requirements.
 | GPU-04 | Phase 7 | Complete |
 | PY-01 | Phase 8 | Pending |
 | PY-02 | Phase 8 | Complete |
-| PY-03 | Phase 8 | Pending |
+| PY-03 | Phase 8 | Complete |
 | PY-04 | Phase 8 | Pending |
 | PY-05 | Phase 8 | Pending |
 | PY-06 | Phase 8 | Complete |

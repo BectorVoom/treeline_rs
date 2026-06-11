@@ -292,7 +292,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 08-03-PLAN.md — Model serialize_bytes/deserialize_bytes + dump_as_json + concatenate, 1e-5 round-trip (PY-03) (Wave 2)
+- [x] 08-03-PLAN.md — Model serialize_bytes/deserialize_bytes + dump_as_json + concatenate, 1e-5 round-trip (PY-03) (Wave 2)
 
 **Wave 3** *(blocked on Wave 2)*
 
@@ -332,5 +332,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Full Scalar GTIL & Equivalence Harness | 7/7 | Complete    | 2026-06-10 |
 | 6. cubecl GTIL Kernels (CPU Backend) | 7/7 | Complete    | 2026-06-10 |
 | 7. GPU Backend & Equivalence Report | 4/4 | Complete    | 2026-06-10 |
-| 8. PyO3 Python Binding | 1/5 | In Progress|  |
+| 8. PyO3 Python Binding | 3/5 | In Progress|  |
 | 9. Memory-Efficiency Hardening | 0/TBD | Not started | - |
