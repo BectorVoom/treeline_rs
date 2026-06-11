@@ -47,6 +47,20 @@ impl Default for PredictKind {
 /// growth), so a large `nthread` bounds the worker count but creates no DoS
 /// amplification surface (T-10-01). A pool-build failure surfaces as the typed
 /// `GtilError::ThreadPool`, never a panic.
+///
+/// # Performance note (IN-01)
+///
+/// Choosing `nthread > 0` is NOT free. A single `Default`/`Raw` predict call
+/// builds a SEPARATE scoped `rayon::ThreadPool` for each parallel pass — the
+/// row-traversal pass, the optional RF tree-averaging pass, and the base-score
+/// pass — so a typical model spins up two pools per call (traversal +
+/// base-scores) and an RF model spins up three. Each `ThreadPoolBuilder::build()`
+/// spawns OS threads and each `Drop` joins them, so the `nthread > 0` path pays
+/// 2–3× the thread-creation/teardown cost of the `nthread <= 0` global-pool path
+/// on every call. For small batches this overhead can dominate. Prefer
+/// `nthread <= 0` (the shared global pool) unless you specifically need to bound
+/// the worker count; reserve `nthread > 0` for large batches where the per-call
+/// pool setup is amortized over substantial compute.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Config {
     /// Which prediction to produce. Defaults to [`PredictKind::Default`].
