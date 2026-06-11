@@ -282,6 +282,22 @@ pub fn predict_f64<'py>(
 #[pyfunction]
 #[pyo3(signature = (model, num_row, *, pred_margin = false))]
 pub fn predict_output_shape(model: &Model, num_row: u64, pred_margin: bool) -> PyResult2<Vec<u64>> {
+    use crate::error::TreeliteError;
+    // WR-03: `num_row` is untrusted (this fn is re-exported and callable directly,
+    // e.g. `predict_output_shape(model, 2**63)`). `output_shape` multiplies
+    // `num_row * num_target * max_num_class`; in a RELEASE build a wrapping
+    // multiply would silently produce a wrong shape vector (no panic for
+    // `guard_assert` to trap), and the downstream reshape would then mis-shape
+    // (feeding CR-01). Reject an out-of-range `num_row` at the boundary BEFORE the
+    // arithmetic runs. `i32::MAX` is the largest legitimate row count (numpy row
+    // counts are `isize`-bounded and the engine reads rows at an `i32` feature
+    // stride), so anything larger is a corrupt/pathological call.
+    if num_row > i32::MAX as u64 {
+        return Err(TreelitePyErr::from_pyerr(TreeliteError::new_err(format!(
+            "num_row {num_row} exceeds the maximum supported row count ({})",
+            i32::MAX
+        ))));
+    }
     // `predict_output_shape` is on the hot predict path (the Python `predict`
     // shim calls it on every call to compute the flat→N-D reshape target). It
     // must therefore share the predict path's panic message-parity (WR-01): a
