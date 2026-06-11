@@ -78,7 +78,20 @@ fn contiguity_err() -> TreelitePyErr {
 #[inline]
 fn check_feature_count(num_col: usize, num_feature: i32) -> PyResult2<()> {
     use crate::error::TreeliteError;
-    if num_feature < 0 || num_col != num_feature as usize {
+    // WR-04: `num_feature` is loader-produced/untrusted, so a NEGATIVE value is a
+    // distinct corrupt-model condition — reject it FIRST with a dedicated message.
+    // Conflating it with the column-equality check (the old `num_feature < 0 ||
+    // num_col != num_feature as usize`) made the negative case fire only via the
+    // `num_col != (negative as usize)` wrap, emitting a misleading "expects -1
+    // features" message, and let a `(0,0)` input against a `num_feature == 0`
+    // model slip through. Rejecting `< 0` up front keeps the equality below
+    // operating on a known-non-negative value.
+    if num_feature < 0 {
+        return Err(TreelitePyErr::from_pyerr(TreeliteError::new_err(format!(
+            "corrupt model: negative feature count ({num_feature})"
+        ))));
+    }
+    if num_col != num_feature as usize {
         return Err(TreelitePyErr::from_pyerr(TreeliteError::new_err(format!(
             "input has {num_col} columns but the model expects {num_feature} \
              features; pass a (num_row, {num_feature}) C-contiguous array"
