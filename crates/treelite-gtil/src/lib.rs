@@ -692,7 +692,16 @@ fn predict_preset<T: PredictScalar + PartialOrd + Sync, O: PredictOut>(
     nthread: i32,
 ) -> Result<Vec<O>, GtilError> {
     let cells_per_row = shape.cells_per_row();
-    let mut output = vec![O::zero(); num_row * cells_per_row];
+    // WR-03: guard the `num_row * cells_per_row` product (see predict_score_by_tree_preset).
+    let buf_len = num_row
+        .checked_mul(cells_per_row)
+        .ok_or(GtilError::InvalidInputShape {
+            num_row,
+            num_feature: 0,
+            required: usize::MAX,
+            got: 0,
+        })?;
+    let mut output = vec![O::zero(); buf_len];
     let num_tree = trees.len();
 
     // Row-parallel accumulation (PAR-01/02). Each output row is a DISJOINT
@@ -1156,7 +1165,16 @@ fn predict_leaf_preset<T: PredictScalar + PartialOrd + Sync, O: PredictOut>(
     nthread: i32,
 ) -> Result<Vec<O>, GtilError> {
     let num_tree = trees.len();
-    let mut output = vec![O::zero(); num_row * num_tree];
+    // WR-03: guard the `num_row * num_tree` product (see predict_score_by_tree_preset).
+    let buf_len = num_row
+        .checked_mul(num_tree)
+        .ok_or(GtilError::InvalidInputShape {
+            num_row,
+            num_feature: 0,
+            required: usize::MAX,
+            got: 0,
+        })?;
+    let mut output = vec![O::zero(); buf_len];
     run_with_nthread(nthread, || {
         output
             .par_chunks_mut(num_tree.max(1))
@@ -1241,7 +1259,24 @@ fn predict_score_by_tree_preset<T: PredictScalar + PartialOrd + Sync, O: Predict
     // Filled with 0's (predict.cc:355 `std::fill_n(.., InputT{})`); the scalar
     // path only writes index 0 of each (row, tree) slot, leaving any padding
     // columns at 0.
-    let mut output = vec![O::zero(); num_row * num_tree * lvs];
+    //
+    // WR-03: guard the `num_row * num_tree * lvs` product with `checked_mul`.
+    // `lvs` derives from clamped `i32` leaf-vector dims, so on a 32-bit `usize`
+    // platform a large `num_row`/`num_tree` could wrap the product silently
+    // (release builds wrap, not panic); the `Vec` would then allocate too small
+    // while `par_chunks_mut` still yields correctly-sized chunks → OOB writes.
+    // A wrapping product surfaces as a typed `InvalidInputShape` (required =
+    // usize::MAX marks a shape overflow, not a feature mismatch) instead.
+    let buf_len = num_row
+        .checked_mul(num_tree)
+        .and_then(|n| n.checked_mul(lvs))
+        .ok_or(GtilError::InvalidInputShape {
+            num_row,
+            num_feature: 0,
+            required: usize::MAX,
+            got: 0,
+        })?;
+    let mut output = vec![O::zero(); buf_len];
     let chunk = (num_tree * lvs).max(1);
     run_with_nthread(nthread, || {
         output
