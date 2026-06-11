@@ -150,15 +150,16 @@ impl Model {
             ))
         })?;
         let value = treelite_core::dump_as_json(&mut this.inner);
+        // IN-05: serializing an already-built `serde_json::Value` (no custom
+        // `Serialize`, no non-string map keys) cannot fail — the former
+        // `map_err → TreeliteError` arm was unreachable dead code. State the
+        // invariant with `.expect` instead of carrying an untestable error path.
         let s = if pretty_print {
             serde_json::to_string_pretty(&value)
         } else {
             serde_json::to_string(&value)
         }
-        .map_err(|e| {
-            use crate::error::TreeliteError;
-            TreelitePyErr::from_pyerr(TreeliteError::new_err(e.to_string()))
-        })?;
+        .expect("serializing an already-built serde_json::Value is infallible");
         Ok(s)
     }
 
