@@ -1,13 +1,14 @@
 ---
 phase: 10-parallel-scalar-inference
 verified: 2026-06-11T00:00:00Z
-status: human_needed
+status: passed
 score: 6/6 must-haves verified
 overrides_applied: 0
 human_verification:
   - test: "Observe wall-clock speedup on a LightGBM categorical or kLE model over a large row batch"
     expected: "Multi-core run completes faster than nthread=1; the utilization test asserts rayon::current_num_threads() > 1 but does not measure throughput"
     why_human: "Functional correctness and determinism are proven by automated tests. Actual throughput improvement (the point of the phase) requires running the model on a real scalar-fallback workload with wall-clock timing — not automatable without a benchmark harness that is out of scope for this phase"
+    result: "PASSED 2026-06-11 via /gsd-verify-work — categorical LightGBM, 4M rows, 16 cores: nthread=1 0.708s vs all-cores 0.192s = 3.68x speedup; output bit-identical (max diff 0.000e0, within 1e-5). Recorded in 10-UAT.md."
 ---
 
 # Phase 10: Parallel Scalar Inference — Verification Report
