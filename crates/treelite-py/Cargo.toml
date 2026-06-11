@@ -18,6 +18,10 @@ crate-type = ["cdylib"]
 pyo3 = { version = "0.28.3", features = ["abi3-py310", "extension-module"] }
 numpy = "0.28.0"
 thiserror = { workspace = true }
+# Used only to honor `dump_as_json(pretty_print=...)` (A3): the core
+# `dump_as_json` returns a `serde_json::Value`, which we render compact
+# (`to_string`) or pretty (`to_string_pretty`) at the Python boundary.
+serde_json = { workspace = true }
 
 # Pure-Rust path deps (all already 1e-5-green). Default features keep cubecl on
 # its cpu-only path; GPU backends are opt-in via the per-backend features below.

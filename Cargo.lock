@@ -3349,6 +3349,7 @@ version = "0.1.0"
 dependencies = [
  "numpy",
  "pyo3",
+ "serde_json",
  "thiserror",
  "treelite-builder",
  "treelite-core",
