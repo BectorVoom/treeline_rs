@@ -76,3 +76,30 @@ def test_predict_too_wide_raises(treelite_rs, rng):
     )
     with pytest.raises(treelite_rs.TreeliteError):
         treelite_rs.gtil.predict_f64(model, wide64)
+
+
+def test_predict_wrong_ndim_raises_treelite_error(treelite_rs, rng):
+    """WR-02 regression: a 1-D (wrong-rank) array into the high-level
+    gtil.predict shim must raise the single TreeliteError (D-06), not a
+    misleading "dtype does not match" message from the Rust PyReadonlyArray2
+    extraction nor a bare AttributeError."""
+    model = treelite_rs.frontend.load_xgboost_json_str(
+        (FIXTURES / "xgb_3format.json").read_text()
+    )
+    flat = np.ascontiguousarray(
+        rng.standard_normal((model.num_feature,)), dtype=np.float32
+    )
+    assert flat.ndim == 1
+    with pytest.raises(treelite_rs.TreeliteError):
+        treelite_rs.gtil.predict(model, flat)
+
+
+def test_predict_non_array_raises_treelite_error(treelite_rs):
+    """WR-02 regression: a non-numpy input (a Python list lacking .dtype) into
+    the high-level gtil.predict shim must raise TreeliteError (D-06), not a bare
+    AttributeError from reading .dtype."""
+    model = treelite_rs.frontend.load_xgboost_json_str(
+        (FIXTURES / "xgb_3format.json").read_text()
+    )
+    with pytest.raises(treelite_rs.TreeliteError):
+        treelite_rs.gtil.predict(model, [[0.0] * model.num_feature])

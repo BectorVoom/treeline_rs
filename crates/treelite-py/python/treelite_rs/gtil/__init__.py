@@ -19,12 +19,9 @@ rejected by the typed ``PyReadonlyArray2`` param, a non-contiguous array by the
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import numpy as np
 
 from .. import _treelite_rs
-
-if TYPE_CHECKING:
-    import numpy as np
 
 # The compiled gtil entry points (Rust seam). Names mirror src/gtil.rs.
 _G = _treelite_rs.gtil
@@ -59,6 +56,21 @@ def _dense_predict(model, data, *, nthread: int, pred_margin: bool, backend: str
     ``'cpu'``, D-05); an un-built or device-absent backend raises ``TreeliteError``
     from the Rust side, never a silent CPU fallback (D-08).
     """
+    # D-03/D-06: validate the input rank at the Python boundary so a non-numpy
+    # input (a list / pandas object lacking ``.dtype``) or a wrong-ndim array
+    # surfaces as the single ``TreeliteError`` (WR-02), not a bare
+    # ``AttributeError`` (from reading ``.dtype``/``.shape``) or a misleading
+    # "dtype does not match" message (a 1-D array tripping the Rust
+    # ``PyReadonlyArray2`` extraction). We do NOT silently copy/cast: a
+    # non-array input is rejected rather than coerced (the safer D-03 choice).
+    if not isinstance(data, np.ndarray):
+        raise _treelite_rs.TreeliteError(
+            f"input must be a numpy.ndarray; got {type(data).__name__}"
+        )
+    if data.ndim != 2:
+        raise _treelite_rs.TreeliteError(
+            f"input must be a 2-D array; got {data.ndim} dimensions"
+        )
     dtype = data.dtype
     if dtype == "float32":
         flat = predict_f32(
