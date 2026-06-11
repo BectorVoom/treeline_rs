@@ -18,6 +18,8 @@
 //! `PyResult2<T>` (alias for `Result<T, TreelitePyErr>`) use `?` on any crate
 //! error transparently. The `guard()` panic-remap helper (D-07) lands in 08-05.
 
+use std::panic::{AssertUnwindSafe, UnwindSafe};
+
 use pyo3::create_exception;
 use pyo3::exceptions::PyException;
 
@@ -77,4 +79,64 @@ err_to_treelite! {
     treelite_gtil::GtilError,
     treelite_cubecl::CubeclError,
     treelite_builder::BuilderError,
+}
+
+/// Panic-trap remap (D-07): run `f` under [`std::panic::catch_unwind`] and, if it
+/// unwinds, normalize the trapped panic into a catchable `TreeliteError` rather
+/// than letting the unwind cross the FFI boundary.
+///
+/// ## Why this exists (RESEARCH Pattern 4)
+/// pyo3 0.28 ALREADY wraps every `#[pyfunction]` boundary in `catch_unwind` and
+/// converts a trapped panic into a `pyo3_runtime.PanicException` — so the
+/// interpreter never *aborts* even without this helper (the abort-prevention
+/// mitigation for T-08-11 is pyo3's, not ours). `guard()` is the *message-parity*
+/// layer (D-06/D-07): it remaps a panic to the SINGLE `TreeliteError` carrying a
+/// descriptive `"internal error (panic): {msg}"` string, so a caller that
+/// branches on `TreeliteError` catches a trapped panic the same way it catches
+/// every other Rust error. We apply it ONLY at the entry points where that parity
+/// is wanted (the predict path) — NOT as a blanket wrapper on every function
+/// (the "manual catch_unwind on every function" anti-pattern), because pyo3's
+/// auto-trap already prevents the abort everywhere.
+///
+/// Note `CubeclError::DeviceUnavailable` is a *typed `Result`* (it flows through
+/// the `From` impl above), NOT a panic — it needs no `guard`.
+///
+/// The closure must be `UnwindSafe`; entry points pass an [`AssertUnwindSafe`]
+/// wrapper (see [`guard_assert`]) because the borrowed numpy slice + `&Model` are
+/// only read inside the trapped region and no broken invariant can leak out (a
+/// panic abandons the partial output `Vec`, which is dropped, not observed).
+#[inline]
+pub fn guard<T>(f: impl FnOnce() -> PyResult2<T> + UnwindSafe) -> PyResult2<T> {
+    match std::panic::catch_unwind(f) {
+        Ok(r) => r,
+        Err(payload) => {
+            let msg = panic_payload_message(&payload);
+            Err(TreelitePyErr(TreeliteError::new_err(format!(
+                "internal error (panic): {msg}"
+            ))))
+        }
+    }
+}
+
+/// [`guard`] for a closure that is not statically `UnwindSafe`. The predict entry
+/// points read a borrowed numpy slice + `&Model` inside the trap; neither carries
+/// a mutable invariant that a panic could leave broken-yet-observable (the slice
+/// is read-only; the model is `&`-shared; the partial output `Vec` is dropped on
+/// unwind, never read). Asserting unwind-safety here is therefore sound.
+#[inline]
+pub fn guard_assert<T>(f: impl FnOnce() -> PyResult2<T>) -> PyResult2<T> {
+    guard(AssertUnwindSafe(f))
+}
+
+/// Extract a human-readable message from a trapped panic payload (the `&str` /
+/// `String` forms `panic!`/`unwrap`/`expect` produce); fall back to a generic
+/// note for any other payload type.
+fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "non-string panic payload".to_string()
+    }
 }
