@@ -352,7 +352,15 @@ Plans:
   4. `Config.nthread` is honored end-to-end on the scalar path — `≤0` uses all cores, `N` bounds the worker pool — and the Python `nthread=` kwarg (currently recorded-but-unused on the scalar path) drives it through to predict.
   5. The v5 serializer still emits byte-identical golden_v5.bin / golden_v5_3format.bin (this milestone does not touch serialization), and `cargo test --workspace` + pytest stay green.
 
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+**Wave 0** *(scaffolding — gates everything)*
+
+- [ ] 10-00-PLAN.md — Pin rayon 1.12.0 + `unsafe impl Sync for Model` + `GtilError::ThreadPool` + rewrite `model_invariants` to `requires_sync` + RED `parallel_nthread.rs`/`determinism.rs` scaffolds (PAR-03)
+
+**Wave 1** *(blocked on Wave 0 — same gtil lib.rs)*
+
+- [ ] 10-01-PLAN.md — Row-parallelize the 4 scalar GTIL loops via rayon `par_chunks_mut`/`map_init` (per-worker scratch, serial tree-sum), thread `Config.nthread` through a scoped pool, un-ignore determinism/nthread tests + Python `nthread` pytest, full 1e-5 + byte-identical gate (PAR-01/PAR-02/PAR-04)
 
 ## Progress
 
@@ -370,4 +378,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. GPU Backend & Equivalence Report | 4/4 | Complete    | 2026-06-10 |
 | 8. PyO3 Python Binding | 5/5 | Complete    | 2026-06-11 |
 | 9. Memory-Efficiency Hardening | 4/4 | Complete    | 2026-06-11 |
-| 10. Parallel Scalar Inference | 0/TBD | Not started | - |
+| 10. Parallel Scalar Inference | 0/2 | Not started | - |
