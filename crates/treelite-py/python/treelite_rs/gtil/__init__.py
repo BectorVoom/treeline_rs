@@ -87,8 +87,28 @@ def _dense_predict(model, data, *, nthread: int, pred_margin: bool, backend: str
 
     num_row = data.shape[0]
     shape = tuple(predict_output_shape(model, num_row, pred_margin=pred_margin))
+    # CR-01: the monomorphized entry point is selected by INPUT dtype while the
+    # reshape target is derived from the MODEL variant; a length/shape
+    # disagreement (degenerate/multi-target model or a future engine change)
+    # would otherwise let numpy raise a bare ``ValueError`` (not the single
+    # ``TreeliteError`` the D-06 contract and the public docstring promise) and a
+    # product-matches-but-factoring-wrong case would silently mis-shape the view
+    # (a direct 1e-5 violation). Validate the flat length against the shape
+    # product, then wrap the reshape so every mismatch surfaces as
+    # ``TreeliteError``.
+    expected = int(np.prod(shape)) if shape else 0
+    if flat.size != expected:
+        raise _treelite_rs.TreeliteError(
+            f"internal error: predict produced {flat.size} elements but output "
+            f"shape {shape} requires {expected}"
+        )
     # Flat→N-D is a view (no copy, Pitfall 3).
-    return flat.reshape(shape)
+    try:
+        return flat.reshape(shape)
+    except ValueError as exc:
+        raise _treelite_rs.TreeliteError(
+            f"could not reshape prediction output to {shape}: {exc}"
+        ) from exc
 
 
 def predict(
