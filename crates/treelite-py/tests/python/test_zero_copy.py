@@ -51,3 +51,28 @@ def test_predict_wrong_dtype_raises(treelite_rs, rng):
     )
     with pytest.raises(treelite_rs.TreeliteError):
         treelite_rs.gtil.predict_f32(model, data)  # f64 array into f32 entry point
+
+
+def test_predict_too_wide_raises(treelite_rs, rng):
+    """CR-01 regression: a too-WIDE C-contiguous matrix must raise, never return
+    silently wrong predictions. The downstream shape check is only a lower bound
+    (data_len >= num_row * num_feature), so an extra-column contiguous array would
+    otherwise pass and be read at the wrong num_feature stride — a 1e-5 core-value
+    violation. The too-narrow case is covered by test_errors.py's (1,1) case."""
+    model = treelite_rs.frontend.load_xgboost_json_str(
+        (FIXTURES / "xgb_3format.json").read_text()
+    )
+    assert model.num_feature > 0
+    # Exactly-contiguous, but one extra column beyond what the model expects.
+    wide32 = np.ascontiguousarray(
+        rng.standard_normal((16, model.num_feature + 1)), dtype=np.float32
+    )
+    assert wide32.flags["C_CONTIGUOUS"]
+    with pytest.raises(treelite_rs.TreeliteError):
+        treelite_rs.gtil.predict_f32(model, wide32)
+
+    wide64 = np.ascontiguousarray(
+        rng.standard_normal((16, model.num_feature + 1)), dtype=np.float64
+    )
+    with pytest.raises(treelite_rs.TreeliteError):
+        treelite_rs.gtil.predict_f64(model, wide64)

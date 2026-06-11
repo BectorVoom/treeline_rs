@@ -65,6 +65,28 @@ fn contiguity_err() -> TreelitePyErr {
     ))
 }
 
+/// Reject a feature-count mismatch at the Python boundary (CR-01). The downstream
+/// `treelite_cubecl::validate_shape` is only a LOWER bound
+/// (`data_len >= num_row * num_feature`), and the kernel/scalar engine read each
+/// row at the `num_feature` stride. A too-WIDE C-contiguous matrix therefore
+/// passes that check, is read at the wrong stride, and returns SILENTLY WRONG
+/// predictions — a direct violation of the 1e-5 core-value contract. The 2-D
+/// numpy column count is known ONLY here (it is lost once the buffer is flattened
+/// to a 1-D `&[F]` slice downstream), so the exact-match guard must live at this
+/// boundary. The too-narrow direction is already rejected downstream; this closes
+/// the too-wide gap and makes every shape rejection one typed `TreeliteError` (D-06).
+#[inline]
+fn check_feature_count(num_col: usize, num_feature: i32) -> PyResult2<()> {
+    use crate::error::TreeliteError;
+    if num_feature < 0 || num_col != num_feature as usize {
+        return Err(TreelitePyErr::from_pyerr(TreeliteError::new_err(format!(
+            "input has {num_col} columns but the model expects {num_feature} \
+             features; pass a (num_row, {num_feature}) C-contiguous array"
+        ))));
+    }
+    Ok(())
+}
+
 /// Extract a typed 2-D readonly numpy view, mapping a DTYPE mismatch to the single
 /// `TreeliteError` (D-03 strict + D-06 single exception). Taking `data` as an
 /// untyped `PyAny` and extracting here — instead of relying on the `#[pyfunction]`
@@ -194,6 +216,7 @@ pub fn predict_f32<'py>(
 ) -> PyResult2<Bound<'py, PyArray1<f32>>> {
     let data = extract_readonly::<f32>(data, "float32")?;
     let num_row = data.shape()[0];
+    check_feature_count(data.shape()[1], model.inner.num_feature)?;
     let slice = data.as_slice().map_err(|_| contiguity_err())?;
     let cfg = make_config(nthread, pred_margin);
     let inner = SendModelRef(&model.inner);
@@ -227,6 +250,7 @@ pub fn predict_f64<'py>(
 ) -> PyResult2<Bound<'py, PyArray1<f64>>> {
     let data = extract_readonly::<f64>(data, "float64")?;
     let num_row = data.shape()[0];
+    check_feature_count(data.shape()[1], model.inner.num_feature)?;
     let slice = data.as_slice().map_err(|_| contiguity_err())?;
     let cfg = make_config(nthread, pred_margin);
     let inner = SendModelRef(&model.inner);
