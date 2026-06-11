@@ -34,6 +34,10 @@ A from-scratch Rust rewrite of [Treelite](https://github.com/dmlc/treelite) — 
 
 - [x] PyO3 Python binding exposing load → predict → serialize directly over the Rust core — *Validated in Phase 8 (PY-01..06, MEM-04): `treelite-py` abi3 maturin wheel; `frontend.load_*` (XGB/LGB) + `sklearn.import_model` (estimator→arrays Python-side) + `Model.serialize/deserialize/dump_as_json/concatenate` + `gtil.predict` (zero-copy numpy borrow, GIL released) all within 1e-5 of upstream `treelite`. Single `TreeliteError` (D-06), panics remapped not aborting (D-07), strict dtype/contiguity + exact feature-count gating (CR-01 fix), additive `backend=` kwarg with `rocm` hardware-validated on-device (bitwise-exact vs cpu). 37 Python tests green.*
 
+- [x] **PAR-01 / PAR-02**: Scalar dense + sparse-CSR predict (`treelite_gtil::predict` / `predict_sparse`) run row-parallel across all cores within 1e-5 — *Validated in Phase 10: the four serial row-loop families converted to rayon `par_chunks_mut`/`map_init` (per-worker scratch), inner per-row tree loop kept serial (GTIL-08). Measured 3.68× speedup on a categorical LightGBM model (4M rows, 16 cores; 0.71s→0.19s), output bit-identical (max |serial−parallel| = 0e0). `gtil_matrix` 1e-5 golden + determinism (dense+sparse) green.*
+- [x] **PAR-03**: `Model` soundly shareable across threads for read-only prediction — *Validated in Phase 10: `unsafe impl Sync for Model` + `unsafe impl<T: Copy + Sync> Sync for TreeBuf<T>` with documented read-only-predict SAFETY argument; `requires_sync::<Model>()` contract test supersedes the Phase-9 `_assert_not_send` invariant. Security-verified (T-10-03 closed).*
+- [x] **PAR-04**: `Config.nthread` honored end-to-end — *Validated in Phase 10: `run_with_nthread` scoped pool (≤0 = all cores, N bounded, never `build_global`, build failure → typed `GtilError::ThreadPool`); Python `nthread=` kwarg now drives the scalar path (test_nthread.py green).*
+
 ### Active
 
 <!-- v1 scope. All hypotheses until shipped and validated against the 1e-5 equivalence harness. -->
@@ -46,12 +50,6 @@ A from-scratch Rust rewrite of [Treelite](https://github.com/dmlc/treelite) — 
 - [ ] Equivalence harness: random seeded input matrices → golden output vectors captured from C++ Treelite → assert Rust within 1e-5
 - [ ] `thiserror`-based typed errors in library crates; `anyhow` in binaries/tests
 - [ ] Memory-efficiency techniques applied (see Context): zero-copy buffers, small-vector/compact-string types, custom allocator
-
-<!-- v1.1 (Parallel Scalar Inference) -->
-- [ ] **PAR-01**: Scalar dense predict (`treelite_gtil::predict`) runs row-parallel across all cores, output identical to the serial path within 1e-5
-- [ ] **PAR-02**: Scalar sparse predict (`predict_sparse` / `predict_cpu_sparse` fallback) runs row-parallel with the same equivalence guarantee
-- [ ] **PAR-03**: `Model` is soundly shareable across threads for read-only prediction (documented `unsafe impl Sync`/`Send`; `_assert_not_send` invariant superseded)
-- [ ] **PAR-04**: `Config.nthread` is honored end-to-end (≤0 = all cores; N bounded), wiring the Python `nthread=` kwarg currently ignored on the scalar path
 
 ### Out of Scope
 
@@ -118,4 +116,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-11 — v1.0 complete (Phase 9 Memory-Efficiency Hardening verified 15/15: bytemuck Pod recast, SmallVec/CompactString metadata, jemalloc/mimalloc harness allocators; golden byte-identical + 1e-5 green). Started milestone v1.1 (Parallel Scalar Inference): row-parallelize the 1-core scalar GTIL fallback (LightGBM/categorical/sparse) — measured 99% CPU there vs ~783% on the already-parallel cubecl numerical path. Next: Phase 10. (Note: v1.0 Active requirements not yet migrated to Validated — run `/gsd-complete-milestone` to reconcile.)*
+*Last updated: 2026-06-11 — Phase 10 (Parallel Scalar Inference) complete, closing milestone v1.1. PAR-01..04 validated: rayon row-parallel scalar GTIL (dense + sparse CSR) honoring `Config.nthread`, `Model`/`TreeBuf` soundly `Sync`, output bit-identical within 1e-5; measured 3.68× on a categorical LightGBM model (4M rows / 16 cores). Verified 6/6 must-haves + human throughput UAT; code review 5/5 fixed; security 5/5 threats closed (ASVS high). Milestone v1.1 is 100% (1/1 phase). Next: `/gsd-complete-milestone v1.1` to archive. (Note: v1.0 Active requirements still pending migration to Validated — reconcile during milestone completion.)*
