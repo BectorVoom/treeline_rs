@@ -186,12 +186,12 @@ mod tests {
         assert_eq!(model.postprocessor, "identity");
         assert!(model.average_tree_output);
         assert_eq!(model.num_target, 1);
-        assert_eq!(model.num_class, vec![1]);
-        assert_eq!(model.leaf_vector_shape, vec![1, 1]);
+        assert_eq!(model.num_class.as_slice(), &[1]);
+        assert_eq!(model.leaf_vector_shape.as_slice(), &[1, 1]);
         // n_targets == 1 → target_id is 0 (not -1); class_id all 0.
-        assert_eq!(model.target_id, vec![0]);
-        assert_eq!(model.class_id, vec![0]);
-        assert_eq!(model.base_scores, vec![0.0]);
+        assert_eq!(model.target_id.as_slice(), &[0]);
+        assert_eq!(model.class_id.as_slice(), &[0]);
+        assert_eq!(model.base_scores.as_slice(), &[0.0]);
     }
 
     #[test]
@@ -228,12 +228,12 @@ mod tests {
         assert_eq!(model.task_type, TaskType::kMultiClf);
         assert_eq!(model.postprocessor, "identity_multiclass");
         assert!(model.average_tree_output);
-        assert_eq!(model.num_class, vec![2]);
-        assert_eq!(model.leaf_vector_shape, vec![1, 2]);
+        assert_eq!(model.num_class.as_slice(), &[2]);
+        assert_eq!(model.leaf_vector_shape.as_slice(), &[1, 2]);
         // Leaf-vector broadcast → target_id/class_id all -1 (sklearn_bulk.cc).
-        assert_eq!(model.target_id, vec![-1]);
-        assert_eq!(model.class_id, vec![-1]);
-        assert_eq!(model.base_scores, vec![0.0, 0.0]);
+        assert_eq!(model.target_id.as_slice(), &[-1]);
+        assert_eq!(model.class_id.as_slice(), &[-1]);
+        assert_eq!(model.base_scores.as_slice(), &[0.0, 0.0]);
     }
 
     #[test]

@@ -355,12 +355,14 @@ pub fn load_lightgbm(model_str: &str) -> Result<Model, LgbError> {
         task_type,
         average_tree_output: parsed.average_output, // average_output key presence.
         num_target: 1,
-        num_class: vec![num_class],
-        leaf_vector_shape: vec![1, 1],
-        target_id,
-        class_id,
-        postprocessor: postproc.postprocessor.to_string(),
-        base_scores,
+        // MEM-02: BuilderMetadata fields are SmallVec/CompactString — `.into()`
+        // the Vec/String exprs at the literal sites.
+        num_class: vec![num_class].into(),
+        leaf_vector_shape: vec![1, 1].into(),
+        target_id: target_id.into(),
+        class_id: class_id.into(),
+        postprocessor: postproc.postprocessor.into(),
+        base_scores: base_scores.into(),
         attributes: None,
     };
 
@@ -401,7 +403,7 @@ mod tests {
         assert_eq!(model.task_type, TaskType::kRegressor);
         assert_eq!(model.postprocessor, "identity");
         // One tree → class_id[0] = 0.
-        assert_eq!(model.class_id, vec![0]);
+        assert_eq!(model.class_id.as_slice(), &[0]);
     }
 
     #[test]

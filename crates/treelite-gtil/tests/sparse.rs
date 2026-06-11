@@ -37,13 +37,13 @@ fn model_of(trees: Vec<Tree<f32>>, num_feature: i32) -> Model {
     let mut m = Model::new(ModelVariant::F32(ModelPreset::new(trees)));
     m.num_feature = num_feature;
     m.num_target = 1;
-    m.num_class = vec![1];
-    m.leaf_vector_shape = vec![1, 1];
-    m.target_id = vec![0; num_tree];
-    m.class_id = vec![0; num_tree];
-    m.postprocessor = "identity".to_string();
+    m.num_class = vec![1].into();
+    m.leaf_vector_shape = vec![1, 1].into();
+    m.target_id = vec![0; num_tree].into();
+    m.class_id = vec![0; num_tree].into();
+    m.postprocessor = "identity".to_string().into();
     m.sigmoid_alpha = 1.0;
-    m.base_scores = vec![0.0];
+    m.base_scores = vec![0.0].into();
     m
 }
 

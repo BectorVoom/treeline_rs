@@ -67,13 +67,13 @@ fn scalar_model(
     let mut m = Model::new(ModelVariant::F32(ModelPreset::new(trees)));
     m.num_feature = num_feature;
     m.num_target = 1;
-    m.num_class = vec![1];
-    m.leaf_vector_shape = vec![1, 1];
-    m.target_id = vec![0; num_tree];
-    m.class_id = vec![0; num_tree];
-    m.postprocessor = postprocessor.to_string();
+    m.num_class = vec![1].into();
+    m.leaf_vector_shape = vec![1, 1].into();
+    m.target_id = vec![0; num_tree].into();
+    m.class_id = vec![0; num_tree].into();
+    m.postprocessor = postprocessor.to_string().into();
     m.sigmoid_alpha = 1.0;
-    m.base_scores = vec![base_score];
+    m.base_scores = vec![base_score].into();
     m
 }
 
@@ -138,12 +138,12 @@ fn score_per_tree_leaf_vector_writes_each_element() {
     )])));
     m.num_feature = 1;
     m.num_target = 1;
-    m.num_class = vec![3];
-    m.leaf_vector_shape = vec![1, 3];
-    m.target_id = vec![-1];
-    m.class_id = vec![-1];
-    m.postprocessor = "softmax".to_string(); // must be ignored
-    m.base_scores = vec![0.0, 0.0, 0.0];
+    m.num_class = vec![3].into();
+    m.leaf_vector_shape = vec![1, 3].into();
+    m.target_id = vec![-1].into();
+    m.class_id = vec![-1].into();
+    m.postprocessor = "softmax".to_string().into(); // must be ignored
+    m.base_scores = vec![0.0, 0.0, 0.0].into();
 
     let cfg = Config {
         kind: PredictKind::ScorePerTree,
@@ -282,7 +282,7 @@ fn assert_score_per_tree_third_dim_agrees(m: &Model, num_row: usize) {
 fn score_per_tree_shape_agrees_with_predict_scalar_leaf() {
     // Scalar-leaf model: leaf_vector_shape = [1, 1] → third dim (1*1).max(1) = 1.
     let m = scalar_model(vec![split_tree(0, 0.5, 1.0, -1.0)], 2, "identity", 0.0);
-    assert_eq!(m.leaf_vector_shape, vec![1, 1]);
+    assert_eq!(m.leaf_vector_shape.as_slice(), &[1, 1]);
     assert_score_per_tree_third_dim_agrees(&m, 1);
 }
 
@@ -293,7 +293,7 @@ fn score_per_tree_shape_agrees_with_predict_degenerate_shape() {
     // third dim is 1 (NOT 0) and the two agree. Before WR-02, shape.rs used
     // unwrap_or(0) → third dim 0, disagreeing with predict's lvs.max(1) == 1.
     let mut m = scalar_model(vec![split_tree(0, 0.5, 1.0, -1.0)], 2, "identity", 0.0);
-    m.leaf_vector_shape = vec![]; // malformed/short
+    m.leaf_vector_shape = Default::default(); // malformed/short (empty)
     assert_score_per_tree_third_dim_agrees(&m, 2);
 }
 

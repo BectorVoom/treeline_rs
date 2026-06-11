@@ -36,12 +36,12 @@ fn binary_model() -> Model {
     ])));
     m.num_feature = 1;
     m.num_target = 1;
-    m.num_class = vec![1];
-    m.leaf_vector_shape = vec![1, 1];
-    m.target_id = vec![0, 0, 0];
-    m.class_id = vec![0, 0, 0];
-    m.postprocessor = "identity".to_string();
-    m.base_scores = vec![0.0];
+    m.num_class = vec![1].into();
+    m.leaf_vector_shape = vec![1, 1].into();
+    m.target_id = vec![0, 0, 0].into();
+    m.class_id = vec![0, 0, 0].into();
+    m.postprocessor = "identity".to_string().into();
+    m.base_scores = vec![0.0].into();
     m
 }
 
@@ -99,7 +99,7 @@ fn output_shape_leaf_id_is_row_by_num_tree() {
 fn output_shape_score_per_tree_uses_leaf_vector_shape_product() {
     let mut m = binary_model();
     // leaf_vector_shape [2, 3] ⇒ product 6.
-    m.leaf_vector_shape = vec![2, 3];
+    m.leaf_vector_shape = vec![2, 3].into();
     let num_tree = m.num_tree();
     let cfg = Config {
         kind: PredictKind::ScorePerTree,
@@ -119,9 +119,9 @@ fn predict_takes_config_and_dispatches_default_vs_raw() {
     // scalar tree with leaf 0.0 ⇒ raw margin 0.0; sigmoid(0) = 0.5.
     let mut m = binary_model();
     m.variant = ModelVariant::F32(ModelPreset::new(vec![leaf_tree(0.0)]));
-    m.target_id = vec![0];
-    m.class_id = vec![0];
-    m.postprocessor = "sigmoid".to_string();
+    m.target_id = vec![0].into();
+    m.class_id = vec![0].into();
+    m.postprocessor = "sigmoid".to_string().into();
     m.sigmoid_alpha = 1.0;
 
     let data = [0.0_f32];

@@ -250,12 +250,14 @@ pub(crate) fn build_model_from_parsed(parsed: XgbModelJson) -> Result<Model, Xgb
         task_type,
         average_tree_output: false, // hardcoded upstream (delegated_handler.cc:814).
         num_target,
-        num_class,
-        leaf_vector_shape: vec![1, 1],
-        target_id,
-        class_id,
-        postprocessor,
-        base_scores,
+        // MEM-02: BuilderMetadata fields are now SmallVec/CompactString; wrap the
+        // Vec/String-producing exprs with `.into()` at the literal sites.
+        num_class: num_class.into(),
+        leaf_vector_shape: vec![1, 1].into(),
+        target_id: target_id.into(),
+        class_id: class_id.into(),
+        postprocessor: postprocessor.into(),
+        base_scores: base_scores.into(),
         attributes: None,
     };
 

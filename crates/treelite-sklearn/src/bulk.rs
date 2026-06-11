@@ -269,12 +269,13 @@ pub fn load_random_forest_regressor(
         task_type: TaskType::kRegressor,
         average_tree_output: true,
         num_target: n_targets,
-        num_class: vec![1; n_targets as usize],
-        leaf_vector_shape: vec![n_targets, 1],
-        target_id,
-        class_id,
-        postprocessor: "identity".to_string(),
-        base_scores: vec![0.0; n_targets as usize],
+        // MEM-02: BuilderMetadata fields are SmallVec/CompactString — `.into()`.
+        num_class: vec![1; n_targets as usize].into(),
+        leaf_vector_shape: vec![n_targets, 1].into(),
+        target_id: target_id.into(),
+        class_id: class_id.into(),
+        postprocessor: "identity".into(),
+        base_scores: vec![0.0; n_targets as usize].into(),
         attributes: None,
     };
     Ok(bulk_to_model(trees, metadata))
@@ -363,12 +364,13 @@ pub fn load_random_forest_classifier(
         task_type: TaskType::kMultiClf,
         average_tree_output: true,
         num_target: n_targets,
-        num_class: n_classes.to_vec(),
-        leaf_vector_shape: vec![n_targets, max_num_class],
-        target_id: vec![-1; n_estimators as usize],
-        class_id: vec![-1; n_estimators as usize],
-        postprocessor: "identity_multiclass".to_string(),
-        base_scores: vec![0.0; leaf_vec_total],
+        // MEM-02: BuilderMetadata fields are SmallVec/CompactString — `.into()`.
+        num_class: n_classes.to_vec().into(),
+        leaf_vector_shape: vec![n_targets, max_num_class].into(),
+        target_id: vec![-1; n_estimators as usize].into(),
+        class_id: vec![-1; n_estimators as usize].into(),
+        postprocessor: "identity_multiclass".into(),
+        base_scores: vec![0.0; leaf_vec_total].into(),
         attributes: None,
     };
     Ok(bulk_to_model(trees, metadata))

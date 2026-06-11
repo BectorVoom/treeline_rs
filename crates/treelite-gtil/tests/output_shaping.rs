@@ -66,12 +66,12 @@ fn round_robin_class_routing_places_trees_in_distinct_columns() {
     let mut m = Model::new(ModelVariant::F32(ModelPreset::new(trees)));
     m.num_feature = 1;
     m.num_target = 1;
-    m.num_class = vec![2];
-    m.leaf_vector_shape = vec![1, 1];
-    m.target_id = vec![0, 0, 0, 0];
-    m.class_id = vec![0, 1, 0, 1];
-    m.postprocessor = "identity".to_string();
-    m.base_scores = vec![0.0, 0.0];
+    m.num_class = vec![2].into();
+    m.leaf_vector_shape = vec![1, 1].into();
+    m.target_id = vec![0, 0, 0, 0].into();
+    m.class_id = vec![0, 1, 0, 1].into();
+    m.postprocessor = "identity".to_string().into();
+    m.base_scores = vec![0.0, 0.0].into();
 
     let data = [0.0_f32]; // one row, one feature (unused; all leaves at node 0)
     let out = treelite_gtil::predict(&m, &data, 1, &treelite_gtil::Config::default()).unwrap();
@@ -89,12 +89,12 @@ fn leaf_vector_broadcast_fills_full_shape() {
     let mut m = Model::new(ModelVariant::F32(ModelPreset::new(trees)));
     m.num_feature = 1;
     m.num_target = 1;
-    m.num_class = vec![3];
-    m.leaf_vector_shape = vec![1, 3];
-    m.target_id = vec![-1];
-    m.class_id = vec![-1];
-    m.postprocessor = "identity".to_string();
-    m.base_scores = vec![0.0, 0.0, 0.0];
+    m.num_class = vec![3].into();
+    m.leaf_vector_shape = vec![1, 3].into();
+    m.target_id = vec![-1].into();
+    m.class_id = vec![-1].into();
+    m.postprocessor = "identity".to_string().into();
+    m.base_scores = vec![0.0, 0.0, 0.0].into();
 
     let data = [0.0_f32];
     let out = treelite_gtil::predict(&m, &data, 1, &treelite_gtil::Config::default()).unwrap();
@@ -117,13 +117,13 @@ fn average_tree_output_returns_mean_not_sum() {
     let mut m = Model::new(ModelVariant::F32(ModelPreset::new(trees)));
     m.num_feature = 1;
     m.num_target = 1;
-    m.num_class = vec![1];
-    m.leaf_vector_shape = vec![1, 1];
-    m.target_id = vec![-1, -1, -1];
-    m.class_id = vec![-1, -1, -1];
+    m.num_class = vec![1].into();
+    m.leaf_vector_shape = vec![1, 1].into();
+    m.target_id = vec![-1, -1, -1].into();
+    m.class_id = vec![-1, -1, -1].into();
     m.average_tree_output = true;
-    m.postprocessor = "identity".to_string();
-    m.base_scores = vec![0.0];
+    m.postprocessor = "identity".to_string().into();
+    m.base_scores = vec![0.0].into();
 
     let data = [0.0_f32];
     let out = treelite_gtil::predict(&m, &data, 1, &treelite_gtil::Config::default()).unwrap();
@@ -142,12 +142,12 @@ fn base_scores_added_per_cell_2d() {
     let mut m = Model::new(ModelVariant::F32(ModelPreset::new(trees)));
     m.num_feature = 1;
     m.num_target = 1;
-    m.num_class = vec![2];
-    m.leaf_vector_shape = vec![1, 1];
-    m.target_id = vec![0, 0];
-    m.class_id = vec![0, 1];
-    m.postprocessor = "identity".to_string();
-    m.base_scores = vec![0.25, -0.5];
+    m.num_class = vec![2].into();
+    m.leaf_vector_shape = vec![1, 1].into();
+    m.target_id = vec![0, 0].into();
+    m.class_id = vec![0, 1].into();
+    m.postprocessor = "identity".to_string().into();
+    m.base_scores = vec![0.25, -0.5].into();
 
     let data = [0.0_f32];
     let out = treelite_gtil::predict(&m, &data, 1, &treelite_gtil::Config::default()).unwrap();
@@ -164,12 +164,12 @@ fn scalar_binary_path_shape_unchanged() {
     let mut m = Model::new(ModelVariant::F32(ModelPreset::new(trees)));
     m.num_feature = 1;
     m.num_target = 1;
-    m.num_class = vec![1];
-    m.leaf_vector_shape = vec![1, 1];
-    m.target_id = vec![0];
-    m.class_id = vec![0];
-    m.postprocessor = "identity".to_string();
-    m.base_scores = vec![0.25];
+    m.num_class = vec![1].into();
+    m.leaf_vector_shape = vec![1, 1].into();
+    m.target_id = vec![0].into();
+    m.class_id = vec![0].into();
+    m.postprocessor = "identity".to_string().into();
+    m.base_scores = vec![0.25].into();
 
     let data = [0.0_f32, 0.0]; // two rows
     let out = treelite_gtil::predict(&m, &data, 2, &treelite_gtil::Config::default()).unwrap();
@@ -186,12 +186,12 @@ fn softmax_normalizes_multiclass_row() {
     let mut m = Model::new(ModelVariant::F32(ModelPreset::new(trees)));
     m.num_feature = 1;
     m.num_target = 1;
-    m.num_class = vec![3];
-    m.leaf_vector_shape = vec![1, 1];
-    m.target_id = vec![0, 0, 0];
-    m.class_id = vec![0, 1, 2];
-    m.postprocessor = "softmax".to_string();
-    m.base_scores = vec![0.0, 0.0, 0.0];
+    m.num_class = vec![3].into();
+    m.leaf_vector_shape = vec![1, 1].into();
+    m.target_id = vec![0, 0, 0].into();
+    m.class_id = vec![0, 1, 2].into();
+    m.postprocessor = "softmax".to_string().into();
+    m.base_scores = vec![0.0, 0.0, 0.0].into();
 
     let data = [0.0_f32];
     let out = treelite_gtil::predict(&m, &data, 1, &treelite_gtil::Config::default()).unwrap();
@@ -211,12 +211,12 @@ fn out_of_range_class_route_is_typed_error() {
     let mut m = Model::new(ModelVariant::F32(ModelPreset::new(trees)));
     m.num_feature = 1;
     m.num_target = 1;
-    m.num_class = vec![2];
-    m.leaf_vector_shape = vec![1, 1];
-    m.target_id = vec![0];
-    m.class_id = vec![5];
-    m.postprocessor = "identity".to_string();
-    m.base_scores = vec![0.0, 0.0];
+    m.num_class = vec![2].into();
+    m.leaf_vector_shape = vec![1, 1].into();
+    m.target_id = vec![0].into();
+    m.class_id = vec![5].into();
+    m.postprocessor = "identity".to_string().into();
+    m.base_scores = vec![0.0, 0.0].into();
 
     let data = [0.0_f32];
     let err = treelite_gtil::predict(&m, &data, 1, &treelite_gtil::Config::default()).unwrap_err();

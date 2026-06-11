@@ -35,10 +35,10 @@ fn fixture_loads_into_f32_binary_clf_model() {
     assert_eq!(model.num_target, 1);
 
     // Array-typed header fields at their Phase-1 binary:logistic values.
-    assert_eq!(model.num_class, vec![1]);
-    assert_eq!(model.leaf_vector_shape, vec![1, 1]);
-    assert_eq!(model.target_id, vec![0, 0]); // tree_info = [0, 0]
-    assert_eq!(model.class_id, vec![0, 0]); // num_tree = 2
+    assert_eq!(model.num_class.as_slice(), &[1]);
+    assert_eq!(model.leaf_vector_shape.as_slice(), &[1, 1]);
+    assert_eq!(model.target_id.as_slice(), &[0, 0]); // tree_info = [0, 0]
+    assert_eq!(model.class_id.as_slice(), &[0, 0]); // num_tree = 2
 }
 
 #[test]

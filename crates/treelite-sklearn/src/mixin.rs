@@ -298,12 +298,12 @@ pub fn load_isolation_forest(
         task_type: TaskType::kIsolationForest,
         average_tree_output: true,
         num_target: 1,
-        num_class: vec![1],
-        leaf_vector_shape: vec![1, 1],
-        target_id: vec![0; n_estimators as usize],
-        class_id: vec![0; n_estimators as usize],
-        postprocessor: "exponential_standard_ratio".to_string(),
-        base_scores: vec![0.0],
+        num_class: vec![1].into(),
+        leaf_vector_shape: vec![1, 1].into(),
+        target_id: vec![0; n_estimators as usize].into(),
+        class_id: vec![0; n_estimators as usize].into(),
+        postprocessor: "exponential_standard_ratio".into(),
+        base_scores: vec![0.0].into(),
         attributes: None,
     };
     let mut model = build_model(
@@ -355,12 +355,12 @@ pub fn load_gradient_boosting_regressor(
         task_type: TaskType::kRegressor,
         average_tree_output: false,
         num_target: 1,
-        num_class: vec![1],
-        leaf_vector_shape: vec![1, 1],
-        target_id: vec![0; n_iter as usize],
-        class_id: vec![0; n_iter as usize],
-        postprocessor: "identity".to_string(),
-        base_scores: vec![base_score],
+        num_class: vec![1].into(),
+        leaf_vector_shape: vec![1, 1].into(),
+        target_id: vec![0; n_iter as usize].into(),
+        class_id: vec![0; n_iter as usize].into(),
+        postprocessor: "identity".into(),
+        base_scores: vec![base_score].into(),
         attributes: None,
     };
     build_model(
@@ -441,12 +441,12 @@ pub fn load_gradient_boosting_classifier(
             task_type: TaskType::kMultiClf,
             average_tree_output: false,
             num_target: 1,
-            num_class: vec![n_classes],
-            leaf_vector_shape: vec![1, 1],
-            target_id: vec![0; n_trees],
-            class_id,
-            postprocessor: "softmax".to_string(),
-            base_scores: base_scores[..n_classes as usize].to_vec(),
+            num_class: vec![n_classes].into(),
+            leaf_vector_shape: vec![1, 1].into(),
+            target_id: vec![0; n_trees].into(),
+            class_id: class_id.into(),
+            postprocessor: "softmax".into(),
+            base_scores: base_scores[..n_classes as usize].to_vec().into(),
             attributes: None,
         };
         build_model(
@@ -477,12 +477,12 @@ pub fn load_gradient_boosting_classifier(
             task_type: TaskType::kBinaryClf,
             average_tree_output: false,
             num_target: 1,
-            num_class: vec![1],
-            leaf_vector_shape: vec![1, 1],
-            target_id: vec![0; n_iter as usize],
-            class_id: vec![0; n_iter as usize],
-            postprocessor: "sigmoid".to_string(),
-            base_scores: vec![base_scores[0]],
+            num_class: vec![1].into(),
+            leaf_vector_shape: vec![1, 1].into(),
+            target_id: vec![0; n_iter as usize].into(),
+            class_id: vec![0; n_iter as usize].into(),
+            postprocessor: "sigmoid".into(),
+            base_scores: vec![base_scores[0]].into(),
             attributes: None,
         };
         build_model(
@@ -531,7 +531,7 @@ mod tests {
         .expect("gb binary loads");
         assert_eq!(model.task_type, TaskType::kBinaryClf);
         assert_eq!(model.postprocessor, "sigmoid");
-        assert_eq!(model.class_id, vec![0]);
+        assert_eq!(model.class_id.as_slice(), &[0]);
     }
 
     #[test]
@@ -556,7 +556,7 @@ mod tests {
         assert_eq!(model.task_type, TaskType::kMultiClf);
         assert_eq!(model.postprocessor, "softmax");
         // class_id round-robin: 0,1,2,0,1,2.
-        assert_eq!(model.class_id, vec![0, 1, 2, 0, 1, 2]);
+        assert_eq!(model.class_id.as_slice(), &[0, 1, 2, 0, 1, 2]);
     }
 
     #[test]
@@ -572,9 +572,9 @@ mod tests {
         assert_eq!(model.postprocessor, "exponential_standard_ratio");
         assert!(model.average_tree_output);
         assert_eq!(model.num_target, 1);
-        assert_eq!(model.num_class, vec![1]);
-        assert_eq!(model.leaf_vector_shape, vec![1, 1]);
-        assert_eq!(model.base_scores, vec![0.0]);
+        assert_eq!(model.num_class.as_slice(), &[1]);
+        assert_eq!(model.leaf_vector_shape.as_slice(), &[1, 1]);
+        assert_eq!(model.base_scores.as_slice(), &[0.0]);
         // ratio_c assigned post-commit (f32 Model field).
         approx::assert_abs_diff_eq!(model.ratio_c, ratio_c as f32, epsilon = 1e-6);
     }

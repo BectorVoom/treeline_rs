@@ -40,12 +40,12 @@ fn split_tree<T: Copy + Default>(threshold: T, left_leaf: T, right_leaf: T) -> T
 fn binary_metadata(m: &mut Model) {
     m.num_feature = 1;
     m.num_target = 1;
-    m.num_class = vec![1];
-    m.leaf_vector_shape = vec![1, 1];
-    m.target_id = vec![0];
-    m.class_id = vec![0];
-    m.postprocessor = "identity".to_string();
-    m.base_scores = vec![0.0];
+    m.num_class = vec![1].into();
+    m.leaf_vector_shape = vec![1, 1].into();
+    m.target_id = vec![0].into();
+    m.class_id = vec![0].into();
+    m.postprocessor = "identity".to_string().into();
+    m.base_scores = vec![0.0].into();
 }
 
 fn f32_model() -> Model {
@@ -127,8 +127,8 @@ fn f64_two_tree_serial_sum() {
         split_tree::<f64>(0.5, 0.2, -9.0),
     ])));
     binary_metadata(&mut m);
-    m.target_id = vec![0, 0];
-    m.class_id = vec![0, 0];
+    m.target_id = vec![0, 0].into();
+    m.class_id = vec![0, 0].into();
     let out: Vec<f64> = predict(&m, &[0.0_f64], 1, &Config::default()).unwrap();
     approx::assert_abs_diff_eq!(out[0], 0.3_f64, epsilon = 1e-5);
 }
