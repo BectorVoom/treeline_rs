@@ -161,6 +161,9 @@ def predict_leaf(
     ``backend=`` kwarg (D-05) — is provided for 1:1 upstream parity (D-01) and
     lands fully in a later slice.
     """
+    # IN-02: the kwargs are part of the parity signature but unused while this is
+    # a stub; `del` makes the unused-param intent explicit (silences linters).
+    del model, data, nthread, backend
     raise _treelite_rs.TreeliteError(
         "predict_leaf (LeafId kind) is not yet wired in the binding"
     )
@@ -175,6 +178,9 @@ def predict_per_tree(
     including the additive ``backend=`` kwarg (D-05) — is provided for 1:1 upstream
     parity (D-01) and lands fully in a later slice.
     """
+    # IN-02: see predict_leaf — `del` the parity kwargs to mark them intentionally
+    # unused while this remains a stub.
+    del model, data, nthread, backend
     raise _treelite_rs.TreeliteError(
         "predict_per_tree (ScorePerTree kind) is not yet wired in the binding"
     )
