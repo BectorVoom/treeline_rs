@@ -3347,6 +3347,7 @@ dependencies = [
 name = "treelite-py"
 version = "0.1.0"
 dependencies = [
+ "cubecl",
  "numpy",
  "pyo3",
  "serde_json",

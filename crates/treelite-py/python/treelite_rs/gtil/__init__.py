@@ -45,7 +45,7 @@ __all__ = [
 ]
 
 
-def _dense_predict(model, data, *, nthread: int, pred_margin: bool):
+def _dense_predict(model, data, *, nthread: int, pred_margin: bool, backend: str):
     """Dispatch to predict_f32/_f64 by the DATA dtype, then reshape flat→N-D.
 
     The monomorphized entry point is selected by the INPUT array dtype, not the
@@ -54,12 +54,20 @@ def _dense_predict(model, data, *, nthread: int, pred_margin: bool):
     leaf values into the input-typed buffer — the harness InputT-as-accumulator
     contract). Routing on the model variant instead would feed an f32 array into
     the f64-typed entry point and trip the strict dtype gate (D-03).
+
+    ``backend`` selects among the wheel's compiled-in compute backends (default
+    ``'cpu'``, D-05); an un-built or device-absent backend raises ``TreeliteError``
+    from the Rust side, never a silent CPU fallback (D-08).
     """
     dtype = data.dtype
     if dtype == "float32":
-        flat = predict_f32(model, data, nthread=nthread, pred_margin=pred_margin)
+        flat = predict_f32(
+            model, data, nthread=nthread, pred_margin=pred_margin, backend=backend
+        )
     elif dtype == "float64":
-        flat = predict_f64(model, data, nthread=nthread, pred_margin=pred_margin)
+        flat = predict_f64(
+            model, data, nthread=nthread, pred_margin=pred_margin, backend=backend
+        )
     else:
         raise _treelite_rs.TreeliteError(
             f"unsupported input dtype {dtype!r}; expected float32 or float64"
@@ -77,6 +85,7 @@ def predict(
     *,
     nthread: int = -1,
     pred_margin: bool = False,
+    backend: str = "cpu",
 ) -> "np.ndarray":
     """Predict with a Treelite model over a dense numpy matrix (GTIL default kind).
 
@@ -92,32 +101,47 @@ def predict(
         Requested CPU core count (recorded; the scalar reference is single-threaded).
     pred_margin : bool
         If ``True``, produce raw margin scores (skip post-processing).
+    backend : str
+        Compute backend (default ``'cpu'``, D-05). Selects among the wheel's
+        compiled-in backends (``'cpu'`` always; ``'rocm'`` / ``'cuda'`` / ``'wgpu'``
+        only if the wheel was built with that feature). A backend not built into
+        the installed wheel, or compiled-in but with no device present, raises
+        ``TreeliteError`` — never a silent CPU fallback (D-08). Omitting the kwarg
+        keeps the call upstream-identical.
 
     Returns
     -------
     numpy.ndarray
         Prediction output, shaped ``(num_row, num_target_or_1, max_num_class)``.
     """
-    return _dense_predict(model, data, nthread=nthread, pred_margin=pred_margin)
+    return _dense_predict(
+        model, data, nthread=nthread, pred_margin=pred_margin, backend=backend
+    )
 
 
-def predict_leaf(model, data: "np.ndarray", *, nthread: int = -1) -> "np.ndarray":
+def predict_leaf(
+    model, data: "np.ndarray", *, nthread: int = -1, backend: str = "cpu"
+) -> "np.ndarray":
     """Per-row leaf-node ID prediction (upstream ``predict_leaf``).
 
     The ``LeafId`` kind is not yet wired through the binding (it surfaces a typed
-    ``TreeliteError`` from the engine); the signature is provided for 1:1 upstream
-    parity (D-01) and lands fully in a later slice.
+    ``TreeliteError`` from the engine); the signature — including the additive
+    ``backend=`` kwarg (D-05) — is provided for 1:1 upstream parity (D-01) and
+    lands fully in a later slice.
     """
     raise _treelite_rs.TreeliteError(
         "predict_leaf (LeafId kind) is not yet wired in the binding"
     )
 
 
-def predict_per_tree(model, data: "np.ndarray", *, nthread: int = -1) -> "np.ndarray":
+def predict_per_tree(
+    model, data: "np.ndarray", *, nthread: int = -1, backend: str = "cpu"
+) -> "np.ndarray":
     """Per-tree margin-score prediction (upstream ``predict_per_tree``).
 
-    The ``ScorePerTree`` kind is not yet wired through the binding; the signature
-    is provided for 1:1 upstream parity (D-01) and lands fully in a later slice.
+    The ``ScorePerTree`` kind is not yet wired through the binding; the signature —
+    including the additive ``backend=`` kwarg (D-05) — is provided for 1:1 upstream
+    parity (D-01) and lands fully in a later slice.
     """
     raise _treelite_rs.TreeliteError(
         "predict_per_tree (ScorePerTree kind) is not yet wired in the binding"

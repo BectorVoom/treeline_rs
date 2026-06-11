@@ -32,14 +32,21 @@ treelite-sklearn = { path = "../treelite-sklearn" }
 treelite-gtil = { path = "../treelite-gtil" }
 treelite-builder = { path = "../treelite-builder" }
 treelite-cubecl = { path = "../treelite-cubecl" }
+# `cubecl` is OPTIONAL and only enabled by the rocm/cuda/wgpu features — the
+# `backend=` dispatch in src/gtil.rs names `cubecl::{hip,cuda,wgpu}::*Runtime`
+# directly inside the `#[cfg(feature)]`-gated arms (mirroring the harness's
+# *_case() constructors). The default cpu-only wheel does NOT pull cubecl in, so
+# `maturin develop` needs no GPU system libs.
+cubecl = { workspace = true, optional = true }
 
 # Per-backend wheel features forward verbatim to treelite-cubecl (the same
-# forwarding shape that crate uses for cubecl/*). default = cpu so a plain
-# `cargo build -p treelite-py` and the default `maturin develop` wheel never
-# require ROCm/CUDA system libs.
+# forwarding shape that crate uses for cubecl/*) AND pull in the (otherwise
+# optional) `cubecl` umbrella crate so the dispatch arms can name the runtime
+# type directly. default = cpu so a plain `cargo build -p treelite-py` and the
+# default `maturin develop` wheel never require ROCm/CUDA system libs.
 [features]
 default = ["cpu"]
 cpu = []
-rocm = ["treelite-cubecl/rocm"]
-cuda = ["treelite-cubecl/cuda"]
-wgpu = ["treelite-cubecl/wgpu"]
+rocm = ["dep:cubecl", "cubecl/rocm", "treelite-cubecl/rocm"]
+cuda = ["dep:cubecl", "cubecl/cuda", "treelite-cubecl/cuda"]
+wgpu = ["dep:cubecl", "cubecl/wgpu", "treelite-cubecl/wgpu"]

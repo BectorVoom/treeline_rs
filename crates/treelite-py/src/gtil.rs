@@ -22,7 +22,7 @@ use numpy::{IntoPyArray, PyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
 use pyo3::prelude::*;
 use treelite_gtil::{Config, PredictKind, output_shape};
 
-use crate::error::{PyResult2, TreelitePyErr};
+use crate::error::{PyResult2, TreelitePyErr, guard_assert};
 use crate::model::Model;
 
 /// `Send` shim over a `&Model` so the `py.detach` compute closure satisfies the
@@ -86,52 +86,154 @@ fn extract_readonly<'py, O: numpy::Element>(
     })
 }
 
+/// The backends compiled into THIS wheel, assembled from the active
+/// `#[cfg(feature)]` set. `cpu` is always present (the default feature); each GPU
+/// backend appears only if its cargo feature was enabled at build time. Surfaced
+/// in the un-built-backend error so a caller knows what the installed wheel
+/// actually supports (D-05 — explicit selection, no auto-detect).
+pub const BUILT_BACKENDS: &str = {
+    #[cfg(all(feature = "rocm", feature = "cuda", feature = "wgpu"))]
+    {
+        "cpu, rocm, cuda, wgpu"
+    }
+    #[cfg(all(feature = "rocm", feature = "cuda", not(feature = "wgpu")))]
+    {
+        "cpu, rocm, cuda"
+    }
+    #[cfg(all(feature = "rocm", not(feature = "cuda"), feature = "wgpu"))]
+    {
+        "cpu, rocm, wgpu"
+    }
+    #[cfg(all(not(feature = "rocm"), feature = "cuda", feature = "wgpu"))]
+    {
+        "cpu, cuda, wgpu"
+    }
+    #[cfg(all(feature = "rocm", not(feature = "cuda"), not(feature = "wgpu")))]
+    {
+        "cpu, rocm"
+    }
+    #[cfg(all(not(feature = "rocm"), feature = "cuda", not(feature = "wgpu")))]
+    {
+        "cpu, cuda"
+    }
+    #[cfg(all(not(feature = "rocm"), not(feature = "cuda"), feature = "wgpu"))]
+    {
+        "cpu, wgpu"
+    }
+    #[cfg(all(not(feature = "rocm"), not(feature = "cuda"), not(feature = "wgpu")))]
+    {
+        "cpu"
+    }
+};
+
+/// Build the typed "backend not available in this wheel" error (D-05/T-08-13):
+/// an un-built backend name yields a `TreeliteError` naming [`BUILT_BACKENDS`] —
+/// NEVER a silent CPU fallback (D-08).
+#[inline]
+fn unbuilt_backend_err(backend: &str) -> TreelitePyErr {
+    use crate::error::TreeliteError;
+    TreelitePyErr::from_pyerr(TreeliteError::new_err(format!(
+        "backend '{backend}' is not available in this wheel (built with: {BUILT_BACKENDS})"
+    )))
+}
+
+/// Dispatch one monomorphized predict over the requested `backend` string. The
+/// `"cpu"` arm runs `treelite_cubecl::predict_cpu` (which itself routes a
+/// categorical / non-`kLT` model to the checked scalar fallback via
+/// `model_routes_to_scalar_fallback`, D-02 — the ONLY fallback in this function,
+/// and never a device-absent one). Each GPU arm is `#[cfg(feature)]`-gated and
+/// dispatches to `treelite_cubecl::predict::<R, F>`; a device-absent compiled
+/// backend surfaces `CubeclError::DeviceUnavailable` which the caller maps to
+/// `TreeliteError` via the `From` impl — NEVER a silent CPU fallback (D-08).
+/// An un-built / unknown backend name hits the `other =>` arm → typed error.
+///
+/// Returns the cubecl `Result` so the caller applies `?` (mapping `CubeclError`
+/// → `TreeliteError`); runs inside the detached region, wrapped in `guard_assert`
+/// at the call site so any trapped panic becomes a `TreeliteError` (D-07).
+#[inline]
+fn dispatch_backend<F: treelite_cubecl::PredictCpuElem>(
+    backend: &str,
+    model: &treelite_core::Model,
+    slice: &[F],
+    num_row: usize,
+    cfg: &treelite_gtil::Config,
+) -> PyResult2<Vec<F>> {
+    match backend {
+        "cpu" => Ok(treelite_cubecl::predict_cpu::<F>(model, slice, num_row, cfg)?),
+        #[cfg(feature = "rocm")]
+        "rocm" => Ok(treelite_cubecl::predict::<cubecl::hip::HipRuntime, F>(
+            model, slice, num_row, cfg,
+        )?),
+        #[cfg(feature = "cuda")]
+        "cuda" => Ok(treelite_cubecl::predict::<cubecl::cuda::CudaRuntime, F>(
+            model, slice, num_row, cfg,
+        )?),
+        #[cfg(feature = "wgpu")]
+        "wgpu" => Ok(treelite_cubecl::predict::<cubecl::wgpu::WgpuRuntime, F>(
+            model, slice, num_row, cfg,
+        )?),
+        other => Err(unbuilt_backend_err(other)),
+    }
+}
+
 /// Zero-copy dense predict for an `<f32,f32>` model over an f32 numpy matrix.
+///
+/// The additive `backend="cpu"` kwarg (D-05) selects among the wheel's compiled-in
+/// compute backends; omitting it (or passing `"cpu"`) keeps the call
+/// upstream-identical. An un-built or device-absent backend raises `TreeliteError`,
+/// never a silent CPU fallback (D-08).
 #[pyfunction]
-#[pyo3(signature = (model, data, *, nthread = -1, pred_margin = false))]
+#[pyo3(signature = (model, data, *, nthread = -1, pred_margin = false, backend = "cpu"))]
 pub fn predict_f32<'py>(
     py: Python<'py>,
     model: &Model,
     data: &Bound<'py, PyAny>,
     nthread: i32,
     pred_margin: bool,
+    backend: &str,
 ) -> PyResult2<Bound<'py, PyArray1<f32>>> {
     let data = extract_readonly::<f32>(data, "float32")?;
     let num_row = data.shape()[0];
     let slice = data.as_slice().map_err(|_| contiguity_err())?;
     let cfg = make_config(nthread, pred_margin);
     let inner = SendModelRef(&model.inner);
+    let backend = backend.to_string();
     // GIL released across the pure-compute predict; the `data` borrow guard lives
     // on the stack across `detach` (T-08-06 soundness). Capture the whole `inner`
     // wrapper (Send) — destructuring `.0` *inside* the closure keeps the disjoint-
-    // capture analysis from grabbing the bare `&Model` (which is `!Send`).
+    // capture analysis from grabbing the bare `&Model` (which is `!Send`). The
+    // compute is wrapped in `guard_assert` so a trapped panic becomes a catchable
+    // `TreeliteError` (D-07), never an FFI abort.
     let out = py.detach(move || {
-        // Rebind to force whole-struct capture of the `Send` wrapper (edition-2024
-        // disjoint capture would otherwise grab the bare `&Model` field, `!Send`).
         let inner = inner;
-        treelite_gtil::predict::<f32>(inner.0, slice, num_row, &cfg)
+        guard_assert(|| dispatch_backend::<f32>(&backend, inner.0, slice, num_row, &cfg))
     })?;
     Ok(out.into_pyarray(py))
 }
 
 /// Zero-copy dense predict for a `<f64,f64>` model over an f64 numpy matrix.
+///
+/// Additive `backend="cpu"` kwarg (D-05); un-built / device-absent backend raises
+/// `TreeliteError`, never a silent CPU fallback (D-08).
 #[pyfunction]
-#[pyo3(signature = (model, data, *, nthread = -1, pred_margin = false))]
+#[pyo3(signature = (model, data, *, nthread = -1, pred_margin = false, backend = "cpu"))]
 pub fn predict_f64<'py>(
     py: Python<'py>,
     model: &Model,
     data: &Bound<'py, PyAny>,
     nthread: i32,
     pred_margin: bool,
+    backend: &str,
 ) -> PyResult2<Bound<'py, PyArray1<f64>>> {
     let data = extract_readonly::<f64>(data, "float64")?;
     let num_row = data.shape()[0];
     let slice = data.as_slice().map_err(|_| contiguity_err())?;
     let cfg = make_config(nthread, pred_margin);
     let inner = SendModelRef(&model.inner);
+    let backend = backend.to_string();
     let out = py.detach(move || {
         let inner = inner;
-        treelite_gtil::predict::<f64>(inner.0, slice, num_row, &cfg)
+        guard_assert(|| dispatch_backend::<f64>(&backend, inner.0, slice, num_row, &cfg))
     })?;
     Ok(out.into_pyarray(py))
 }
