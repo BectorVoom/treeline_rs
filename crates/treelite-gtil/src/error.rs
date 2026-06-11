@@ -90,15 +90,6 @@ pub enum GtilError {
     #[error("unsupported postprocessor: {0:?}")]
     UnsupportedPostprocessor(String),
 
-    /// The requested [`PredictKind`](crate::PredictKind) is not yet wired on this
-    /// GTIL surface. `LeafId` and `ScorePerTree` are added in Plan 05-04; until
-    /// then they surface as this typed error rather than producing wrong output.
-    #[error("unsupported predict kind: {kind}")]
-    UnsupportedPredictKind {
-        /// The name of the unsupported kind (e.g. `"LeafId"`).
-        kind: &'static str,
-    },
-
     /// A sparse-CSR `col_ind[k]` names a feature column outside
     /// `[0, num_feature)`. Upstream would write `scratch[col_ind[k]]` unchecked
     /// (`SparseMatrixAccessor::GetRow`, `predict.cc:84`); here the column is

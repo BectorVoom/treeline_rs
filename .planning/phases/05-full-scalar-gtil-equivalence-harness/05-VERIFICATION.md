@@ -1,27 +1,32 @@
 ---
 phase: 05-full-scalar-gtil-equivalence-harness
 verified: 2026-06-10T12:00:00Z
-status: human_needed
+resolved: 2026-06-11T00:00:00Z
+status: passed
 score: 12/12
 overrides_applied: 0
+resolution_note: "All three deferred human_verification items resolved 2026-06-11 during the v1.1 milestone-close (user chose 'stop and resolve'). gtil_matrix + full workspace green (310 passed). See per-item result fields."
 human_verification:
   - test: "WR-02 fragile bit-inequality guard (deferred per user decision)"
     expected: "The WR-06 max_div > 0.0 strict bit-inequality assertion catches a true f32->f64 collapse but is fragile against future fixtures where f32 and f64 sigmoid round identically on every row. User deferred fixing to a relative-divergence floor."
     why_human: "User explicitly deferred this (per 05-REVIEW-FIX.md). Verifying whether the current behavior is acceptable or whether the stronger floor should be adopted before Phase 6 ships is a design decision, not a code check."
+    result: "RESOLVED 2026-06-11 — root cause found: the `default` (post-sigmoid) axis saturates toward 1.0 in both f32 and f64 for large margins, so saturated rows are bit-identical (that was the fragility). Empirically measured per-kind divergence: raw ≈ 2.9e-6 (never saturates), default ≈ 5.5e-8, leaf_id/score_per_tree = 0. Switched the WR-06 guard to the `raw` margin axis (gtil_matrix.rs WR-06 gate) — stronger signal, saturation-proof, still collapses to 0 under a silent f32→f64 pre-cast. The old 'raw shares the f64-accumulated margin' comment was incorrect and was corrected. User chose 'switch guard to raw margin'."
   - test: "WR-01 comments in gtil_matrix.rs overstate what the 1e-5 gate proves for CR-01"
     expected: "The large_margin f64 sigmoid 1e-5 gate asserts correctness but would NOT catch a reversion to the collapsed-f32 path (deviation ~6e-8, inside 1e-5). The comments at lines 540-554 / 585-594 say the gate 'would have caught' the collapse, which is inaccurate. The real guard is WR-06."
     why_human: "User explicitly deferred rewording (per 05-REVIEW-FIX.md). The code is functionally correct; the comment accuracy is a documentation call."
+    result: "RESOLVED 2026-06-11 — reworded the CR-01 comment and eprintln in gtil_matrix.rs to state the 1e-5 gate proves the f64 path matches upstream but does NOT, on its own, catch a collapse-to-f32 (~6e-8, inside 1e-5); the actual collapse guard is the WR-06 paired raw-margin divergence gate."
   - test: "IN-01: UnsupportedPredictKind variant is dead code"
     expected: "error.rs:93-100 declares UnsupportedPredictKind with a doc comment referencing Plan 05-04. No code path constructs it. Should be removed or updated to a forward-compat placeholder. User deferred this as informational."
     why_human: "Dead code is not a correctness issue. Whether to remove it is a code-hygiene call the user has explicitly deferred."
+    result: "RESOLVED 2026-06-11 — removed the obsolete `GtilError::UnsupportedPredictKind` variant from treelite-gtil/src/error.rs (never constructed; all four predict kinds are wired). Updated the stale reference comment in predict_kinds.rs. Workspace builds, 310 tests green."
 ---
 
 # Phase 5: Full Scalar GTIL & Equivalence Harness — Verification Report
 
 **Phase Goal:** Widen the inference spine to the complete scalar GTIL reference — all predict kinds, all postprocessors, sparse input, categoricals, output shaping — and the full seeded equivalence harness that is the 1e-5 measurement instrument for everything after.
-**Verified:** 2026-06-10T12:00:00Z
-**Status:** human_needed
-**Re-verification:** No — initial verification
+**Verified:** 2026-06-10T12:00:00Z (resolved 2026-06-11)
+**Status:** passed
+**Re-verification:** Yes — 3 deferred human-verification items resolved 2026-06-11 (WR-02 raw-margin guard, WR-01 comment accuracy, IN-01 dead-variant removal); see frontmatter per-item `result` fields
 
 ## Goal Achievement
 

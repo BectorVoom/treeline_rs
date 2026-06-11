@@ -214,7 +214,8 @@ fn leaf_id_ignores_base_score_and_averaging() {
 #[test]
 fn all_four_predict_kinds_dispatch_without_error() {
     // Sanity: Default, Raw, LeafId, ScorePerTree all return Ok on a valid model
-    // (no remaining UnsupportedPredictKind for LeafId/ScorePerTree).
+    // (all four kinds are wired — the obsolete UnsupportedPredictKind variant was
+    // removed in the Phase-10 milestone-close cleanup, IN-01).
     let m = scalar_model(vec![split_tree(0, 0.5, 1.0, -1.0)], 2, "identity", 0.0);
     let data = [0.0_f32, 0.0];
     for kind in [

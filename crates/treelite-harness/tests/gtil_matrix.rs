@@ -538,8 +538,11 @@ fn gtil_matrix() -> anyhow::Result<()> {
         }
 
         // CR-01: the large-margin f64 cells exercise the corrected f64
-        // postprocessor path against the 1e-5 gate (the gate that would have
-        // caught the pre-05-06 collapse-to-f32). Track them for explicit
+        // postprocessor path against the 1e-5 gate. NOTE (WR-01): the 1e-5 gate
+        // proves the f64 path matches upstream — it does NOT, on its own, catch a
+        // regression to the collapsed-f32 path, whose deviation (~6e-8) is INSIDE
+        // 1e-5. The actual guard against that collapse is the WR-06 paired
+        // f32-vs-f64 raw-margin divergence gate below. Track them here for explicit
         // visibility in `--nocapture` output.
         let is_large_margin = golden.manifest.model == "large_margin";
         if is_large_margin && golden.manifest.input_dtype == "f64" {
@@ -590,22 +593,30 @@ fn gtil_matrix() -> anyhow::Result<()> {
     eprintln!(
         "CR-01: {large_margin_f64_cells} large_margin f64 cells passed the 1e-5 gate \
          (worst |delta| = {large_margin_f64_max_dev:e}) — the corrected f64-postprocessor \
-         path (05-06 sigmoid_f64) is now MEASURED, not absorbed."
+         path (05-06 sigmoid_f64) is measured against upstream. (Collapse-to-f32 \
+         detection is the WR-06 gate, not this 1e-5 gate; see WR-01 note above.)"
     );
 
     // --- WR-06 paired f32/f64 divergence gate ----------------------------------
-    // The large-margin (CR-01) model's f32 `default` output must DIFFER from its
-    // f64 output on at least one row — proving the input-dtype axis is a genuinely
-    // distinct computation (the f32 postprocessor path vs the f64 `sigmoid_f64`
-    // path). A silent f32→f64 pre-cast inside a future backend would collapse the
-    // two and make them equal, FAILING this assertion (T-05-20). We assert on the
-    // `default` (post-processed sigmoid) cells where the postprocessor-width
-    // divergence is observable; `raw`/leaf_id share the f64-accumulated margin.
+    // The large-margin (CR-01) model's f32 `raw` margin must DIFFER from its f64
+    // margin on at least one row — proving the input-dtype axis is a genuinely
+    // distinct computation (an f32-accumulated margin vs an f64-accumulated one).
+    // A silent f32→f64 pre-cast inside a future backend would collapse the two and
+    // make them bit-identical, FAILING this assertion (T-05-20).
+    //
+    // WR-02 (Phase-10 follow-up): this gate previously asserted on the `default`
+    // (post-sigmoid) output. That was fragile: for LARGE margins sigmoid SATURATES
+    // toward 1.0 in BOTH f32 and f64, so saturated rows are bit-identical and a
+    // future all-saturating fixture would false-trip the guard (max_div == 0,
+    // indistinguishable from a real collapse). The `raw` margin never saturates,
+    // so it is the robust axis. Measured divergence (this fixture set): raw ≈
+    // 2.9e-6 vs default ≈ 5.5e-8 — raw is both stronger and saturation-proof. The
+    // old comment that "raw shares the f64-accumulated margin" was incorrect.
     let mut wr06_checked = 0usize;
     let mut wr06_max_div: f64 = 0.0;
     for (key, f32_out) in &wr06_f32 {
-        if !key.starts_with("default/") {
-            continue; // postprocessor-width divergence lives in the sigmoid output
+        if !key.starts_with("raw/") {
+            continue; // raw margin: f32-vs-f64 accumulation diverges, never saturates
         }
         let Some(f64_out) = wr06_f64.get(key) else {
             continue;
@@ -630,20 +641,20 @@ fn gtil_matrix() -> anyhow::Result<()> {
         // divergence proves no silent f32→f64 pre-cast collapsed them.
         anyhow::ensure!(
             max_div > 0.0,
-            "WR-06 {key}: large_margin f32 and f64 outputs are bit-identical — \
+            "WR-06 {key}: large_margin f32 and f64 raw margins are bit-identical — \
              the input-dtype axis collapsed (a silent f32→f64 pre-cast would do \
-             this). The f64 sigmoid_f64 path must differ from the f32 path on a \
-             large-margin row (T-05-20)."
+             this). The f32-accumulated margin must differ from the f64-accumulated \
+             margin on a large-margin row (T-05-20)."
         );
         wr06_checked += 1;
     }
     anyhow::ensure!(
         wr06_checked > 0,
-        "WR-06: no large_margin default f32/f64 pair was checked for divergence — \
+        "WR-06: no large_margin raw f32/f64 pair was checked for divergence — \
          the input-dtype axis is unguarded (regenerate fixtures)"
     );
     eprintln!(
-        "WR-06: {wr06_checked} large_margin f32/f64 default pairs DIVERGE \
+        "WR-06: {wr06_checked} large_margin f32/f64 raw-margin pairs DIVERGE \
          (max divergence = {wr06_max_div:e}) — the input-dtype axis is a genuine, \
          distinct computation; a silent f32→f64 pre-cast would fail this gate."
     );
