@@ -9,9 +9,9 @@
 //!   2. `parallel_uses_more_than_one_core` — on a multi-core runner the parallel
 //!      predict actually fans out across more than one rayon worker.
 //!
-//! `.to_bits()` (not `==`) is the equivalence assertion (T-06-13). RED status:
-//! both tests are `#[ignore]`d with MISSING reason strings — Wave 1 un-ignores
-//! them and makes them green once the parallelism and the scoped pool land.
+//! `.to_bits()` (not `==`) is the equivalence assertion (T-06-13). GREEN (Wave 1,
+//! plan 10-01): the parallelism and the scoped nthread pool landed, so both tests
+//! are un-ignored and green.
 
 use treelite_core::{Model, ModelPreset, ModelVariant, Operator, Tree, TreeBuf, TreeNodeType};
 use treelite_gtil::{Config, PredictKind};
@@ -74,7 +74,6 @@ fn multi_row_input(num_row: usize) -> Vec<f64> {
 /// PAR-04: `nthread = 0`, `1`, and `2` produce byte-identical output for every
 /// `PredictKind` (the scoped-pool size must not change the result).
 #[test]
-#[ignore = "MISSING — Wave 1 (10-01) wires nthread into a scoped rayon pool"]
 fn nthread_equivalence() {
     let trees = vec![
         split_tree::<f64>(0, 0.5, 1.0, -1.0),
@@ -128,7 +127,6 @@ fn nthread_equivalence() {
 /// fans out across more than one rayon worker. Vacuously passes on a 1-core
 /// runner (Environment Availability note).
 #[test]
-#[ignore = "MISSING — Wave 1 (10-01) parallelizes predict over rayon workers"]
 fn parallel_uses_more_than_one_core() {
     let cores = std::thread::available_parallelism()
         .map(|n| n.get())

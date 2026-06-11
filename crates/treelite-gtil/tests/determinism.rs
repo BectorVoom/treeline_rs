@@ -12,9 +12,9 @@
 //! accumulation that happened to land on an equal-but-different bit pattern
 //! cannot masquerade as a pass (T-06-13).
 //!
-//! RED status: the test is `#[ignore]`d with a MISSING reason string — it carries
-//! the intended assertion shape that Wave 1 un-ignores and makes green after the
-//! loop conversion lands.
+//! GREEN (Wave 1, plan 10-01): the loop conversion landed, so this test is
+//! un-ignored and asserts byte-identical determinism over the now-parallel dense
+//! and sparse predict paths.
 
 use treelite_core::{Model, ModelPreset, ModelVariant, Operator, Tree, TreeBuf, TreeNodeType};
 use treelite_gtil::{Config, PredictKind};
@@ -82,7 +82,6 @@ fn multi_row_input(num_row: usize) -> Vec<f64> {
 /// GTIL-08: `N_RUNS` repeated `predict::<f64>` calls over an identical multi-row
 /// input are element-wise bit-identical, for every `PredictKind`.
 #[test]
-#[ignore = "MISSING — Wave 1 (10-01) parallelizes predict; byte-identical determinism asserted after"]
 fn determinism_byte_identical_n_runs() {
     let trees = vec![
         split_tree::<f64>(0, 0.5, 1.0, -1.0),
@@ -122,6 +121,76 @@ fn determinism_byte_identical_n_runs() {
         }
     }
 
-    // TODO Wave 1: sparse determinism — repeat the above via `predict_sparse`
-    // over a `SparseCsr` fixture once the sparse path is parallelized.
+}
+
+/// Build a fully-dense CSR (every cell present) over a 2-feature multi-row input,
+/// so the sparse path materializes the SAME logical rows as the dense path. Used
+/// to prove the parallelized `predict_sparse` is byte-identical across runs.
+fn dense_csr(num_row: usize) -> (Vec<f64>, Vec<u64>, Vec<u64>) {
+    let dense = multi_row_input(num_row); // 2 features per row
+    let mut data = Vec::with_capacity(num_row * 2);
+    let mut col_ind = Vec::with_capacity(num_row * 2);
+    let mut row_ptr = Vec::with_capacity(num_row + 1);
+    row_ptr.push(0u64);
+    for r in 0..num_row {
+        for f in 0..2usize {
+            data.push(dense[r * 2 + f]);
+            col_ind.push(f as u64);
+        }
+        row_ptr.push((data.len()) as u64);
+    }
+    (data, col_ind, row_ptr)
+}
+
+/// GTIL-08 (sparse): `N_RUNS` repeated `predict_sparse::<f64>` calls over an
+/// identical fully-dense CSR are element-wise bit-identical, for the
+/// summed-over-trees `PredictKind`s. The sparse row loop is row-parallelized too
+/// (Wave 1), so determinism must hold on this path as well.
+#[test]
+fn determinism_sparse_byte_identical_n_runs() {
+    use treelite_gtil::SparseCsr;
+
+    let trees = vec![
+        split_tree::<f64>(0, 0.5, 1.0, -1.0),
+        split_tree::<f64>(1, 0.5, 2.0, -3.0),
+    ];
+    let model = scalar_model(trees, ModelVariant::F64, 2);
+
+    let num_row = 64;
+    let (data, col_ind, row_ptr) = dense_csr(num_row);
+
+    for kind in [
+        PredictKind::Default,
+        PredictKind::Raw,
+        PredictKind::LeafId,
+        PredictKind::ScorePerTree,
+    ] {
+        let cfg = Config { kind, nthread: 0 };
+        let csr = SparseCsr {
+            data: &data,
+            col_ind: &col_ind,
+            row_ptr: &row_ptr,
+        };
+        let first = treelite_gtil::predict_sparse::<f64>(&model, csr, num_row, &cfg).unwrap();
+        for run in 1..N_RUNS {
+            let csr = SparseCsr {
+                data: &data,
+                col_ind: &col_ind,
+                row_ptr: &row_ptr,
+            };
+            let next = treelite_gtil::predict_sparse::<f64>(&model, csr, num_row, &cfg).unwrap();
+            assert_eq!(
+                first.len(),
+                next.len(),
+                "{kind:?}: sparse length differs on run {run}"
+            );
+            for (i, (x, y)) in first.iter().zip(next.iter()).enumerate() {
+                assert_eq!(
+                    x.to_bits(),
+                    y.to_bits(),
+                    "{kind:?}: sparse cell {i} not bit-identical on run {run} (GTIL-08)"
+                );
+            }
+        }
+    }
 }
