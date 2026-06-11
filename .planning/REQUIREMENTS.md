@@ -110,10 +110,10 @@ Milestone v1.1 — Parallel Scalar Inference. Row-parallelize the single-threade
 
 ### Parallel Inference
 
-- [ ] **PAR-01**: Scalar dense predict (`treelite_gtil::predict`) runs row-parallel across all available cores, with output identical to the current serial path within 1e-5 and serial per-row `tree_id` summation preserved (GTIL-08)
-- [ ] **PAR-02**: Scalar sparse predict (`predict_sparse`, and the `predict_cpu_sparse` fallback) runs row-parallel under the same equivalence guarantee
+- [x] **PAR-01**: Scalar dense predict (`treelite_gtil::predict`) runs row-parallel across all available cores, with output identical to the current serial path within 1e-5 and serial per-row `tree_id` summation preserved (GTIL-08)
+- [x] **PAR-02**: Scalar sparse predict (`predict_sparse`, and the `predict_cpu_sparse` fallback) runs row-parallel under the same equivalence guarantee
 - [x] **PAR-03**: `Model` is soundly shareable across threads for read-only prediction — documented `unsafe impl Sync`/`Send` justified by predict being read-only over the model (mirrors upstream OpenMP); the `_assert_not_send` invariant is superseded by the new shareability contract
-- [ ] **PAR-04**: `Config.nthread` is honored end-to-end (`≤0` = all cores; `N` = bounded pool), wiring the Python `nthread=` kwarg that is currently recorded-but-unused on the scalar path
+- [x] **PAR-04**: `Config.nthread` is honored end-to-end (`≤0` = all cores; `N` = bounded pool), wiring the Python `nthread=` kwarg that is currently recorded-but-unused on the scalar path
 
 ## v2 Requirements
 

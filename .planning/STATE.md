@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
-status: executing
-stopped_at: Roadmapped milestone v1.1 — Phase 10 (Parallel Scalar Inference) created, PAR-01..04 mapped (Planned). Phase 9 still pending orchestrator verification / milestone reconcile.
-last_updated: "2026-06-11T04:40:33.609Z"
-last_activity: 2026-06-11 -- Phase 10 execution started
+status: verifying
+stopped_at: Executed 10-01-PLAN.md (row-parallel scalar GTIL); plans 2/2 done, phase pending orchestrator verification
+last_updated: "2026-06-11T04:54:49.881Z"
+last_activity: 2026-06-11 -- Phase 10 plan 10-01 executed (row-parallel scalar GTIL)
 progress:
   total_phases: 10
   completed_phases: 9
   total_plans: 51
-  completed_plans: 50
+  completed_plans: 51
   percent: 90
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-11)
 ## Current Position
 
 Phase: 10 (parallel-scalar-inference) — EXECUTING
-Plan: 2 of 2
-Status: Ready to execute
-Last activity: 2026-06-11 -- Phase 10 execution started
+Plan: 2 of 2 (both executed; plan 10-01 summarized)
+Status: Plans complete — pending orchestrator phase verification (NOT phase-complete)
+Last activity: 2026-06-11 -- Phase 10 plan 10-01 executed (row-parallel scalar GTIL)
 
 ## Performance Metrics
 
@@ -108,6 +108,7 @@ Last activity: 2026-06-11 -- Phase 10 execution started
 | Phase 09 P03 | 2min | 2 tasks | 1 files |
 | Phase 09 P04 | 7min | 3 tasks | 5 files |
 | Phase 10 P00 | 12min | 2 tasks | 7 files |
+| Phase 10 P01 | 20min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -245,6 +246,8 @@ Recent decisions affecting current work:
 - [09-04]: MEM-03 closed — jemalloc/mimalloc wired as runtime-selectable #[global_allocator] in the memory_report bin ONLY (D-07/D-08); both build+run on Linux (D-09). memory.rs sampler abstracts jemalloc (tikv_jemalloc_ctl epoch::advance()-then-stats::{allocated,resident}::read(), Pitfall 5, cfg-gated) vs mimalloc/system (/proc/self/statm field 2 x page size); render_markdown/emit mirror report.rs. Committed observational docs/MEMORY_REPORT.md: system 9.71 MiB / jemalloc 5.43 MiB+600 KiB allocated / mimalloc 10.40 MiB, size_of::<Model>()=248B row, NOT-a-CI-gate banner + 1e-5/golden attestation (D-10). Benchmark set = XGBoost-JSON + 3 frozen v5 models (bin can't use dev-only lightgbm/sklearn; lgbm_numerical.model.bin covers LightGBM via deserialize). Enabled stats on tikv-jemallocator + stats/use_std on tikv-jemalloc-ctl (Rule 3; deps stay optional+harness-only). D-08 verified: cargo tree -p treelite-py has 0 allocator nodes. HARD INVARIANTS held: golden byte-identical, harness 1e-5 green, workspace 0 failures, pytest 39/1.
 - [Phase ?]: Phase 10: Model is Sync (not Send) for read-only parallel predict; rayon shares &Model, never moves it
 - [Phase ?]: Phase 10: rayon 1.12.0 is the first parallelism dependency (legitimacy-audited Approved)
+- [Phase ?]: [10-01]: row-parallelized all 4 scalar GTIL loop families via rayon par_chunks_mut/map_init; inner tree_id sum serial (GTIL-08); run_with_nthread scoped pool honors Config.nthread (<=0 all cores, N bounded; never build_global)
+- [Phase ?]: [10-01]: unsafe impl Sync for TreeBuf<T> (Rule 3; same read-only-predict soundness as Wave-0 Model: Sync) + PredictOut +Send+Sync supertrait; parallel==serial byte-identical dense+sparse, nthread-invariant, within 1e-5. PAR-01/02/04 closed.
 
 ### Pending Todos
 
@@ -267,6 +270,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-11T04:40:24.280Z
-Stopped at: Roadmapped milestone v1.1 — Phase 10 (Parallel Scalar Inference) created, PAR-01..04 mapped (Planned). Phase 9 still pending orchestrator verification / milestone reconcile.
+Last session: 2026-06-11T04:54:49.877Z
+Stopped at: Executed 10-01-PLAN.md (row-parallel scalar GTIL); plans 2/2 done, phase pending orchestrator verification
 Resume file: None
