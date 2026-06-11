@@ -19,17 +19,13 @@ from typing import List, Union
 from . import _treelite_rs  # the compiled abi3 cdylib (maturin module-name)
 from . import frontend, gtil  # pure-Python shims over the compiled entry points
 from . import sklearn  # pure-Python estimator-import shim (PY-04, port of importer.py)
+from ._paths import _normalize_path  # shared path helper (IN-01: single definition)
 
 __version__ = "0.1.0"
 
 # Top-level surface: the single exception (D-06) + the Model pyclass.
 TreeliteError = _treelite_rs.TreeliteError
 Model = _treelite_rs.Model
-
-
-def _normalize_path(filename: Union[str, "pathlib.Path"]) -> "pathlib.Path":
-    """Fully expand a path and convert it to an absolute path (upstream parity)."""
-    return pathlib.Path(filename).expanduser().resolve()
 
 
 def serialize(model: Model, filename: Union[str, "pathlib.Path"]) -> None:

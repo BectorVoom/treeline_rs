@@ -13,6 +13,7 @@ import pathlib
 from typing import Union
 
 from . import _treelite_rs
+from ._paths import _normalize_path  # shared path helper (IN-01: single definition)
 
 # The compiled loaders (Rust seam). Names mirror src/frontend.rs.
 _F = _treelite_rs.frontend
@@ -36,11 +37,6 @@ load_xgboost_ubjson_bytes = _F.load_xgboost_ubjson_bytes
 load_xgboost_legacy_bytes = _F.load_xgboost_legacy_bytes
 load_lightgbm_str = _F.load_lightgbm_str
 detect_xgboost_format_bytes = _F.detect_xgboost_format_bytes
-
-
-def _normalize_path(filename: Union[str, pathlib.Path]) -> pathlib.Path:
-    """Fully expand a path and convert it to an absolute path (upstream parity)."""
-    return pathlib.Path(filename).expanduser().resolve()
 
 
 def load_xgboost_model(
