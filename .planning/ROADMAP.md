@@ -356,7 +356,7 @@ Plans:
 Plans:
 **Wave 0** *(scaffolding — gates everything)*
 
-- [ ] 10-00-PLAN.md — Pin rayon 1.12.0 + `unsafe impl Sync for Model` + `GtilError::ThreadPool` + rewrite `model_invariants` to `requires_sync` + RED `parallel_nthread.rs`/`determinism.rs` scaffolds (PAR-03)
+- [x] 10-00-PLAN.md — Pin rayon 1.12.0 + `unsafe impl Sync for Model` + `GtilError::ThreadPool` + rewrite `model_invariants` to `requires_sync` + RED `parallel_nthread.rs`/`determinism.rs` scaffolds (PAR-03)
 
 **Wave 1** *(blocked on Wave 0 — same gtil lib.rs)*
 
@@ -378,4 +378,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. GPU Backend & Equivalence Report | 4/4 | Complete    | 2026-06-10 |
 | 8. PyO3 Python Binding | 5/5 | Complete    | 2026-06-11 |
 | 9. Memory-Efficiency Hardening | 4/4 | Complete    | 2026-06-11 |
-| 10. Parallel Scalar Inference | 0/2 | Not started | - |
+| 10. Parallel Scalar Inference | 1/2 | In Progress|  |

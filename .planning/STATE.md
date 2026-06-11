@@ -1,16 +1,17 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.1
-milestone_name: Parallel Scalar Inference
-status: roadmapped
-last_updated: "2026-06-11T04:10:00.000Z"
-last_activity: 2026-06-11
+milestone_name: milestone
+status: executing
+stopped_at: Roadmapped milestone v1.1 — Phase 10 (Parallel Scalar Inference) created, PAR-01..04 mapped (Planned). Phase 9 still pending orchestrator verification / milestone reconcile.
+last_updated: "2026-06-11T04:40:33.609Z"
+last_activity: 2026-06-11 -- Phase 10 execution started
 progress:
-  total_phases: 1
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 10
+  completed_phases: 9
+  total_plans: 51
+  completed_plans: 50
+  percent: 90
 ---
 
 # Project State
@@ -20,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-11)
 
 **Core value:** Predictions match upstream Treelite within 1e-5.
-**Current focus:** Phase 10 — Parallel Scalar Inference (row-parallelize the 1-core scalar GTIL fallback)
+**Current focus:** Phase 10 — parallel-scalar-inference
 
 ## Current Position
 
-Phase: Phase 10 — Parallel Scalar Inference (roadmapped, not started)
-Plan: —
-Status: Roadmap created; awaiting `/gsd-plan-phase 10`
-Last activity: 2026-06-11 — Milestone v1.1 roadmapped (Phase 10, PAR-01..04)
+Phase: 10 (parallel-scalar-inference) — EXECUTING
+Plan: 2 of 2
+Status: Ready to execute
+Last activity: 2026-06-11 -- Phase 10 execution started
 
 ## Performance Metrics
 
@@ -106,6 +107,7 @@ Last activity: 2026-06-11 — Milestone v1.1 roadmapped (Phase 10, PAR-01..04)
 | Phase 09 P02 | 13min | 3 tasks | 14 files |
 | Phase 09 P03 | 2min | 2 tasks | 1 files |
 | Phase 09 P04 | 7min | 3 tasks | 5 files |
+| Phase 10 P00 | 12min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -241,6 +243,8 @@ Recent decisions affecting current work:
 - [09-02]: serialize/json.rs DumpAsJSON (NOT in PATTERNS file list) required derefing migrated fields to &[T]/&str at the json!()/Value::from sites — smallvec carries NO serde feature (A4), so the slice/str path keeps identical JSON without adding a feature (Rule-3 blocking fix). histgb.rs+mixin.rs also carry BuilderMetadata literals beyond the listed bulk.rs (8 extra literals). HARD INVARIANTS held: golden_v5.bin AND golden_v5_3format.bin byte-identical, workspace 0 failures, pytest 39/1, Model !Send, treelite-py allocator-free.
 - [Phase ?]: [09-03]: MEM-01 closed — le_bytes_of routed through bytemuck::cast_slice (bound Copy -> bytemuck::Pod), the exact tree_buf.rs as_bytes seam; one unsafe from_raw_parts removed. serialize_tree<T> bound tightened to Copy + Pod (Rule 3; only f32/f64 instantiate, both Pod). EMIT direction only — scalar_le/enum as-u8/bool_bytes and the untrusted deserialize read path (binary.rs Reader::array, 0 cast_slice) untouched (T-09-D/T-09-10). HARD INVARIANTS held: golden_v5.bin AND golden_v5_3format.bin byte-identical, workspace 0 failures, pytest 39/1, model_invariants 248B/!Send, all within 1e-5.
 - [09-04]: MEM-03 closed — jemalloc/mimalloc wired as runtime-selectable #[global_allocator] in the memory_report bin ONLY (D-07/D-08); both build+run on Linux (D-09). memory.rs sampler abstracts jemalloc (tikv_jemalloc_ctl epoch::advance()-then-stats::{allocated,resident}::read(), Pitfall 5, cfg-gated) vs mimalloc/system (/proc/self/statm field 2 x page size); render_markdown/emit mirror report.rs. Committed observational docs/MEMORY_REPORT.md: system 9.71 MiB / jemalloc 5.43 MiB+600 KiB allocated / mimalloc 10.40 MiB, size_of::<Model>()=248B row, NOT-a-CI-gate banner + 1e-5/golden attestation (D-10). Benchmark set = XGBoost-JSON + 3 frozen v5 models (bin can't use dev-only lightgbm/sklearn; lgbm_numerical.model.bin covers LightGBM via deserialize). Enabled stats on tikv-jemallocator + stats/use_std on tikv-jemalloc-ctl (Rule 3; deps stay optional+harness-only). D-08 verified: cargo tree -p treelite-py has 0 allocator nodes. HARD INVARIANTS held: golden byte-identical, harness 1e-5 green, workspace 0 failures, pytest 39/1.
+- [Phase ?]: Phase 10: Model is Sync (not Send) for read-only parallel predict; rayon shares &Model, never moves it
+- [Phase ?]: Phase 10: rayon 1.12.0 is the first parallelism dependency (legitimacy-audited Approved)
 
 ### Pending Todos
 
@@ -263,6 +267,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-11T04:10:00Z
+Last session: 2026-06-11T04:40:24.280Z
 Stopped at: Roadmapped milestone v1.1 — Phase 10 (Parallel Scalar Inference) created, PAR-01..04 mapped (Planned). Phase 9 still pending orchestrator verification / milestone reconcile.
 Resume file: None
