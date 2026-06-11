@@ -25,3 +25,15 @@ serde_json = "1.0.150"
 approx = "0.5.1"
 cubecl = { version = "0.10.0", features = ["cpu"] }
 bytemuck = { version = "1", features = ["derive"] }
+# Phase 9 memory-efficiency hardening (MEM-02/MEM-03). All pinned to the exact
+# versions verified in 09-RESEARCH §Package Legitimacy Audit (all Approved).
+# NO `serde` feature: the migrated Model/Metadata fields cross no serde boundary
+# (the v5 serializer is hand-framed; serde_json is dump-only via getters, A4).
+# smallvec stays on the stable 1.x line — 2.0-alpha is forbidden (FND-02).
+smallvec = { version = "1.15.1", features = ["const_new", "union"] }
+compact_str = "0.9.1"
+# Allocator crates — referenced ONLY by treelite-harness bin/bench targets behind
+# the non-default `jemalloc`/`mimalloc` features (D-08: never reach the abi3 wheel).
+tikv-jemallocator = "0.7.0"
+tikv-jemalloc-ctl = "0.7.0"
+mimalloc = "0.1.52"
