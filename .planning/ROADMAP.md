@@ -328,7 +328,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 09-04-PLAN.md — MEM-03: wire jemalloc/mimalloc as #[global_allocator] in memory_report bin, RSS sampling, committed docs/MEMORY_REPORT.md; wheel stays allocator-free
+- [x] 09-04-PLAN.md — MEM-03: wire jemalloc/mimalloc as #[global_allocator] in memory_report bin, RSS sampling, committed docs/MEMORY_REPORT.md; wheel stays allocator-free (system 9.71 MiB / jemalloc 5.43 MiB+600 KiB allocated / mimalloc 10.40 MiB; size_of::<Model>()=248B; golden byte-identical + 1e-5 + pytest 39/1 green; treelite-py 0 allocator deps)
 
 **Cross-cutting constraints:**
 
@@ -350,4 +350,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. cubecl GTIL Kernels (CPU Backend) | 7/7 | Complete    | 2026-06-10 |
 | 7. GPU Backend & Equivalence Report | 4/4 | Complete    | 2026-06-10 |
 | 8. PyO3 Python Binding | 5/5 | Complete    | 2026-06-11 |
-| 9. Memory-Efficiency Hardening | 3/4 | In Progress|  |
+| 9. Memory-Efficiency Hardening | 4/4 | In Progress|  |

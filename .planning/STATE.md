@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 09-02-PLAN.md (MEM-02 SmallVec/CompactString migration)
-last_updated: "2026-06-11T03:05:34.460Z"
-last_activity: 2026-06-11 -- Phase 09 Plan 02 complete (MEM-02 field migration)
+stopped_at: Completed 09-04-PLAN.md (MEM-03 allocator RSS report + docs/MEMORY_REPORT.md)
+last_updated: "2026-06-11T03:14:27Z"
+last_activity: 2026-06-11 -- Phase 09 Plan 04 complete (MEM-03 allocator report; Phase 9 pending orchestrator verification)
 progress:
   total_phases: 9
   completed_phases: 8
   total_plans: 49
-  completed_plans: 48
-  percent: 89
+  completed_plans: 49
+  percent: 91
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 09 (memory-efficiency-hardening) — EXECUTING
-Plan: 4 of 4
-Status: Ready to execute
-Last activity: 2026-06-11 -- Phase 09 Plan 02 complete (MEM-02 field migration)
+Plan: 4 of 4 complete (Phase 9 pending orchestrator verification)
+Status: All 4 plans executed; awaiting phase verification
+Last activity: 2026-06-11 -- Phase 09 Plan 04 complete (MEM-03 allocator report)
 
 Progress: [██████████] Phase 06 complete (7/7 plans) — milestone 6/9 phases
 
@@ -106,6 +106,7 @@ Progress: [██████████] Phase 06 complete (7/7 plans) — mil
 | Phase 09 P01 | 3min | 3 tasks | 4 files |
 | Phase 09 P02 | 13min | 3 tasks | 14 files |
 | Phase 09 P03 | 2min | 2 tasks | 1 files |
+| Phase 09 P04 | 7min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -236,6 +237,7 @@ Recent decisions affecting current work:
 - [09-02]: MEM-02 closed — 7 Model + BuilderMetadata metadata fields migrated to SmallVec<[i32;1]>/SmallVec<[i32;2]>/SmallVec<[f64;1]>/CompactString (D-04). Inline N chosen for the DOMINANT shape; size_of::<Model>() stays 248B (BYTE-IDENTICAL to the Vec/String layout — zero struct-size cost, no Pitfall-2 reduction). serializer EMIT path UNCHANGED (deref-transparent); read-back assigns carry .into(); gtil shape.rs + treelite-py ZERO diff.
 - [09-02]: serialize/json.rs DumpAsJSON (NOT in PATTERNS file list) required derefing migrated fields to &[T]/&str at the json!()/Value::from sites — smallvec carries NO serde feature (A4), so the slice/str path keeps identical JSON without adding a feature (Rule-3 blocking fix). histgb.rs+mixin.rs also carry BuilderMetadata literals beyond the listed bulk.rs (8 extra literals). HARD INVARIANTS held: golden_v5.bin AND golden_v5_3format.bin byte-identical, workspace 0 failures, pytest 39/1, Model !Send, treelite-py allocator-free.
 - [Phase ?]: [09-03]: MEM-01 closed — le_bytes_of routed through bytemuck::cast_slice (bound Copy -> bytemuck::Pod), the exact tree_buf.rs as_bytes seam; one unsafe from_raw_parts removed. serialize_tree<T> bound tightened to Copy + Pod (Rule 3; only f32/f64 instantiate, both Pod). EMIT direction only — scalar_le/enum as-u8/bool_bytes and the untrusted deserialize read path (binary.rs Reader::array, 0 cast_slice) untouched (T-09-D/T-09-10). HARD INVARIANTS held: golden_v5.bin AND golden_v5_3format.bin byte-identical, workspace 0 failures, pytest 39/1, model_invariants 248B/!Send, all within 1e-5.
+- [09-04]: MEM-03 closed — jemalloc/mimalloc wired as runtime-selectable #[global_allocator] in the memory_report bin ONLY (D-07/D-08); both build+run on Linux (D-09). memory.rs sampler abstracts jemalloc (tikv_jemalloc_ctl epoch::advance()-then-stats::{allocated,resident}::read(), Pitfall 5, cfg-gated) vs mimalloc/system (/proc/self/statm field 2 x page size); render_markdown/emit mirror report.rs. Committed observational docs/MEMORY_REPORT.md: system 9.71 MiB / jemalloc 5.43 MiB+600 KiB allocated / mimalloc 10.40 MiB, size_of::<Model>()=248B row, NOT-a-CI-gate banner + 1e-5/golden attestation (D-10). Benchmark set = XGBoost-JSON + 3 frozen v5 models (bin can't use dev-only lightgbm/sklearn; lgbm_numerical.model.bin covers LightGBM via deserialize). Enabled stats on tikv-jemallocator + stats/use_std on tikv-jemalloc-ctl (Rule 3; deps stay optional+harness-only). D-08 verified: cargo tree -p treelite-py has 0 allocator nodes. HARD INVARIANTS held: golden byte-identical, harness 1e-5 green, workspace 0 failures, pytest 39/1.
 
 ### Pending Todos
 
@@ -258,6 +260,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-11T03:05:10.037Z
-Stopped at: Completed 09-02-PLAN.md (MEM-02 SmallVec/CompactString migration)
+Last session: 2026-06-11T03:14:27Z
+Stopped at: Completed 09-04-PLAN.md (MEM-03 allocator RSS report + docs/MEMORY_REPORT.md); Phase 9 pending orchestrator verification
 Resume file: None
