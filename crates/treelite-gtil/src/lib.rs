@@ -17,6 +17,7 @@ pub use config::{Config, PredictKind};
 pub use error::GtilError;
 pub use shape::{Shape, output_shape};
 
+use rayon::prelude::*;
 use treelite_core::{Model, ModelVariant, Operator, Tree, TreeNodeType};
 
 /// Conversion of an `f32` feature value into a tree's threshold/leaf domain `T`,
@@ -93,7 +94,7 @@ impl PredictScalar for f64 {
 /// `Array3DView<InputT>`; `c_api/gtil.cc:50-55`). All four `(input × preset)`
 /// combinations are therefore valid: f32 input always yields `Vec<f32>`, f64
 /// input always yields `Vec<f64>`, independent of the model preset.
-pub trait PredictOut: Copy + PartialOrd {
+pub trait PredictOut: Copy + PartialOrd + Send + Sync {
     /// The quiet-NaN of this element (`std::numeric_limits<InputT>::quiet_NaN()`,
     /// `predict.cc:81`) — the "absent feature" sentinel for the sparse path.
     fn nan() -> Self;
@@ -534,6 +535,17 @@ impl OutputLayout<'_> {
             + class_id as usize
     }
 
+    /// Index of `(target_id, class_id)` WITHIN a single row's `cells_per_row`
+    /// slice — the `idx` value minus the `row_id * cells_per_row` row offset.
+    /// This is the per-row-slice analogue used by the row-parallel
+    /// [`output_leaf_value_row`] / [`output_leaf_vector_row`] (Pattern 1 "Key
+    /// refactor"): writing into a disjoint `&mut [O]` row chunk makes per-row
+    /// non-overlap statically provable to the borrow checker.
+    #[inline]
+    fn cell_in_row(&self, target_id: i32, class_id: i32) -> usize {
+        target_id as usize * self.max_num_class as usize + class_id as usize
+    }
+
     /// `num_class` for a target, bounds-safe (T-04-03). Out-of-range
     /// `target_id` yields 0 so the accumulation loops are empty rather than
     /// indexing OOB.
@@ -619,6 +631,37 @@ impl<O: PredictOut> RowSource<'_, O> {
     }
 }
 
+/// Run a rayon parallel `fill` closure under the thread pool selected by
+/// `nthread` (Pattern 2 / RESEARCH §"Honoring nthread with a scoped pool").
+///
+/// - `nthread <= 0` → the global rayon pool (all cores, upstream
+///   `MaxNumThread` semantics, `detail/threading_utils.h:74-80`). The closure
+///   runs directly; `par_*` iterators inside it use the global pool.
+/// - `nthread > 0` → a per-call SCOPED [`rayon::ThreadPool`] bounded to exactly
+///   `nthread` workers via `ThreadPoolBuilder::num_threads(n)`. A build failure
+///   maps to the typed [`GtilError::ThreadPool`] (T-10-01; never a panic). The
+///   closure runs inside `pool.install(..)` so its `par_*` iterators use exactly
+///   that many workers.
+///
+/// NEVER calls `ThreadPoolBuilder::build_global()` (once-only global mutation —
+/// anti-pattern T-10-01). The pool is scoped to this call and dropped on return.
+#[inline]
+fn run_with_nthread<R, F>(nthread: i32, fill: F) -> Result<R, GtilError>
+where
+    F: FnOnce() -> Result<R, GtilError> + Send,
+    R: Send,
+{
+    if nthread <= 0 {
+        fill()
+    } else {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(nthread as usize)
+            .build()
+            .map_err(|e| GtilError::ThreadPool(e.to_string()))?;
+        pool.install(fill)
+    }
+}
+
 /// Per-preset prediction body, generic over the leaf/threshold type `T`.
 ///
 /// Implements the `PredictRaw` assembly order EXACTLY (`predict.cc:231-305`) —
@@ -640,39 +683,58 @@ impl<O: PredictOut> RowSource<'_, O> {
 /// binary `(num_row, 1, 1)` case is a degenerate path of this same code: with
 /// `num_target == 1`, `max_num_class == 1`, every tree `target_id == 0`,
 /// `class_id == 0`, it reduces to the Phase-1 serial sum into cell 0.
-fn predict_preset<T: PredictScalar + PartialOrd, O: PredictOut>(
+fn predict_preset<T: PredictScalar + PartialOrd + Sync, O: PredictOut>(
     trees: &[Tree<T>],
     shape: &OutputLayout<'_>,
     rows: &RowSource<'_, O>,
     num_row: usize,
     num_feature: usize,
+    nthread: i32,
 ) -> Result<Vec<O>, GtilError> {
     let cells_per_row = shape.cells_per_row();
     let mut output = vec![O::zero(); num_row * cells_per_row];
     let num_tree = trees.len();
 
-    // A single reusable scratch row, exactly the upstream `dense_row_` (one row
-    // per thread; scalar single-thread ⇒ one row). The sparse accessor
-    // NaN-materializes into it per row; the dense accessor copies the row slice
-    // into it. Either way `evaluate_tree` walks the SAME contiguous `&[O]`, so
-    // the dense and sparse paths are structurally identical (D-04).
-    let mut scratch = vec![O::nan(); num_feature];
-
-    for r in 0..num_row {
-        rows.materialize(r, &mut scratch);
-        let row: &[O] = &scratch;
-        // Serial tree accumulation in tree_id order — do NOT parallelize/reorder.
-        for (tree_id, tree) in trees.iter().enumerate() {
-            let leaf = evaluate_tree(tree, row)?;
-            let target_id = shape.target_id.get(tree_id).copied().unwrap_or(-1);
-            let class_id = shape.class_id.get(tree_id).copied().unwrap_or(-1);
-            if has_leaf_vector(tree, leaf)? {
-                output_leaf_vector(&mut output, shape, tree, leaf, r, target_id, class_id)?;
-            } else {
-                output_leaf_value(&mut output, shape, tree, leaf, r, target_id, class_id)?;
-            }
-        }
-    }
+    // Row-parallel accumulation (PAR-01/02). Each output row is a DISJOINT
+    // `cells_per_row`-wide chunk (`par_chunks_mut`), so the borrow checker proves
+    // the per-row writes never overlap — no manual unsafe indexing (T-10-03). The
+    // `map_init` init closure allocates ONE scratch row per rayon worker (the
+    // upstream `dense_row_` one-row-per-thread, `predict.cc`); NEVER allocate
+    // inside the per-row body (Pitfall 2). The sparse accessor NaN-materializes
+    // into it per row; the dense accessor copies the row slice into it. Either
+    // way `evaluate_tree` walks the SAME contiguous `&[O]`, so dense and sparse
+    // are structurally identical (D-04).
+    //
+    // The INNER `for (tree_id, tree)` loop stays SERIAL in tree_id order — float
+    // add is non-associative, so only the independent row axis is parallelized
+    // (GTIL-08). The closure returns `Result<(), GtilError>` and
+    // `.collect::<Result<(), GtilError>>()?` short-circuits on the first `Err`,
+    // preserving the ERR-01 typed-error behavior (Pitfall 3: `?` inside the
+    // closure returns from the closure, rayon propagates the first Err).
+    run_with_nthread(nthread, || {
+        output
+            .par_chunks_mut(cells_per_row)
+            .enumerate()
+            .map_init(
+                || vec![O::nan(); num_feature],
+                |scratch, (r, cells)| {
+                    rows.materialize(r, scratch);
+                    let row: &[O] = scratch;
+                    for (tree_id, tree) in trees.iter().enumerate() {
+                        let leaf = evaluate_tree(tree, row)?;
+                        let target_id = shape.target_id.get(tree_id).copied().unwrap_or(-1);
+                        let class_id = shape.class_id.get(tree_id).copied().unwrap_or(-1);
+                        if has_leaf_vector(tree, leaf)? {
+                            output_leaf_vector_row(cells, shape, tree, leaf, target_id, class_id)?;
+                        } else {
+                            output_leaf_value_row(cells, shape, tree, leaf, target_id, class_id)?;
+                        }
+                    }
+                    Ok(())
+                },
+            )
+            .collect::<Result<(), GtilError>>()
+    })?;
 
     // Tree averaging (RF): divide each cell by the number of trees routed to it
     // (predict.cc:259-293). Built once, applied to every row.
@@ -744,12 +806,11 @@ fn predict_preset<T: PredictScalar + PartialOrd, O: PredictOut>(
 /// (`OutputLeafValue`, `predict.cc:218-229`). Both ids must be `>= 0` for a
 /// scalar leaf; bounds-checked against `num_target`/`max_num_class` so an
 /// out-of-range route surfaces as a typed error, never an OOB write (T-04-03).
-fn output_leaf_value<T: PredictScalar + PartialOrd, O: PredictOut>(
-    output: &mut [O],
+fn output_leaf_value_row<T: PredictScalar + PartialOrd, O: PredictOut>(
+    cells: &mut [O],
     shape: &OutputLayout<'_>,
     tree: &Tree<T>,
     leaf: usize,
-    row_id: usize,
     target_id: i32,
     class_id: i32,
 ) -> Result<(), GtilError> {
@@ -765,9 +826,10 @@ fn output_leaf_value<T: PredictScalar + PartialOrd, O: PredictOut>(
             max_num_class: shape.max_num_class,
         });
     }
-    // static_cast<InputT>(tree.LeafValue(leaf)) then O += O.
+    // static_cast<InputT>(tree.LeafValue(leaf)) then O += O. Writes into the
+    // caller's disjoint per-row slice at the in-row cell index (Pattern 1).
     let v: O = leaf_as_out(tree.leaf_value(leaf));
-    output[shape.idx(row_id, target_id, class_id)].add_assign_leaf(v);
+    cells[shape.cell_in_row(target_id, class_id)].add_assign_leaf(v);
     Ok(())
 }
 
@@ -783,12 +845,11 @@ fn output_leaf_value<T: PredictScalar + PartialOrd, O: PredictOut>(
 ///
 /// Leaf-vector index access is bounds-checked; an out-of-range route or a
 /// short leaf vector surfaces as a typed error, never an OOB read/write.
-fn output_leaf_vector<T: PredictScalar + PartialOrd, O: PredictOut>(
-    output: &mut [O],
+fn output_leaf_vector_row<T: PredictScalar + PartialOrd, O: PredictOut>(
+    cells: &mut [O],
     shape: &OutputLayout<'_>,
     tree: &Tree<T>,
     leaf: usize,
-    row_id: usize,
     target_id: i32,
     class_id: i32,
 ) -> Result<(), GtilError> {
@@ -805,7 +866,7 @@ fn output_leaf_vector<T: PredictScalar + PartialOrd, O: PredictOut>(
                         needed: li + 1,
                         got: leaf_out.len(),
                     })?;
-                output[shape.idx(row_id, t, c)].add_assign_leaf(leaf_as_out(v));
+                cells[shape.cell_in_row(t, c)].add_assign_leaf(leaf_as_out(v));
             }
         }
     } else if target_id == -1 {
@@ -826,7 +887,7 @@ fn output_leaf_vector<T: PredictScalar + PartialOrd, O: PredictOut>(
                     needed: t as usize + 1,
                     got: leaf_out.len(),
                 })?;
-            output[shape.idx(row_id, t, class_id)].add_assign_leaf(leaf_as_out(v));
+            cells[shape.cell_in_row(t, class_id)].add_assign_leaf(leaf_as_out(v));
         }
     } else if class_id == -1 {
         // leaf_view is (1, max_num_class); route into target_id.
@@ -846,7 +907,7 @@ fn output_leaf_vector<T: PredictScalar + PartialOrd, O: PredictOut>(
                     needed: c as usize + 1,
                     got: leaf_out.len(),
                 })?;
-            output[shape.idx(row_id, target_id, c)].add_assign_leaf(leaf_as_out(v));
+            cells[shape.cell_in_row(target_id, c)].add_assign_leaf(leaf_as_out(v));
         }
     } else {
         // leaf_view is (1, 1); route into the single cell.
@@ -865,7 +926,7 @@ fn output_leaf_vector<T: PredictScalar + PartialOrd, O: PredictOut>(
                 needed: 1,
                 got: leaf_out.len(),
             })?;
-        output[shape.idx(row_id, target_id, class_id)].add_assign_leaf(leaf_as_out(v));
+        cells[shape.cell_in_row(target_id, class_id)].add_assign_leaf(leaf_as_out(v));
     }
     Ok(())
 }
@@ -1018,10 +1079,10 @@ fn predict_rows<O: PredictOut>(
 
     let mut output = match &model.variant {
         ModelVariant::F32(preset) => {
-            predict_preset(&preset.trees, &shape, rows, num_row, num_feature)?
+            predict_preset(&preset.trees, &shape, rows, num_row, num_feature, config.nthread)?
         }
         ModelVariant::F64(preset) => {
-            predict_preset(&preset.trees, &shape, rows, num_row, num_feature)?
+            predict_preset(&preset.trees, &shape, rows, num_row, num_feature, config.nthread)?
         }
     };
 

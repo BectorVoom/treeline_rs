@@ -30,6 +30,24 @@ pub enum TreeBuf<T: Copy> {
     },
 }
 
+// SAFETY: `TreeBuf<T>` is `!Sync` only because the `Borrowed { ptr: *const T }`
+// variant holds a raw const pointer (raw pointers are `!Sync` by default).
+// Sharing `&TreeBuf<T>` across threads is sound on the predict path, the same
+// argument that justifies `unsafe impl Sync for Model` (Phase-10 PAR-03,
+// model.rs):
+//   1. predict only ever takes `&Tree<T>` / `&TreeBuf<T>` (SHARED, never `&mut`)
+//      and reads the buffer via `as_slice()` — no field is mutated;
+//   2. the `Borrowed` pointer aliases external memory whose backing (by the
+//      `from_borrowed` SAFETY contract) outlives the `TreeBuf` and is not
+//      mutated while borrowed → concurrent READS are data-race-free;
+//   3. `TreeBuf` exposes no interior mutability — there is no `&self` method
+//      that writes through the pointer.
+// This mirrors upstream Treelite sharing the forest `const&` across OpenMP
+// threads (`predict.cc`). `T: Copy` is POD, so the pointee is trivially
+// shareable. Only `Sync` is asserted — NOT `Send` (the model is shared by
+// reference across rayon workers, never MOVED to another thread; A4).
+unsafe impl<T: Copy> Sync for TreeBuf<T> {}
+
 impl<T: Copy> TreeBuf<T> {
     /// Construct an owned buffer from a `Vec<T>`.
     pub fn from_owned(data: Vec<T>) -> Self {
