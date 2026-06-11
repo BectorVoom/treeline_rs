@@ -259,6 +259,17 @@ def _import_hist_gradient_boosting(sklearn_model):
         baseline = np.asarray(
             sklearn_model._baseline_prediction, dtype=np.float64
         ).reshape(-1)
+        # WR-05: the Rust regressor loader signature takes a SINGLE
+        # ``baseline_prediction: f64``, so we pass ``baseline[0]`` below. A
+        # multi-target ``HistGradientBoostingRegressor`` (sklearn >= 1.4) has one
+        # baseline per target; silently keeping only ``[0]`` would drop the rest
+        # and emit numerically wrong predictions (a 1e-5 violation). Reject it
+        # explicitly until the multi-target baseline path is supported.
+        if baseline.size != 1:
+            raise _treelite_rs.TreeliteError(
+                "multi-target HistGradientBoostingRegressor is not yet supported "
+                f"(got {baseline.size} baseline predictions; expected 1)"
+            )
         return load_hist_gradient_boosting_regressor(
             int(sklearn_model.n_iter_),
             int(sklearn_model.n_features_in_),
