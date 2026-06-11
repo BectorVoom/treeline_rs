@@ -13,7 +13,7 @@
 //! validate dimensions/topology → typed `SklError` → the single `TreeliteError`
 //! (T-08-09, D-06). No tree internals are re-derived in Rust.
 
-use numpy::PyReadonlyArray1;
+use numpy::{PyReadonlyArray1, PyUntypedArray};
 use pyo3::prelude::*;
 use pyo3::types::PyAnyMethods;
 
@@ -27,6 +27,32 @@ fn contiguity_err(field: &str) -> TreelitePyErr {
     TreelitePyErr::from_pyerr(TreeliteError::new_err(format!(
         "sklearn array `{field}` must be C-contiguous; call np.ascontiguousarray(arr) first"
     )))
+}
+
+/// Build the per-element extraction error for an array-of-arrays field (WR-06).
+/// Distinguish "the element is not a numpy array at all" (a string / `None` /
+/// nested-list — report the concrete failing type) from "the element IS a numpy
+/// array but of the wrong dtype" (report a dtype mismatch). The old code always
+/// emitted "wrong dtype", which misled anyone debugging a malformed estimator
+/// dump whose element was simply not an array.
+#[inline]
+fn array_element_err(item: &Bound<'_, PyAny>, field: &str) -> TreelitePyErr {
+    use crate::error::TreeliteError;
+    if item.cast::<PyUntypedArray>().is_ok() {
+        TreelitePyErr::from_pyerr(TreeliteError::new_err(format!(
+            "sklearn array `{field}` element has the wrong dtype; \
+             no implicit cast is performed"
+        )))
+    } else {
+        let ty = item
+            .get_type()
+            .name()
+            .map(|n| n.to_string())
+            .unwrap_or_else(|_| "<unknown>".to_string());
+        TreelitePyErr::from_pyerr(TreeliteError::new_err(format!(
+            "sklearn array `{field}` element must be a 1-D numpy array; got {ty}"
+        )))
+    }
 }
 
 /// A collection of per-tree `PyReadonlyArray1<T>` borrows. The guards keep the
@@ -56,12 +82,9 @@ impl<'py, T: numpy::Element> ArrayOfArrays<'py, T> {
         let mut guards: Vec<PyReadonlyArray1<'py, T>> = Vec::new();
         for item in seq {
             let item = item.map_err(TreelitePyErr::from_pyerr)?;
-            let arr = item.extract::<PyReadonlyArray1<'py, T>>().map_err(|_| {
-                TreelitePyErr::from_pyerr(TreeliteError::new_err(format!(
-                    "sklearn array `{field}` element has the wrong dtype; \
-                     no implicit cast is performed"
-                )))
-            })?;
+            let arr = item
+                .extract::<PyReadonlyArray1<'py, T>>()
+                .map_err(|_| array_element_err(&item, field))?;
             // Validate contiguity eagerly so a non-contiguous element is rejected
             // here (with `field`) rather than at `view()`, which is infallible.
             arr.as_slice().map_err(|_| contiguity_err(field))?;
@@ -490,9 +513,16 @@ impl NodeBuffers {
         for item in seq {
             let item = item.map_err(TreelitePyErr::from_pyerr)?;
             let bytes = item.extract::<Vec<u8>>().map_err(|_| {
-                TreelitePyErr::from_pyerr(TreeliteError::new_err(
-                    "sklearn `nodes` element must be a bytes object",
-                ))
+                // WR-06: report the concrete failing type so a malformed dump is
+                // actionable, not a flat "must be a bytes object".
+                let ty = item
+                    .get_type()
+                    .name()
+                    .map(|n| n.to_string())
+                    .unwrap_or_else(|_| "<unknown>".to_string());
+                TreelitePyErr::from_pyerr(TreeliteError::new_err(format!(
+                    "sklearn `nodes` element must be a bytes object; got {ty}"
+                )))
             })?;
             boxes.push(bytes.into_boxed_slice());
         }
