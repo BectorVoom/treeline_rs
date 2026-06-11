@@ -37,6 +37,23 @@ struct SendModelRef<'a>(&'a treelite_core::Model);
 // SAFETY: see the type doc — the reference is only read for pure compute inside
 // the detached region; no `TreeBuf::Borrowed` pointer is mutated or sent onward,
 // and the underlying model + numpy borrow both outlive the closure.
+//
+// WR-01: this `Send` assertion has an UNENFORCED precondition. `TreeBuf::Borrowed`
+// is a publicly constructible variant (`TreeBuf::from_borrowed` is a `pub unsafe
+// fn`), so the type system does NOT prevent a caller from building a `Model` whose
+// columns alias thread-local / stack memory on the Python thread, wrapping it, and
+// calling `predict_f32`/`predict_f64`. Once `py.detach` releases the GIL the Python
+// thread can run and free that backing while a rayon worker reads it → a
+// use-after-free data race (UB).
+//
+// CALLER CONTRACT (must hold at every construction site): the wrapped `Model` MUST
+// contain ONLY `TreeBuf::Owned` columns, OR every `TreeBuf::Borrowed` backing must
+// outlive the entire detached predict closure (not merely the `&Model`). All models
+// reaching this path today are loader-produced and hold `Owned` columns, so the
+// contract holds in practice; it is documented here rather than type-enforced
+// because the sealing newtype (a `Model` unconstructible with `Borrowed` columns)
+// is out of scope for this phase. Do NOT route a `from_borrowed`-built model here
+// without auditing this contract.
 unsafe impl Send for SendModelRef<'_> {}
 
 impl<'a> SendModelRef<'a> {
