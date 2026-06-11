@@ -316,7 +316,11 @@ Plans:
   2. `smallvec` and `compact_str` back small collections and metadata strings, verified by existing tests still passing.
   3. A custom global allocator (jemalloc) is wired into benchmarks/binaries and validated to import/run on Linux (and not enabled in a way that breaks the abi3 wheel).
 
-**Plans**: TBD
+**Plans**: 4 plans
+- [ ] 09-01-PLAN.md — Wave 0 scaffolding: pin 5 deps, harness jemalloc/mimalloc features, memory_report bin skeleton, model_invariants (!Send + size_of) test
+- [ ] 09-02-PLAN.md — MEM-02: migrate Model + builder::Metadata fields to SmallVec/CompactString across loaders/serializer/concat; golden byte-identical + 1e-5 green
+- [ ] 09-03-PLAN.md — MEM-01: route le_bytes_of through bytemuck::cast_slice (Pod bound, LE-documented); read path untouched; golden + 1e-5 green
+- [ ] 09-04-PLAN.md — MEM-03: wire jemalloc/mimalloc as #[global_allocator] in memory_report bin, RSS sampling, committed docs/MEMORY_REPORT.md; wheel stays allocator-free
 
 ## Progress
 
@@ -333,4 +337,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. cubecl GTIL Kernels (CPU Backend) | 7/7 | Complete    | 2026-06-10 |
 | 7. GPU Backend & Equivalence Report | 4/4 | Complete    | 2026-06-10 |
 | 8. PyO3 Python Binding | 5/5 | Complete    | 2026-06-11 |
-| 9. Memory-Efficiency Hardening | 0/TBD | Not started | - |
+| 9. Memory-Efficiency Hardening | 0/4 | Not started | - |
