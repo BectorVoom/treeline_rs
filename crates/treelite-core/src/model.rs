@@ -116,6 +116,19 @@ pub struct Model {
     leaf_output_type_: DType,
 }
 
+// SAFETY: Model is !Sync only because TreeBuf::Borrowed { ptr: *const T } holds
+// a raw const pointer. Sharing &Model across threads is sound on the predict path:
+//   1. predict takes &Model (SHARED, never &mut) — no field is mutated;
+//   2. the borrowed foreign buffer is a read-only const slice whose backing memory
+//      (by the from_borrowed SAFETY contract) outlives the TreeBuf and is not
+//      mutated while borrowed → concurrent reads are data-race-free;
+//   3. Model has NO interior mutability on the predict path; stage_serialization_fields
+//      takes &mut self so it cannot run concurrently with a shared-& predict.
+// Mirrors upstream Treelite sharing Model const& across OpenMP threads (predict.cc:241).
+// Only Sync is asserted — NOT Send (A4); rayon shares &Model (Send iff Model: Sync),
+// the model is never MOVED to another thread.
+unsafe impl Sync for Model {}
+
 impl Model {
     /// Construct a `Model` wrapping `variant` with default header metadata
     /// (`sigmoid_alpha`/`ratio_c` default to `1.0`, all arrays empty).

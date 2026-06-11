@@ -170,6 +170,14 @@ pub enum GtilError {
         node: usize,
     },
 
+    /// A bounded scoped thread pool (sized by `Config.nthread > 0`) failed to
+    /// build. T-10-01: the Wave-1 scoped-pool builder maps
+    /// `rayon::ThreadPoolBuilder::build()`'s `Err` to this typed variant so a
+    /// pool-construction failure surfaces as a `GtilError`, never a panic
+    /// (ERR-01). Carries the underlying builder error message.
+    #[error("failed to build thread pool: {0}")]
+    ThreadPool(String),
+
     /// An error bubbled up from `treelite-core`.
     #[error(transparent)]
     Core(#[from] treelite_core::CoreError),

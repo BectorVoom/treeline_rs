@@ -1,17 +1,19 @@
-//! `Model` Wave-0 invariants for Phase 9 (MEM-02): a `size_of::<Model>()` budget
-//! and a documented `!Send` check (A3 / Pitfall 2).
+//! `Model` Wave-0 invariants: a `size_of::<Model>()` budget (Phase 9, MEM-02) and
+//! the cross-thread shareability contract (Phase 10, PAR-03).
 //!
-//! These are the baseline guards the MEM-02 field swap (Plan 02) must not break:
+//! These are the baseline guards downstream work must not break:
 //!   * `model_size_not_bloated_by_smallvec` caps `size_of::<Model>()` so that
 //!     choosing an over-large `SmallVec` inline `N` (Pitfall 2) is caught — an
 //!     oversized inline buffer would push the struct past the budget.
-//!   * `_assert_not_send` documents the `!Send` invariant (RESEARCH line 75):
-//!     `Model` MUST stay `!Send` because `TreeBuf::Borrowed` holds a `*const T`.
-//!     `SmallVec`/`CompactString` are `Send`-neutral, so the MEM-02 swap leaves
-//!     this invariant intact. The check is a commented-out `requires_send::<Model>()`
-//!     that MUST NOT be uncommented — uncommenting it would fail to compile, which
-//!     is exactly the invariant. (The repo has no `trybuild`, so the compile-fail
-//!     half is expressed as this documented static assertion — PATTERNS lines 416-417.)
+//!   * `model_is_sync_for_readonly_predict` pins the Phase-10 `Sync` contract:
+//!     `Model` is now soundly SHAREABLE across threads for read-only predict via
+//!     the documented `unsafe impl Sync for Model` (model.rs), mirroring upstream
+//!     OpenMP sharing `Model const&`. This SUPERSEDES the prior Phase-9 `!Send`
+//!     invariant (the old not-Send compile check): the type intentionally became
+//!     `Sync` so rayon can share `&Model` across workers. `requires_sync::<Model>()`
+//!     compiles iff `Model: Sync`, and `&Model: Send` follows automatically (the
+//!     property rayon relies on). Only `Sync` is asserted — NOT `Send` (A4); the
+//!     model is never moved to another thread.
 
 use treelite_core::Model;
 
@@ -22,15 +24,16 @@ use treelite_core::Model;
 /// guard against an over-large inline `N` (Pitfall 2). Plan 02 re-checks it.
 const MODEL_SIZE_BUDGET: usize = 512;
 
-/// A3 / RESEARCH line 75: `Model` MUST stay `!Send`. The live source of `!Send`
-/// is the `*const T` in `TreeBuf::Borrowed`; `SmallVec`/`CompactString` do not
-/// add `Send`, so the MEM-02 swap preserves this. Documented compile-fail check:
-/// uncommenting `requires_send::<Model>()` MUST fail to compile.
-#[allow(dead_code)]
-fn _assert_not_send() {
+/// PAR-03: `Model` is soundly SHAREABLE across threads for read-only predict
+/// (documented `unsafe impl Sync for Model`, mirroring upstream OpenMP). This
+/// SUPERSEDES the prior not-Send invariant — the type intentionally became
+/// `Sync` so rayon can share `&Model` across workers.
+#[test]
+fn model_is_sync_for_readonly_predict() {
+    fn requires_sync<T: Sync>() {}
+    requires_sync::<Model>(); // compiles iff Model: Sync — the new contract.
     fn requires_send<T: Send>() {}
-    // requires_send::<Model>();  // ← must NOT compile; this comment IS the invariant.
-    let _ = requires_send::<i32>; // keep the helper referenced (i32: Send).
+    requires_send::<&Model>(); // &Model: Send follows from Model: Sync (what rayon needs).
 }
 
 /// Pitfall 2: an over-large `SmallVec` inline `N` would bloat `Model` and hurt

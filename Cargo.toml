@@ -32,6 +32,11 @@ bytemuck = { version = "1", features = ["derive"] }
 # smallvec stays on the stable 1.x line — 2.0-alpha is forbidden (FND-02).
 smallvec = { version = "1.15.1", features = ["const_new", "union"] }
 compact_str = "0.9.1"
+# Phase 10 parallel scalar inference (PAR-01/02/04). Verified rayon v1.12.0 via
+# `cargo add rayon --package treelite-gtil --dry-run` + slopcheck [OK]
+# (10-RESEARCH §Package Legitimacy Audit). Row-parallel par_chunks_mut/map_init
+# over the scalar GTIL row loop; scoped ThreadPool honors Config.nthread.
+rayon = "1.12.0"
 # Allocator crates — referenced ONLY by treelite-harness bin/bench targets behind
 # the non-default `jemalloc`/`mimalloc` features (D-08: never reach the abi3 wheel).
 # `stats` builds jemalloc with statistics collection so `stats::{allocated,resident}`
