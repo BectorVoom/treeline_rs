@@ -43,10 +43,17 @@ pub enum TreeBuf<T: Copy> {
 //   3. `TreeBuf` exposes no interior mutability — there is no `&self` method
 //      that writes through the pointer.
 // This mirrors upstream Treelite sharing the forest `const&` across OpenMP
-// threads (`predict.cc`). `T: Copy` is POD, so the pointee is trivially
-// shareable. Only `Sync` is asserted — NOT `Send` (the model is shared by
-// reference across rayon workers, never MOVED to another thread; A4).
-unsafe impl<T: Copy> Sync for TreeBuf<T> {}
+// threads (`predict.cc`). Only `Sync` is asserted — NOT `Send` (the model is
+// shared by reference across rayon workers, never MOVED to another thread; A4).
+//
+// The bound is `T: Copy + Sync`, NOT merely `T: Copy` (WR-02). `T: Copy` alone
+// does not forbid interior mutability: `Cell<f32>` is `Copy` but `!Sync`, and a
+// `TreeBuf<Cell<f32>>` auto-claiming `Sync` would make the concurrent `Owned`
+// reads a data race. Requiring `T: Sync` expresses the actual property — the
+// element type must itself be shareable across threads. Every concrete `T` used
+// in practice (`f32`, `f64`, `i32`, `u32`, `u64`, `bool`, `Operator`,
+// `TreeNodeType`) satisfies `Sync`, so this is a zero-impact tightening.
+unsafe impl<T: Copy + Sync> Sync for TreeBuf<T> {}
 
 impl<T: Copy> TreeBuf<T> {
     /// Construct an owned buffer from a `Vec<T>`.
