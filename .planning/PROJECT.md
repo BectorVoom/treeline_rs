@@ -8,6 +8,17 @@ A from-scratch Rust rewrite of [Treelite](https://github.com/dmlc/treelite) — 
 
 **Predictions match upstream Treelite within 1e-5.** A model loaded and predicted through treelite-rs must produce numerically equivalent output to the C++ original. Everything else (speed, memory, GPU) is secondary to that fidelity.
 
+## Current Milestone: v1.1 Parallel Scalar Inference
+
+**Goal:** Parallelize the single-threaded scalar GTIL fallback engine across CPU cores — without regressing the 1e-5 equivalence contract — so LightGBM, categorical, and sparse models stop running on one core.
+
+**Target features:**
+- Row-parallel `treelite_gtil::predict` (dense) and `predict_sparse` (sparse-CSR) using all available cores.
+- A sound, documented `unsafe impl Sync`/`Send` for `Model` justified by read-only-during-predict (mirrors upstream OpenMP); the existing `_assert_not_send` invariant is replaced by the new shareability contract.
+- `Config.nthread` honored end-to-end (≤0 = all cores; N = bounded), wiring the existing Python `nthread=` kwarg that is currently recorded-but-unused on the scalar path.
+
+**Why this scope (measured this milestone):** The cubecl CPU kernel path (XGBoost numerical `kLT`) already parallelizes — ~783% CPU (~8/16 cores). The scalar fallback runs at 99% CPU (1 core) and is the whole-model path for *all* LightGBM numerical (`kLE`) models, every categorical / non-`kLT` model, and **all** sparse input. A row-parallel prototype measured 3.0–4.6× there. The cubecl grid-tune (≈8→16 cores) was deliberately deferred as an uncertain incremental win.
+
 ## Requirements
 
 ### Validated
@@ -36,6 +47,12 @@ A from-scratch Rust rewrite of [Treelite](https://github.com/dmlc/treelite) — 
 - [ ] `thiserror`-based typed errors in library crates; `anyhow` in binaries/tests
 - [ ] Memory-efficiency techniques applied (see Context): zero-copy buffers, small-vector/compact-string types, custom allocator
 
+<!-- v1.1 (Parallel Scalar Inference) -->
+- [ ] **PAR-01**: Scalar dense predict (`treelite_gtil::predict`) runs row-parallel across all cores, output identical to the serial path within 1e-5
+- [ ] **PAR-02**: Scalar sparse predict (`predict_sparse` / `predict_cpu_sparse` fallback) runs row-parallel with the same equivalence guarantee
+- [ ] **PAR-03**: `Model` is soundly shareable across threads for read-only prediction (documented `unsafe impl Sync`/`Send`; `_assert_not_send` invariant superseded)
+- [ ] **PAR-04**: `Config.nthread` is honored end-to-end (≤0 = all cores; N bounded), wiring the Python `nthread=` kwarg currently ignored on the scalar path
+
 ### Out of Scope
 
 <!-- Explicit boundaries with reasoning to prevent re-adding. -->
@@ -45,6 +62,7 @@ A from-scratch Rust rewrite of [Treelite](https://github.com/dmlc/treelite) — 
 - **Full cubecl coverage beyond the inference hot path** — loaders, builder, and serialization stay plain idiomatic Rust; only GTIL traversal + postprocessors become cubecl kernels (keeps 1e-5 equivalence low-risk).
 - **Live C++ build in CI for equivalence** — golden vectors are generated once from upstream and frozen as fixtures; CI does not compile C++ Treelite.
 - **Bit-exact GPU reproducibility** — GPU float reduction ordering may differ; the 1e-5 tolerance absorbs it. Deterministic guarantees apply to the default CPU backend.
+- **cubecl CPU grid tuning (v1.1)** — the numerical `kLT` cubecl path already uses ~8/16 cores; pushing its `CubeCount`/`CubeDim` toward full saturation is an uncertain incremental win and is deferred. v1.1 parallelism targets the 1-core scalar fallback only.
 
 ## Context
 
@@ -100,4 +118,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-11 — Phase 8 (PyO3 Python Binding) complete; `treelite-py` abi3 wheel exposes load → predict → serialize/dump → sklearn import with zero-copy numpy I/O, all within 1e-5 of upstream `treelite`, panics non-crossing, and a hardware-validated `rocm` backend kwarg (verification passed 7/7; code review CR-01 too-wide-input bug fixed + regression-tested; 37 Python tests green). Next: Phase 9 (Memory-Efficiency Hardening) — the final v1 phase. (Note: this footer skipped Phases 5–7 docs; their validation is recorded in their VERIFICATION.md + STATE decisions.)*
+*Last updated: 2026-06-11 — v1.0 complete (Phase 9 Memory-Efficiency Hardening verified 15/15: bytemuck Pod recast, SmallVec/CompactString metadata, jemalloc/mimalloc harness allocators; golden byte-identical + 1e-5 green). Started milestone v1.1 (Parallel Scalar Inference): row-parallelize the 1-core scalar GTIL fallback (LightGBM/categorical/sparse) — measured 99% CPU there vs ~783% on the already-parallel cubecl numerical path. Next: Phase 10. (Note: v1.0 Active requirements not yet migrated to Validated — run `/gsd-complete-milestone` to reconcile.)*
