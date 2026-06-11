@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: milestone
-status: phase-complete
-stopped_at: Phase 10 complete (verified 6/6 + throughput UAT, code review 5/5 fixed, security 5/5 closed); milestone v1.1 100% — ready for /gsd-complete-milestone v1.1
-last_updated: "2026-06-11T07:27:20.861Z"
-last_activity: 2026-06-11
+status: Awaiting next milestone
+stopped_at: Executed 10-01-PLAN.md (row-parallel scalar GTIL); plans 2/2 done, phase pending orchestrator verification
+last_updated: "2026-06-11T07:48:31.152Z"
+last_activity: 2026-06-11 — Milestone v1.1 completed and archived
 progress:
   total_phases: 10
   completed_phases: 10
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-11)
 
 **Core value:** Predictions match upstream Treelite within 1e-5.
-**Current focus:** Milestone v1.1 complete — ready to archive
+**Current focus:** Between milestones — v1.0 + v1.1 shipped; run /gsd-new-milestone to scope next
 
 ## Current Position
 
-Phase: 10 — complete
-Plan: All plans complete (2/2)
-Status: Phase 10 verified, secured, and complete. Milestone v1.1 at 100% (1/1 phase) — run /gsd-complete-milestone v1.1.
-Last activity: 2026-06-11
+Phase: Milestone v1.1 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-06-11 — Milestone v1.1 completed and archived
 
 ## Performance Metrics
 
@@ -273,3 +273,7 @@ Items acknowledged and carried forward from previous milestone close:
 Last session: 2026-06-11T04:54:49.877Z
 Stopped at: Executed 10-01-PLAN.md (row-parallel scalar GTIL); plans 2/2 done, phase pending orchestrator verification
 Resume file: None
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone

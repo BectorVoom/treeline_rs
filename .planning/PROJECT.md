@@ -8,16 +8,20 @@ A from-scratch Rust rewrite of [Treelite](https://github.com/dmlc/treelite) — 
 
 **Predictions match upstream Treelite within 1e-5.** A model loaded and predicted through treelite-rs must produce numerically equivalent output to the C++ original. Everything else (speed, memory, GPU) is secondary to that fidelity.
 
-## Current Milestone: v1.1 Parallel Scalar Inference
+## Current State
 
-**Goal:** Parallelize the single-threaded scalar GTIL fallback engine across CPU cores — without regressing the 1e-5 equivalence contract — so LightGBM, categorical, and sparse models stop running on one core.
+**Shipped: v1.1 Parallel Scalar Inference (2026-06-11).** The complete Rust port is functional and validated to 1e-5 vs upstream Treelite 4.7.0: load (XGBoost JSON/UBJSON/legacy, LightGBM, scikit-learn) → predict (full scalar GTIL + cubecl CPU/GPU kernels) → serialize (v5) → Python (PyO3 abi3 wheel), with memory hardening and now **row-parallel scalar inference**. The single-core scalar fallback (LightGBM `kLE`, categorical, non-`kLT`, all sparse) now parallelizes across all cores via rayon, output bit-identical to serial within 1e-5 (measured 3.68× on a categorical model, 4M rows / 16 cores).
 
-**Target features:**
-- Row-parallel `treelite_gtil::predict` (dense) and `predict_sparse` (sparse-CSR) using all available cores.
-- A sound, documented `unsafe impl Sync`/`Send` for `Model` justified by read-only-during-predict (mirrors upstream OpenMP); the existing `_assert_not_send` invariant is replaced by the new shareability contract.
-- `Config.nthread` honored end-to-end (≤0 = all cores; N = bounded), wiring the existing Python `nthread=` kwarg that is currently recorded-but-unused on the scalar path.
+Milestones shipped: **v1.0 MVP** (Phases 1–9) and **v1.1** (Phase 10). See `.planning/MILESTONES.md` and `.planning/milestones/`.
 
-**Why this scope (measured this milestone):** The cubecl CPU kernel path (XGBoost numerical `kLT`) already parallelizes — ~783% CPU (~8/16 cores). The scalar fallback runs at 99% CPU (1 core) and is the whole-model path for *all* LightGBM numerical (`kLE`) models, every categorical / non-`kLT` model, and **all** sparse input. A row-parallel prototype measured 3.0–4.6× there. The cubecl grid-tune (≈8→16 cores) was deliberately deferred as an uncertain incremental win.
+**Quality posture:** `cargo test --workspace` 310 passed / 0 failed; `uv run pytest` green; v5 serialization byte-identical; all security threats for the new parallelism closed (ASVS high).
+
+## Next Milestone Goals (candidates — not yet committed)
+
+- **cubecl CPU grid tuning:** push the numerical `kLT` cubecl path from ~8/16 toward full core saturation (deferred from v1.1 as an uncertain incremental win).
+- **Single-pool nthread path:** thread one `ThreadPool` through the predict call chain instead of building 2–3 scoped pools per call (code-review IN-01 follow-up) for lower small-batch overhead.
+- **Type-seal `SendModelRef`:** make the no-`Borrowed`-columns precondition type-enforced rather than documented (code-review WR-01 residual / security note).
+- Run `/gsd-new-milestone` to scope and commit the next milestone (questioning → research → requirements → roadmap).
 
 ## Requirements
 
