@@ -20,6 +20,15 @@ rocm = ["dep:cubecl", "cubecl/rocm", "treelite-cubecl/rocm"]
 cuda = ["dep:cubecl", "cubecl/cuda", "treelite-cubecl/cuda"]
 wgpu = ["dep:cubecl", "cubecl/wgpu", "treelite-cubecl/wgpu"]
 
+# MEM-03 allocator selection for the `memory_report` bin (D-07/D-08). Both
+# NON-DEFAULT and mutually exclusive (the bin's `compile_error!` guards the
+# both-on case). Mirrors the GPU optional-dep + non-default-feature shape one
+# tier stricter: the `#[global_allocator]` static lives ONLY in the bin target,
+# so these features (and the allocator crates) never reach any library crate or
+# the abi3 wheel (treelite-py). `dep:` prefixes keep the deps purely opt-in.
+jemalloc = ["dep:tikv-jemallocator", "dep:tikv-jemalloc-ctl"]
+mimalloc = ["dep:mimalloc"]
+
 [dependencies]
 treelite-core = { path = "../treelite-core" }
 treelite-xgboost = { path = "../treelite-xgboost" }
@@ -33,6 +42,12 @@ treelite-cubecl = { path = "../treelite-cubecl" }
 # `*_case()` constructors name `cubecl::{hip,cuda,wgpu}::*Runtime` directly. The
 # default cpu-only harness build does NOT pull cubecl in (no GPU system libs).
 cubecl = { workspace = true, optional = true }
+# MEM-03 allocator crates — OPTIONAL, enabled only by the jemalloc/mimalloc
+# features above, and referenced ONLY by src/bin/memory_report.rs. They are
+# confined to the harness (D-08) and must never appear in treelite-py's graph.
+tikv-jemallocator = { workspace = true, optional = true }
+tikv-jemalloc-ctl = { workspace = true, optional = true }
+mimalloc = { workspace = true, optional = true }
 anyhow = { workspace = true }
 approx = { workspace = true }
 serde = { workspace = true }
