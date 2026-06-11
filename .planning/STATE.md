@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 8 context gathered
-last_updated: "2026-06-10T23:52:00.126Z"
-last_activity: 2026-06-10 -- Phase 08 execution started
+stopped_at: Completed 08-02-PLAN.md
+last_updated: "2026-06-10T23:54:30.000Z"
+last_activity: 2026-06-10 -- Completed 08-02 (PyO3 walking-skeleton capability slice)
 progress:
   total_phases: 9
   completed_phases: 7
   total_plans: 45
-  completed_plans: 41
+  completed_plans: 43
   percent: 78
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 08 (pyo3-python-binding) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
-Last activity: 2026-06-10 -- Phase 08 execution started
+Last activity: 2026-06-10 -- Completed 08-02 (load → predict A/B 1e-5 GREEN)
 
 Progress: [██████████] Phase 06 complete (7/7 plans) — milestone 6/9 phases
 
@@ -98,6 +98,7 @@ Progress: [██████████] Phase 06 complete (7/7 plans) — mil
 | Phase 07 P03 | ~4min | 2 tasks | 2 files |
 | Phase 07 P04 | 12min | 3 tasks | 5 files |
 | Phase 08 P01 | 7min | 2 tasks | 15 files |
+| Phase 08 P02 | ~15min | 2 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -211,6 +212,11 @@ Recent decisions affecting current work:
 - [Phase 07-04]: Artifact writers create_dir_all(docs/) before write (checkpoint write-failure root cause); crossover reads model.num_feature instead of hardcoded 4 (under-sized synth input for the 5-feature forest).
 - [Phase ?]: [08-01]: module-name treelite_rs._treelite_rs (compiled cdylib installed AS a private submodule of the python-source package); maturin run from repo root via --manifest-path targets the root uv venv (cd into the crate spawns a stray crate-local .venv); maturin editable .so/__pycache__/uv.lock gitignored.
 - [Phase ?]: [08-01]: Wave-0 binding is an EMPTY importable surface (frontend/gtil/sklearn submodules registered, no functions) + 21 RED pytest stubs marked @pytest.mark.skip; PY-06 build/import/test plumbing proven before any slice depends on it.
+- [08-02]: Orphan rule forbids literal `impl From<CrateError> for PyErr` (both foreign) — routed through a local newtype TreelitePyErr (From<E> for TreelitePyErr + From<TreelitePyErr> for PyErr + PyResult2<T> alias); orphan-legal D-06 equivalent, `?` stays transparent in #[pyfunction] bodies.
+- [08-02]: Model is #[pyclass(unsendable)] because treelite_core::Model carries TreeBuf::Borrowed raw pointers (!Send/!Sync); GIL-bound single-thread access is sound. num_tree getter derives from the variant preset (num_trees()), NOT Model::num_tree() (staged num_tree_ is 0 pre-serialization) — same family as Pitfall 2 input_type.
+- [08-02]: predict_f32/_f64 take untyped &Bound<PyAny> and extract the typed PyReadonlyArray2 in-body so a wrong dtype raises TreeliteError (D-06), not pyo3's bare TypeError; still zero-copy, never casts (D-03). GIL released via py.detach over a SendModelRef Ungil shim + whole-struct closure rebind (defeats edition-2024 disjoint capture of the bare !Send &Model, T-08-06).
+- [08-02]: gtil.predict shim dispatches on the DATA dtype, not model.input_type — GTIL input element type is an axis independent of the model preset (an f32 model accepts an f64 input matrix; harness InputT-as-accumulator). Live A/B GREEN: XGB-JSON + LightGBM-categorical via gtil.predict within 1e-5, f32+f64, shape == upstream (PY-01/PY-02/MEM-04).
+- [08-02]: Fixed 08-01 conftest REPO_ROOT off-by-one (parents[3]->[4]; file is four levels deep) so FIXTURES resolves to the repo root, not crates/.
 
 ### Pending Todos
 
@@ -233,6 +239,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T23:51:40.407Z
-Stopped at: Phase 8 context gathered
-Resume file: .planning/phases/08-pyo3-python-binding/08-CONTEXT.md
+Last session: 2026-06-10T23:54:30.000Z
+Stopped at: Completed 08-02-PLAN.md
+Resume file: None

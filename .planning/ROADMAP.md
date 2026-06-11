@@ -288,7 +288,7 @@ Plans:
 
 **Wave 1** *(walking skeleton — blocked on Wave 0)*
 
-- [ ] 08-02-PLAN.md — Model pyclass + frontend loaders + zero-copy dense predict (predict_f32/_f64, GIL release) + single TreeliteError → live A/B 1e-5 (PY-01/PY-02/MEM-04) (Wave 1)
+- [x] 08-02-PLAN.md — Model pyclass + frontend loaders + zero-copy dense predict (predict_f32/_f64, GIL release) + single TreeliteError → live A/B 1e-5 (PY-01/PY-02/MEM-04) (Wave 1)
 
 **Wave 2** *(blocked on Wave 1)*
 

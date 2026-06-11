@@ -79,7 +79,7 @@ Requirements for the initial release. Each maps to a roadmap phase. All are hypo
 ### Python Binding (PyO3)
 
 - [ ] **PY-01**: From Python, a user can load XGBoost / LightGBM / scikit-learn models
-- [ ] **PY-02**: From Python, a user can predict over numpy arrays with zero-copy buffer I/O
+- [x] **PY-02**: From Python, a user can predict over numpy arrays with zero-copy buffer I/O
 - [ ] **PY-03**: From Python, a user can serialize/deserialize and JSON-dump a model
 - [ ] **PY-04**: A Python `sklearn.import_model` entry point marshals fitted estimators
 - [ ] **PY-05**: Library `thiserror` errors translate into Python exceptions
@@ -97,7 +97,7 @@ Requirements for the initial release. Each maps to a roadmap phase. All are hypo
 - [ ] **MEM-01**: SoA columns use `bytemuck` `Pod` zero-copy recasting where layout allows
 - [ ] **MEM-02**: `smallvec` and `compact_str` are used for small collections and metadata strings
 - [ ] **MEM-03**: A custom global allocator (jemalloc) is wired into benchmarks/binaries
-- [ ] **MEM-04**: Borrowed buffers from the Python buffer protocol are consumed zero-copy
+- [x] **MEM-04**: Borrowed buffers from the Python buffer protocol are consumed zero-copy
 
 ### Error Handling
 
@@ -181,12 +181,12 @@ Which phases cover which requirements.
 | GPU-03 | Phase 7 | Complete |
 | GPU-04 | Phase 7 | Complete |
 | PY-01 | Phase 8 | Pending |
-| PY-02 | Phase 8 | Pending |
+| PY-02 | Phase 8 | Complete |
 | PY-03 | Phase 8 | Pending |
 | PY-04 | Phase 8 | Pending |
 | PY-05 | Phase 8 | Pending |
 | PY-06 | Phase 8 | Complete |
-| MEM-04 | Phase 8 | Pending |
+| MEM-04 | Phase 8 | Complete |
 | MEM-01 | Phase 9 | Pending |
 | MEM-02 | Phase 9 | Pending |
 | MEM-03 | Phase 9 | Pending |
