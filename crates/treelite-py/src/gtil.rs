@@ -126,49 +126,34 @@ fn extract_readonly<'py, O: numpy::Element>(
 /// backend appears only if its cargo feature was enabled at build time. Surfaced
 /// in the un-built-backend error so a caller knows what the installed wheel
 /// actually supports (D-05 — explicit selection, no auto-detect).
-pub const BUILT_BACKENDS: &str = {
-    #[cfg(all(feature = "rocm", feature = "cuda", feature = "wgpu"))]
-    {
-        "cpu, rocm, cuda, wgpu"
-    }
-    #[cfg(all(feature = "rocm", feature = "cuda", not(feature = "wgpu")))]
-    {
-        "cpu, rocm, cuda"
-    }
-    #[cfg(all(feature = "rocm", not(feature = "cuda"), feature = "wgpu"))]
-    {
-        "cpu, rocm, wgpu"
-    }
-    #[cfg(all(not(feature = "rocm"), feature = "cuda", feature = "wgpu"))]
-    {
-        "cpu, cuda, wgpu"
-    }
-    #[cfg(all(feature = "rocm", not(feature = "cuda"), not(feature = "wgpu")))]
-    {
-        "cpu, rocm"
-    }
-    #[cfg(all(not(feature = "rocm"), feature = "cuda", not(feature = "wgpu")))]
-    {
-        "cpu, cuda"
-    }
-    #[cfg(all(not(feature = "rocm"), not(feature = "cuda"), feature = "wgpu"))]
-    {
-        "cpu, wgpu"
-    }
-    #[cfg(all(not(feature = "rocm"), not(feature = "cuda"), not(feature = "wgpu")))]
-    {
-        "cpu"
-    }
-};
+///
+/// IN-03: built at runtime by pushing one guarded fragment per backend and
+/// joining, so adding a backend is a single guarded line — replacing the former
+/// 8-arm hand-maintained `#[cfg]` cascade that enumerated every feature
+/// combination (and doubled in size with each new backend).
+pub fn built_backends() -> String {
+    // `mut` is only exercised when at least one GPU feature is enabled; allow the
+    // unused-mut warning for the cpu-only default build.
+    #[allow(unused_mut)]
+    let mut backends: Vec<&str> = vec!["cpu"];
+    #[cfg(feature = "rocm")]
+    backends.push("rocm");
+    #[cfg(feature = "cuda")]
+    backends.push("cuda");
+    #[cfg(feature = "wgpu")]
+    backends.push("wgpu");
+    backends.join(", ")
+}
 
 /// Build the typed "backend not available in this wheel" error (D-05/T-08-13):
-/// an un-built backend name yields a `TreeliteError` naming [`BUILT_BACKENDS`] —
+/// an un-built backend name yields a `TreeliteError` naming [`built_backends`] —
 /// NEVER a silent CPU fallback (D-08).
 #[inline]
 fn unbuilt_backend_err(backend: &str) -> TreelitePyErr {
     use crate::error::TreeliteError;
+    let built = built_backends();
     TreelitePyErr::from_pyerr(TreeliteError::new_err(format!(
-        "backend '{backend}' is not available in this wheel (built with: {BUILT_BACKENDS})"
+        "backend '{backend}' is not available in this wheel (built with: {built})"
     )))
 }
 
