@@ -71,7 +71,10 @@ def load_xgboost_model(
 
     if format_choice == "use_suffix":
         if path.name.endswith(".json"):
-            return load_xgboost_json_str(path.read_text())
+            # XGBoost JSON is UTF-8; decode explicitly rather than with the
+            # platform locale default (e.g. cp1252) so a model with non-ASCII
+            # feature names loads identically on every platform (WR-03).
+            return load_xgboost_json_str(path.read_text(encoding="utf-8"))
         return load_xgboost_ubjson_bytes(path.read_bytes())
 
     if format_choice == "inspect":
@@ -101,7 +104,7 @@ def load_xgboost_model(
         return load_xgboost_ubjson_bytes(path.read_bytes())
 
     if format_choice == "json":
-        return load_xgboost_json_str(path.read_text())
+        return load_xgboost_json_str(path.read_text(encoding="utf-8"))
 
     raise ValueError(f"Unknown format_choice argument: {format_choice}")
 
@@ -115,4 +118,6 @@ def load_xgboost_model_legacy_binary(filename: Union[str, pathlib.Path]) -> Mode
 def load_lightgbm_model(filename: Union[str, pathlib.Path]) -> Model:
     """Load a LightGBM model from its text dump (``model.txt``)."""
     path = _normalize_path(filename)
-    return load_lightgbm_str(path.read_text())
+    # LightGBM text dumps are UTF-8; decode explicitly, not with the platform
+    # locale default (WR-03).
+    return load_lightgbm_str(path.read_text(encoding="utf-8"))
