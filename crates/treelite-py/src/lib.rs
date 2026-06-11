@@ -4,8 +4,8 @@
 //! `#[pyclass] Model` + its inspection getters, the single `TreeliteError`
 //! exception (D-06), the `frontend` loaders (XGBoost JSON/UBJSON/legacy +
 //! LightGBM), and zero-copy dense `gtil.predict_f32`/`predict_f64` + `output_shape`.
-//! The `sklearn` submodule stays empty (08-04); the `backend=` kwarg + panic
-//! `guard()` land in 08-05.
+//! Plan 08-04 fills the `sklearn` submodule with the estimator array loaders
+//! (PY-04); the `backend=` kwarg + panic `guard()` land in 08-05.
 //!
 //! Note: submodules added via `add_submodule` are NOT auto-registered in
 //! `sys.modules`; the `treelite_rs` python-source package re-exports them so
@@ -17,6 +17,7 @@ mod error;
 mod frontend;
 mod gtil;
 mod model;
+mod sklearn;
 
 pub use error::TreeliteError;
 pub use model::Model;
@@ -39,8 +40,12 @@ fn _treelite_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     gtil::register(&gtil)?;
     m.add_submodule(&gtil)?;
 
-    // Empty `sklearn` submodule (estimator loaders land in 08-04).
+    // `sklearn` submodule: estimator array-loader pyfunctions (PY-04). The
+    // estimator→arrays extraction (port of importer.py) stays in the
+    // `treelite_rs.sklearn` python-source package; these are the thin array
+    // loaders it dispatches to.
     let sklearn = PyModule::new(m.py(), "sklearn")?;
+    sklearn::register(&sklearn)?;
     m.add_submodule(&sklearn)?;
 
     Ok(())
