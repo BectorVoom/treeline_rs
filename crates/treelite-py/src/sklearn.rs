@@ -29,12 +29,16 @@ fn contiguity_err(field: &str) -> TreelitePyErr {
     )))
 }
 
-/// A collection of per-tree `PyReadonlyArray1<T>` borrows plus the `&[&[T]]`
-/// view over them. The guards (`_guards`) keep the numpy buffers alive for the
-/// lifetime of the slices, so the slices stay valid for the loader call.
+/// A collection of per-tree `PyReadonlyArray1<T>` borrows. The guards keep the
+/// numpy buffers alive; the `&[&[T]]` loader view is materialized on demand by
+/// [`ArrayOfArrays::view`], whose slice lifetimes are compiler-tied to `&self`
+/// (WR-01: no `transmute`-laundered lifetime — soundness is enforced by the
+/// borrow checker, not a hand-maintained field-drop convention). Contiguity is
+/// validated eagerly at extract time so a non-contiguous element fails fast with
+/// the right `field` name before any loader dispatch.
 struct ArrayOfArrays<'py, T: numpy::Element> {
-    _guards: Vec<PyReadonlyArray1<'py, T>>,
-    slices: Vec<&'py [T]>,
+    guards: Vec<PyReadonlyArray1<'py, T>>,
+    field: &'static str,
 }
 
 impl<'py, T: numpy::Element> ArrayOfArrays<'py, T> {
@@ -58,46 +62,54 @@ impl<'py, T: numpy::Element> ArrayOfArrays<'py, T> {
                      no implicit cast is performed"
                 )))
             })?;
+            // Validate contiguity eagerly so a non-contiguous element is rejected
+            // here (with `field`) rather than at `view()`, which is infallible.
+            arr.as_slice().map_err(|_| contiguity_err(field))?;
             guards.push(arr);
         }
-        // SAFETY: the slices borrow from the guards which we move into the same
-        // struct; `slices` and `_guards` share the struct's lifetime, and the
-        // numpy buffers are not mutated while borrowed.
-        let mut slices: Vec<&'py [T]> = Vec::with_capacity(guards.len());
-        for g in &guards {
-            let s: &[T] = g.as_slice().map_err(|_| contiguity_err(field))?;
-            // Extend the slice's lifetime to `'py`: the backing buffer is owned by
-            // the guard stored alongside it in this struct, so it outlives `slices`.
-            let s: &'py [T] = unsafe { std::mem::transmute::<&[T], &'py [T]>(s) };
-            slices.push(s);
-        }
-        Ok(ArrayOfArrays {
-            _guards: guards,
-            slices,
-        })
+        Ok(ArrayOfArrays { guards, field })
     }
 
-    #[inline]
-    fn view(&self) -> &[&'py [T]] {
-        &self.slices
+    /// Build the `&[&[T]]` loader view. Each slice borrows from a guard held by
+    /// `self`, so the returned slices are compiler-tied to `&self` — no
+    /// `transmute`. Contiguity was validated in `extract`, so `as_slice()` here
+    /// cannot fail; the explicit `map_err` keeps the contract typed regardless.
+    fn view(&self) -> PyResult2<Vec<&[T]>> {
+        self.guards
+            .iter()
+            .map(|g| g.as_slice().map_err(|_| contiguity_err(self.field)))
+            .collect()
     }
 }
 
-/// Borrow a flat 1-D numpy array (dtype `T`) zero-copy as a `&[T]`.
+/// Borrow a flat 1-D numpy array (dtype `T`) zero-copy. Returns the guard; the
+/// caller obtains the `&[T]` slice via `.as_slice()` at the use site so the slice
+/// lifetime is compiler-tied to the guard (WR-01: no `transmute`). Contiguity is
+/// validated eagerly so a non-contiguous array fails here with the right `field`
+/// name; the subsequent `.as_slice()` at the use site is then infallible.
 #[inline]
 fn flat<'py, T: numpy::Element>(
     arr: &'py Bound<'py, PyAny>,
     field: &'static str,
-) -> PyResult2<(PyReadonlyArray1<'py, T>, &'py [T])> {
+) -> PyResult2<PyReadonlyArray1<'py, T>> {
     use crate::error::TreeliteError;
     let view = arr.extract::<PyReadonlyArray1<'py, T>>().map_err(|_| {
         TreelitePyErr::from_pyerr(TreeliteError::new_err(format!(
             "sklearn array `{field}` has the wrong dtype; no implicit cast is performed"
         )))
     })?;
-    let s: &[T] = view.as_slice().map_err(|_| contiguity_err(field))?;
-    let s: &'py [T] = unsafe { std::mem::transmute::<&[T], &'py [T]>(s) };
-    Ok((view, s))
+    view.as_slice().map_err(|_| contiguity_err(field))?;
+    Ok(view)
+}
+
+/// Borrow the `&[T]` from a `flat`-produced guard. Contiguity was already
+/// validated in `flat`, so `as_slice` here is infallible; the slice lifetime is
+/// compiler-tied to the borrowed guard (WR-01: no `transmute`).
+#[inline]
+fn nc_slice<'a, T: numpy::Element>(guard: &'a PyReadonlyArray1<'_, T>) -> &'a [T] {
+    guard
+        .as_slice()
+        .expect("node_count contiguity validated in flat()")
 }
 
 // ---------------------------------------------------------------------------
@@ -122,7 +134,8 @@ pub fn load_random_forest_regressor<'py>(
     weighted_n_node_samples: &Bound<'py, PyAny>,
     impurity: &Bound<'py, PyAny>,
 ) -> PyResult2<Model> {
-    let (_nc_g, nc) = flat::<i64>(node_count, "node_count")?;
+    let nc_g = flat::<i64>(node_count, "node_count")?;
+    let nc = nc_slice(&nc_g);
     let cl = ArrayOfArrays::<i64>::extract(children_left, "children_left")?;
     let cr = ArrayOfArrays::<i64>::extract(children_right, "children_right")?;
     let feat = ArrayOfArrays::<i64>::extract(feature, "feature")?;
@@ -131,19 +144,22 @@ pub fn load_random_forest_regressor<'py>(
     let nns = ArrayOfArrays::<i64>::extract(n_node_samples, "n_node_samples")?;
     let wns = ArrayOfArrays::<f64>::extract(weighted_n_node_samples, "weighted_n_node_samples")?;
     let imp = ArrayOfArrays::<f64>::extract(impurity, "impurity")?;
+    let (cl, cr, feat) = (cl.view()?, cr.view()?, feat.view()?);
+    let (thr, val) = (thr.view()?, val.view()?);
+    let (nns, wns, imp) = (nns.view()?, wns.view()?, imp.view()?);
     Ok(treelite_sklearn::load_random_forest_regressor(
         n_estimators,
         n_features,
         n_targets,
         nc,
-        cl.view(),
-        cr.view(),
-        feat.view(),
-        thr.view(),
-        val.view(),
-        nns.view(),
-        wns.view(),
-        imp.view(),
+        &cl,
+        &cr,
+        &feat,
+        &thr,
+        &val,
+        &nns,
+        &wns,
+        &imp,
     )?
     .into())
 }
@@ -166,7 +182,8 @@ pub fn load_random_forest_classifier<'py>(
     weighted_n_node_samples: &Bound<'py, PyAny>,
     impurity: &Bound<'py, PyAny>,
 ) -> PyResult2<Model> {
-    let (_nc_g, nc) = flat::<i64>(node_count, "node_count")?;
+    let nc_g = flat::<i64>(node_count, "node_count")?;
+    let nc = nc_slice(&nc_g);
     let cl = ArrayOfArrays::<i64>::extract(children_left, "children_left")?;
     let cr = ArrayOfArrays::<i64>::extract(children_right, "children_right")?;
     let feat = ArrayOfArrays::<i64>::extract(feature, "feature")?;
@@ -175,20 +192,23 @@ pub fn load_random_forest_classifier<'py>(
     let nns = ArrayOfArrays::<i64>::extract(n_node_samples, "n_node_samples")?;
     let wns = ArrayOfArrays::<f64>::extract(weighted_n_node_samples, "weighted_n_node_samples")?;
     let imp = ArrayOfArrays::<f64>::extract(impurity, "impurity")?;
+    let (cl, cr, feat) = (cl.view()?, cr.view()?, feat.view()?);
+    let (thr, val) = (thr.view()?, val.view()?);
+    let (nns, wns, imp) = (nns.view()?, wns.view()?, imp.view()?);
     Ok(treelite_sklearn::load_random_forest_classifier(
         n_estimators,
         n_features,
         n_targets,
         &n_classes,
         nc,
-        cl.view(),
-        cr.view(),
-        feat.view(),
-        thr.view(),
-        val.view(),
-        nns.view(),
-        wns.view(),
-        imp.view(),
+        &cl,
+        &cr,
+        &feat,
+        &thr,
+        &val,
+        &nns,
+        &wns,
+        &imp,
     )?
     .into())
 }
@@ -211,7 +231,8 @@ pub fn load_extra_trees_regressor<'py>(
     weighted_n_node_samples: &Bound<'py, PyAny>,
     impurity: &Bound<'py, PyAny>,
 ) -> PyResult2<Model> {
-    let (_nc_g, nc) = flat::<i64>(node_count, "node_count")?;
+    let nc_g = flat::<i64>(node_count, "node_count")?;
+    let nc = nc_slice(&nc_g);
     let cl = ArrayOfArrays::<i64>::extract(children_left, "children_left")?;
     let cr = ArrayOfArrays::<i64>::extract(children_right, "children_right")?;
     let feat = ArrayOfArrays::<i64>::extract(feature, "feature")?;
@@ -220,19 +241,22 @@ pub fn load_extra_trees_regressor<'py>(
     let nns = ArrayOfArrays::<i64>::extract(n_node_samples, "n_node_samples")?;
     let wns = ArrayOfArrays::<f64>::extract(weighted_n_node_samples, "weighted_n_node_samples")?;
     let imp = ArrayOfArrays::<f64>::extract(impurity, "impurity")?;
+    let (cl, cr, feat) = (cl.view()?, cr.view()?, feat.view()?);
+    let (thr, val) = (thr.view()?, val.view()?);
+    let (nns, wns, imp) = (nns.view()?, wns.view()?, imp.view()?);
     Ok(treelite_sklearn::load_extra_trees_regressor(
         n_estimators,
         n_features,
         n_targets,
         nc,
-        cl.view(),
-        cr.view(),
-        feat.view(),
-        thr.view(),
-        val.view(),
-        nns.view(),
-        wns.view(),
-        imp.view(),
+        &cl,
+        &cr,
+        &feat,
+        &thr,
+        &val,
+        &nns,
+        &wns,
+        &imp,
     )?
     .into())
 }
@@ -255,7 +279,8 @@ pub fn load_extra_trees_classifier<'py>(
     weighted_n_node_samples: &Bound<'py, PyAny>,
     impurity: &Bound<'py, PyAny>,
 ) -> PyResult2<Model> {
-    let (_nc_g, nc) = flat::<i64>(node_count, "node_count")?;
+    let nc_g = flat::<i64>(node_count, "node_count")?;
+    let nc = nc_slice(&nc_g);
     let cl = ArrayOfArrays::<i64>::extract(children_left, "children_left")?;
     let cr = ArrayOfArrays::<i64>::extract(children_right, "children_right")?;
     let feat = ArrayOfArrays::<i64>::extract(feature, "feature")?;
@@ -264,20 +289,23 @@ pub fn load_extra_trees_classifier<'py>(
     let nns = ArrayOfArrays::<i64>::extract(n_node_samples, "n_node_samples")?;
     let wns = ArrayOfArrays::<f64>::extract(weighted_n_node_samples, "weighted_n_node_samples")?;
     let imp = ArrayOfArrays::<f64>::extract(impurity, "impurity")?;
+    let (cl, cr, feat) = (cl.view()?, cr.view()?, feat.view()?);
+    let (thr, val) = (thr.view()?, val.view()?);
+    let (nns, wns, imp) = (nns.view()?, wns.view()?, imp.view()?);
     Ok(treelite_sklearn::load_extra_trees_classifier(
         n_estimators,
         n_features,
         n_targets,
         &n_classes,
         nc,
-        cl.view(),
-        cr.view(),
-        feat.view(),
-        thr.view(),
-        val.view(),
-        nns.view(),
-        wns.view(),
-        imp.view(),
+        &cl,
+        &cr,
+        &feat,
+        &thr,
+        &val,
+        &nns,
+        &wns,
+        &imp,
     )?
     .into())
 }
@@ -303,7 +331,8 @@ pub fn load_gradient_boosting_regressor<'py>(
     impurity: &Bound<'py, PyAny>,
     base_score: f64,
 ) -> PyResult2<Model> {
-    let (_nc_g, nc) = flat::<i64>(node_count, "node_count")?;
+    let nc_g = flat::<i64>(node_count, "node_count")?;
+    let nc = nc_slice(&nc_g);
     let cl = ArrayOfArrays::<i64>::extract(children_left, "children_left")?;
     let cr = ArrayOfArrays::<i64>::extract(children_right, "children_right")?;
     let feat = ArrayOfArrays::<i64>::extract(feature, "feature")?;
@@ -312,18 +341,21 @@ pub fn load_gradient_boosting_regressor<'py>(
     let nns = ArrayOfArrays::<i64>::extract(n_node_samples, "n_node_samples")?;
     let wns = ArrayOfArrays::<f64>::extract(weighted_n_node_samples, "weighted_n_node_samples")?;
     let imp = ArrayOfArrays::<f64>::extract(impurity, "impurity")?;
+    let (cl, cr, feat) = (cl.view()?, cr.view()?, feat.view()?);
+    let (thr, val) = (thr.view()?, val.view()?);
+    let (nns, wns, imp) = (nns.view()?, wns.view()?, imp.view()?);
     Ok(treelite_sklearn::load_gradient_boosting_regressor(
         n_iter,
         n_features,
         nc,
-        cl.view(),
-        cr.view(),
-        feat.view(),
-        thr.view(),
-        val.view(),
-        nns.view(),
-        wns.view(),
-        imp.view(),
+        &cl,
+        &cr,
+        &feat,
+        &thr,
+        &val,
+        &nns,
+        &wns,
+        &imp,
         base_score,
     )?
     .into())
@@ -347,7 +379,8 @@ pub fn load_gradient_boosting_classifier<'py>(
     impurity: &Bound<'py, PyAny>,
     base_scores: Vec<f64>,
 ) -> PyResult2<Model> {
-    let (_nc_g, nc) = flat::<i64>(node_count, "node_count")?;
+    let nc_g = flat::<i64>(node_count, "node_count")?;
+    let nc = nc_slice(&nc_g);
     let cl = ArrayOfArrays::<i64>::extract(children_left, "children_left")?;
     let cr = ArrayOfArrays::<i64>::extract(children_right, "children_right")?;
     let feat = ArrayOfArrays::<i64>::extract(feature, "feature")?;
@@ -356,19 +389,22 @@ pub fn load_gradient_boosting_classifier<'py>(
     let nns = ArrayOfArrays::<i64>::extract(n_node_samples, "n_node_samples")?;
     let wns = ArrayOfArrays::<f64>::extract(weighted_n_node_samples, "weighted_n_node_samples")?;
     let imp = ArrayOfArrays::<f64>::extract(impurity, "impurity")?;
+    let (cl, cr, feat) = (cl.view()?, cr.view()?, feat.view()?);
+    let (thr, val) = (thr.view()?, val.view()?);
+    let (nns, wns, imp) = (nns.view()?, wns.view()?, imp.view()?);
     Ok(treelite_sklearn::load_gradient_boosting_classifier(
         n_iter,
         n_features,
         n_classes,
         nc,
-        cl.view(),
-        cr.view(),
-        feat.view(),
-        thr.view(),
-        val.view(),
-        nns.view(),
-        wns.view(),
-        imp.view(),
+        &cl,
+        &cr,
+        &feat,
+        &thr,
+        &val,
+        &nns,
+        &wns,
+        &imp,
         &base_scores,
     )?
     .into())
@@ -397,7 +433,8 @@ pub fn load_isolation_forest<'py>(
     impurity: &Bound<'py, PyAny>,
     ratio_c: f64,
 ) -> PyResult2<Model> {
-    let (_nc_g, nc) = flat::<i64>(node_count, "node_count")?;
+    let nc_g = flat::<i64>(node_count, "node_count")?;
+    let nc = nc_slice(&nc_g);
     let cl = ArrayOfArrays::<i64>::extract(children_left, "children_left")?;
     let cr = ArrayOfArrays::<i64>::extract(children_right, "children_right")?;
     let feat = ArrayOfArrays::<i64>::extract(feature, "feature")?;
@@ -406,18 +443,21 @@ pub fn load_isolation_forest<'py>(
     let nns = ArrayOfArrays::<i64>::extract(n_node_samples, "n_node_samples")?;
     let wns = ArrayOfArrays::<f64>::extract(weighted_n_node_samples, "weighted_n_node_samples")?;
     let imp = ArrayOfArrays::<f64>::extract(impurity, "impurity")?;
+    let (cl, cr, feat) = (cl.view()?, cr.view()?, feat.view()?);
+    let (thr, val) = (thr.view()?, val.view()?);
+    let (nns, wns, imp) = (nns.view()?, wns.view()?, imp.view()?);
     Ok(treelite_sklearn::load_isolation_forest(
         n_estimators,
         n_features,
         nc,
-        cl.view(),
-        cr.view(),
-        feat.view(),
-        thr.view(),
-        val.view(),
-        nns.view(),
-        wns.view(),
-        imp.view(),
+        &cl,
+        &cr,
+        &feat,
+        &thr,
+        &val,
+        &nns,
+        &wns,
+        &imp,
         ratio_c,
     )?
     .into())
@@ -434,12 +474,11 @@ pub fn load_isolation_forest<'py>(
 /// `bytes` objects are copied out of Python into owned `Box<[u8]>` (an
 /// acceptable one-time copy — these are small per-tree node tables, not the
 /// zero-copy float matrices), and the slices borrow from those boxes.
-struct NodeBuffers<'a> {
-    _boxes: Vec<Box<[u8]>>,
-    slices: Vec<&'a [u8]>,
+struct NodeBuffers {
+    boxes: Vec<Box<[u8]>>,
 }
 
-impl<'a> NodeBuffers<'a> {
+impl NodeBuffers {
     fn extract(list: &Bound<'_, PyAny>) -> PyResult2<Self> {
         use crate::error::TreeliteError;
         let seq = list.try_iter().map_err(|_| {
@@ -457,21 +496,14 @@ impl<'a> NodeBuffers<'a> {
             })?;
             boxes.push(bytes.into_boxed_slice());
         }
-        // The boxes live in this struct alongside the slices that borrow them.
-        let mut slices: Vec<&'a [u8]> = Vec::with_capacity(boxes.len());
-        for b in &boxes {
-            let s: &'a [u8] = unsafe { std::mem::transmute::<&[u8], &'a [u8]>(b) };
-            slices.push(s);
-        }
-        Ok(NodeBuffers {
-            _boxes: boxes,
-            slices,
-        })
+        Ok(NodeBuffers { boxes })
     }
 
+    /// Build the `&[&[u8]]` loader view; each slice borrows from a box owned by
+    /// `self`, so the slices are compiler-tied to `&self` (WR-01: no `transmute`).
     #[inline]
-    fn view(&self) -> &[&'a [u8]] {
-        &self.slices
+    fn view(&self) -> Vec<&[u8]> {
+        self.boxes.iter().map(|b| &b[..]).collect()
     }
 }
 
@@ -489,17 +521,19 @@ pub fn load_hist_gradient_boosting_regressor<'py>(
     categories_map: Option<Vec<Vec<i64>>>,
     baseline_prediction: f64,
 ) -> PyResult2<Model> {
-    let (_nc_g, nc) = flat::<i64>(node_count, "node_count")?;
+    let nc_g = flat::<i64>(node_count, "node_count")?;
+    let nc = nc_slice(&nc_g);
     let node_bufs = NodeBuffers::extract(nodes)?;
     let cat_bitsets = ArrayOfArrays::<u32>::extract(raw_left_cat_bitsets, "raw_left_cat_bitsets")?;
     let cat_map_ref: Option<&[Vec<i64>]> = categories_map.as_deref();
+    let cat_bitsets_view = cat_bitsets.view()?;
     Ok(treelite_sklearn::load_hist_gradient_boosting_regressor(
         n_iter,
         n_features,
         expected_sizeof_node_struct,
         nc,
-        node_bufs.view(),
-        cat_bitsets.view(),
+        &node_bufs.view(),
+        &cat_bitsets_view,
         &features_map,
         cat_map_ref,
         baseline_prediction,
@@ -522,18 +556,20 @@ pub fn load_hist_gradient_boosting_classifier<'py>(
     categories_map: Option<Vec<Vec<i64>>>,
     baseline_prediction: Vec<f64>,
 ) -> PyResult2<Model> {
-    let (_nc_g, nc) = flat::<i64>(node_count, "node_count")?;
+    let nc_g = flat::<i64>(node_count, "node_count")?;
+    let nc = nc_slice(&nc_g);
     let node_bufs = NodeBuffers::extract(nodes)?;
     let cat_bitsets = ArrayOfArrays::<u32>::extract(raw_left_cat_bitsets, "raw_left_cat_bitsets")?;
     let cat_map_ref: Option<&[Vec<i64>]> = categories_map.as_deref();
+    let cat_bitsets_view = cat_bitsets.view()?;
     Ok(treelite_sklearn::load_hist_gradient_boosting_classifier(
         n_iter,
         n_features,
         n_classes,
         expected_sizeof_node_struct,
         nc,
-        node_bufs.view(),
-        cat_bitsets.view(),
+        &node_bufs.view(),
+        &cat_bitsets_view,
         &features_map,
         cat_map_ref,
         &baseline_prediction,
