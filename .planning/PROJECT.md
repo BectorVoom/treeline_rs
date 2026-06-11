@@ -21,6 +21,8 @@ A from-scratch Rust rewrite of [Treelite](https://github.com/dmlc/treelite) — 
 - [x] Import LightGBM text-format models — *Validated in Phase 4 (LGB-01/02/03): numerical + categorical text models load through the f64 `ModelBuilder` and predict within 1e-5 of frozen upstream-GTIL goldens (numerical max |delta| = 0e0, categorical 9.54e-7). Verbatim `BitsetToList` categorical decode, per-field precision (leaf_value/threshold f64, split_gain f32), objective→postprocessor map with sigmoid_alpha + class_id round-robin + average_output.*
 - [x] Import scikit-learn estimators — RandomForest, ExtraTrees, GradientBoosting, IsolationForest, AND HistGradientBoosting (incl. the bulk tree-construction path) — *Validated in Phase 4 (SKL-01..04): new `treelite-sklearn` crate mirroring upstream `namespace sklearn` 1:1; RF/ET via bulk path, GB + IsolationForest via f64 MixIn, HistGB via packed-node `from_le_bytes` decode (52/56 itemsize) + features_map/categories_map remap. All within 1e-5 (worst HistGB-categorical 1.19e-7). IsolationForest golden is `treelite.gtil.predict == -score_samples`, not the framework anomaly score.*
 
+- [x] PyO3 Python binding exposing load → predict → serialize directly over the Rust core — *Validated in Phase 8 (PY-01..06, MEM-04): `treelite-py` abi3 maturin wheel; `frontend.load_*` (XGB/LGB) + `sklearn.import_model` (estimator→arrays Python-side) + `Model.serialize/deserialize/dump_as_json/concatenate` + `gtil.predict` (zero-copy numpy borrow, GIL released) all within 1e-5 of upstream `treelite`. Single `TreeliteError` (D-06), panics remapped not aborting (D-07), strict dtype/contiguity + exact feature-count gating (CR-01 fix), additive `backend=` kwarg with `rocm` hardware-validated on-device (bitwise-exact vs cpu). 37 Python tests green.*
+
 ### Active
 
 <!-- v1 scope. All hypotheses until shipped and validated against the 1e-5 equivalence harness. -->
@@ -30,7 +32,6 @@ A from-scratch Rust rewrite of [Treelite](https://github.com/dmlc/treelite) — 
 - [ ] GTIL inference: dense + sparse CSR input, the 4 predict kinds, full postprocessor set (sigmoid, softmax, etc.)
 - [ ] GTIL inference hot path (tree traversal + postprocessors) implemented as `cubecl` kernels
 - [ ] cubecl CPU backend by default; at least one GPU backend (ROCm hardware-validated; CUDA/wgpu build-supported) working and runtime-selectable in v1, with a GPU equivalence report
-- [ ] PyO3 Python binding exposing load → predict → serialize directly over the Rust core
 - [ ] Equivalence harness: random seeded input matrices → golden output vectors captured from C++ Treelite → assert Rust within 1e-5
 - [ ] `thiserror`-based typed errors in library crates; `anyhow` in binaries/tests
 - [ ] Memory-efficiency techniques applied (see Context): zero-copy buffers, small-vector/compact-string types, custom allocator
@@ -99,4 +100,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-10 — Phase 4 (LightGBM & scikit-learn Loaders) complete; LightGBM text (numerical + categorical) and the full sklearn estimator set (RF/ET, GB, IsolationForest, HistGradientBoosting) all load → predict within 1e-5 of frozen upstream-GTIL goldens (verification passed 4/4, 205 tests green). Next: Phase 5 (Full Scalar GTIL & Equivalence Harness).*
+*Last updated: 2026-06-11 — Phase 8 (PyO3 Python Binding) complete; `treelite-py` abi3 wheel exposes load → predict → serialize/dump → sklearn import with zero-copy numpy I/O, all within 1e-5 of upstream `treelite`, panics non-crossing, and a hardware-validated `rocm` backend kwarg (verification passed 7/7; code review CR-01 too-wide-input bug fixed + regression-tested; 37 Python tests green). Next: Phase 9 (Memory-Efficiency Hardening) — the final v1 phase. (Note: this footer skipped Phases 5–7 docs; their validation is recorded in their VERIFICATION.md + STATE decisions.)*
