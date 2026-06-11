@@ -31,14 +31,15 @@ findings:
   warning: 5
   info: 5
   total: 11
-status: issues_found
+status: resolved
 resolution:
   CR-01: fixed in 146bf92 — check_feature_count guard + too-wide regression test (f32+f64)
-  WR-01: open (advisory) — predict_output_shape panic → PanicException, not TreeliteError
-  WR-02: open (advisory) — _dense_predict AttributeError on non-numpy/wrong-ndim
-  WR-03: open (advisory) — path loaders use platform-default read_text (should be UTF-8)
-  WR-04: open (advisory) — inspect branch raises UnicodeDecodeError/ValueError outside D-06
-  WR-05: open (advisory) — HistGB import reaches sklearn private attrs, no version guard
+  WR-01: fixed in 8c669e5 — predict_output_shape wrapped in guard_assert (panic → TreeliteError)
+  WR-02: fixed in 31fedaf — _dense_predict rejects non-numpy/wrong-ndim as TreeliteError + 2 tests
+  WR-03: fixed in 952c8ba — path loaders read with encoding="utf-8"
+  WR-04: fixed in f4889a8 — inspect-branch decode/detect failures surface as TreeliteError
+  WR-05: fixed in 172cec9 — HistGB import guards sklearn version + private-attr presence
+  IN-01..05: open (info, advisory) — not in critical_warning fix scope; see report body
 ---
 
 # Phase 8: Code Review Report
