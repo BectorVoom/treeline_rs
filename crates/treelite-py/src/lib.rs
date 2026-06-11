@@ -1,11 +1,11 @@
 //! PyO3 binding for treelite-rs (the compiled extension module `_treelite_rs`).
 //!
-//! Wave 0 (Plan 08-01) stands up the build/import/test plumbing only: this is a
-//! minimal `#[pymodule]` that registers three EMPTY submodules — `frontend`,
-//! `gtil`, and `sklearn` — so `import treelite_rs` succeeds against an abi3 wheel
-//! before any capability is wired. The `#[pyclass] Model`, the loader/predict/
-//! sklearn `#[pyfunction]`s, the `TreeliteError` exception, and the `backend=`
-//! kwarg all land in later plans (08-02 .. 08-05).
+//! Wave 1 (Plan 08-02) wires the walking-skeleton capability slice: the
+//! `#[pyclass] Model` + its inspection getters, the single `TreeliteError`
+//! exception (D-06), the `frontend` loaders (XGBoost JSON/UBJSON/legacy +
+//! LightGBM), and zero-copy dense `gtil.predict_f32`/`predict_f64` + `output_shape`.
+//! The `sklearn` submodule stays empty (08-04); the `backend=` kwarg + panic
+//! `guard()` land in 08-05.
 //!
 //! Note: submodules added via `add_submodule` are NOT auto-registered in
 //! `sys.modules`; the `treelite_rs` python-source package re-exports them so
@@ -13,15 +13,27 @@
 
 use pyo3::prelude::*;
 
+mod error;
+mod frontend;
+mod model;
+
+pub use error::TreeliteError;
+pub use model::Model;
+
 /// The compiled extension module. The function name MUST match the Cargo
 /// `[lib] name` (`_treelite_rs`) and the maturin `module-name` leaf (D-02).
 #[pymodule]
 fn _treelite_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    // Empty `frontend` submodule (loaders land in 08-02/08-03/08-04).
+    // The single exception (D-06) + the Model pyclass at the top level.
+    m.add("TreeliteError", m.py().get_type::<TreeliteError>())?;
+    m.add_class::<Model>()?;
+
+    // `frontend` submodule: XGBoost (JSON/UBJSON/legacy) + LightGBM loaders.
     let frontend = PyModule::new(m.py(), "frontend")?;
+    frontend::register(&frontend)?;
     m.add_submodule(&frontend)?;
 
-    // Empty `gtil` submodule (predict* lands in 08-03; backend= in 08-05).
+    // Empty `gtil` submodule (predict_f32/_f64 + output_shape land in 08-02 Task 2).
     let gtil = PyModule::new(m.py(), "gtil")?;
     m.add_submodule(&gtil)?;
 

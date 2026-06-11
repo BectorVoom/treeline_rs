@@ -11,7 +11,6 @@ import pytest
 from conftest import FIXTURES
 
 
-@pytest.mark.skip(reason="MISSING — frontend.load_xgboost_json_str implemented in 08-02")
 def test_load_xgboost_json(treelite_rs):
     text = (FIXTURES / "xgb_3format.json").read_text()
     model = treelite_rs.frontend.load_xgboost_json_str(text)
@@ -19,7 +18,6 @@ def test_load_xgboost_json(treelite_rs):
     assert model.num_tree >= 1
 
 
-@pytest.mark.skip(reason="MISSING — frontend.load_xgboost_ubjson_bytes implemented in 08-02")
 def test_load_xgboost_ubjson(treelite_rs):
     data = (FIXTURES / "xgb_3format.ubj").read_bytes()
     model = treelite_rs.frontend.load_xgboost_ubjson_bytes(data)
@@ -27,7 +25,6 @@ def test_load_xgboost_ubjson(treelite_rs):
     assert model.num_tree >= 1
 
 
-@pytest.mark.skip(reason="MISSING — frontend.load_xgboost_legacy_bytes implemented in 08-02")
 def test_load_xgboost_legacy(treelite_rs):
     data = (FIXTURES / "xgb_3format.model").read_bytes()
     model = treelite_rs.frontend.load_xgboost_legacy_bytes(data)
@@ -35,7 +32,6 @@ def test_load_xgboost_legacy(treelite_rs):
     assert model.num_tree >= 1
 
 
-@pytest.mark.skip(reason="MISSING — frontend.load_lightgbm_str implemented in 08-02")
 def test_load_lightgbm_numerical(treelite_rs):
     text = (FIXTURES / "lightgbm_categorical.txt").read_text()
     model = treelite_rs.frontend.load_lightgbm_str(text)
@@ -43,7 +39,6 @@ def test_load_lightgbm_numerical(treelite_rs):
     assert model.num_tree >= 1
 
 
-@pytest.mark.skip(reason="MISSING — frontend.detect_xgboost_format_bytes implemented in 08-02")
 def test_detect_xgboost_format(treelite_rs):
     json_bytes = (FIXTURES / "xgb_3format.json").read_bytes()
     ubj_bytes = (FIXTURES / "xgb_3format.ubj").read_bytes()

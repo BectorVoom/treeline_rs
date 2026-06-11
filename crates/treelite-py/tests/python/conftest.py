@@ -21,9 +21,9 @@ import pathlib
 import numpy as np
 import pytest
 
-# Repo root = three levels up from this file:
-#   crates/treelite-py/tests/python/conftest.py -> repo root.
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
+# Repo root = four levels up from this file:
+#   conftest.py(0)/python(1)/tests(2)/treelite-py(3)/crates(4=repo root).
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[4]
 
 #: Frozen test corpus shared with the Rust suite (models + upstream-GTIL goldens).
 FIXTURES = REPO_ROOT / "fixtures"
