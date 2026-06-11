@@ -82,7 +82,7 @@ Requirements for the initial release. Each maps to a roadmap phase. All are hypo
 - [x] **PY-02**: From Python, a user can predict over numpy arrays with zero-copy buffer I/O
 - [x] **PY-03**: From Python, a user can serialize/deserialize and JSON-dump a model
 - [x] **PY-04**: A Python `sklearn.import_model` entry point marshals fitted estimators
-- [ ] **PY-05**: Library `thiserror` errors translate into Python exceptions
+- [x] **PY-05**: Library `thiserror` errors translate into Python exceptions
 - [x] **PY-06**: The binding builds as an abi3 wheel via maturin
 
 ### Equivalence & Testing
@@ -184,7 +184,7 @@ Which phases cover which requirements.
 | PY-02 | Phase 8 | Complete |
 | PY-03 | Phase 8 | Complete |
 | PY-04 | Phase 8 | Complete |
-| PY-05 | Phase 8 | Pending |
+| PY-05 | Phase 8 | Complete |
 | PY-06 | Phase 8 | Complete |
 | MEM-04 | Phase 8 | Complete |
 | MEM-01 | Phase 9 | Pending |

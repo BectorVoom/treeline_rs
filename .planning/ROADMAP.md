@@ -300,7 +300,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 — completes the phase)*
 
-- [ ] 08-05-PLAN.md — Panic guard (no abort crosses FFI) + additive backend= kwarg + un-built/device-absent → TreeliteError + hardware-gated rocm wheel checkpoint (PY-05/D-05/D-08) (Wave 4)
+- [x] 08-05-PLAN.md — Panic guard (no abort crosses FFI) + additive backend= kwarg + un-built/device-absent → TreeliteError + hardware-gated rocm wheel checkpoint (on-device 1e-5, max|delta|=0.0) (PY-05/D-05/D-08) (Wave 4)
 
 **Research flag (resolved):** PyO3 0.28 buffer-protocol / numpy zero-copy return / GIL release (`Python::detach`) resolved in 08-RESEARCH.md.
 

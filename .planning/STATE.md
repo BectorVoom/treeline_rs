@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 08-02-PLAN.md
+stopped_at: Completed 08-05-PLAN.md
 last_updated: "2026-06-11T00:28:34.487Z"
-last_activity: 2026-06-10 -- Completed 08-02 (load → predict A/B 1e-5 GREEN)
+last_activity: 2026-06-11 -- Completed 08-05 (panic guard + backend= kwarg; on-device rocm 1e-5 GREEN)
 progress:
   total_phases: 9
   completed_phases: 7
   total_plans: 45
-  completed_plans: 44
-  percent: 78
+  completed_plans: 45
+  percent: 80
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 08 (pyo3-python-binding) — EXECUTING
-Plan: 5 of 5
-Status: Ready to execute
-Last activity: 2026-06-10 -- Completed 08-02 (load → predict A/B 1e-5 GREEN)
+Plan: 5 of 5 (all plans complete; awaiting phase verification)
+Status: All 08 plans executed
+Last activity: 2026-06-11 -- Completed 08-05 (panic guard + backend= kwarg; on-device rocm 1e-5 GREEN)
 
 Progress: [██████████] Phase 06 complete (7/7 plans) — milestone 6/9 phases
 
@@ -101,6 +101,7 @@ Progress: [██████████] Phase 06 complete (7/7 plans) — mil
 | Phase 08 P02 | ~15min | 2 tasks | 15 files |
 | Phase 08 P03 | ~8min | 1 tasks | 5 files |
 | Phase 08 P04 | ~12min | 2 tasks | 6 files |
+| Phase 08 P05 | ~18min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -221,6 +222,10 @@ Recent decisions affecting current work:
 - [08-02]: Fixed 08-01 conftest REPO_ROOT off-by-one (parents[3]->[4]; file is four levels deep) so FIXTURES resolves to the repo root, not crates/.
 - [Phase ?]: [08-04]: sklearn.import_model ports importer.py Python-side (isinstance dispatch); estimator object never crosses FFI — only numpy arrays do, borrowed zero-copy into the Phase-4 treelite_sklearn array loaders (PY-04 GREEN, 10 live A/B cells within 1e-5).
 - [Phase ?]: [08-04]: src/sklearn.rs ArrayOfArrays<'py,T> holds PyReadonlyArray1 guards + &[T] slices in one struct (slice lifetime extended to 'py via transmute; backing buffer co-located); wrong dtype rejected by typed extract (T-08-10), SklError->TreeliteError (D-06). HistGB packed nodes copied into owned Box<[u8]>.
+- [08-05]: guard()/guard_assert() (catch_unwind) is the MESSAGE-PARITY layer over pyo3 0.28's auto catch_unwind (which already prevents the abort, T-08-11) — remaps a trapped panic to the single TreeliteError (D-07); applied ONLY at the predict entry points inside py.detach, NOT blanket-wrapped (anti-pattern).
+- [08-05]: additive backend="cpu" kwarg on gtil.predict*/predict_f32/_f64 (D-05, no-kwarg stays upstream-identical); dispatch_backend matches cpu=>predict_cpu (D-02 scalar fallback the ONLY fallback), #[cfg]-gated rocm/cuda/wgpu=>predict::<R,F>, other=>typed BUILT_BACKENDS error. DeviceUnavailable->TreeliteError, NEVER a silent CPU fallback (D-08/T-08-12/T-08-13). BUILT_BACKENDS is an 8-way #[cfg]-match const (concat! cannot host #[cfg] on args).
+- [08-05]: treelite-py gains an OPTIONAL cubecl dep gated into rocm/cuda/wgpu features (dep:cubecl + cubecl/<backend>) so the dispatch arms name cubecl::{hip,cuda,wgpu}::*Runtime — mirrors the harness *_case() shape; default cpu wheel never pulls cubecl.
+- [08-05]: HARDWARE GATE SATISFIED on-device (AMD/ROCm box, root uv venv): maturin develop --features rocm built the abi3+HIP cdylib (abi3+native HIP coexist, RESEARCH A2), imported, and predict(backend='rocm') matched cpu at max|delta|=0.0 (bitwise-exact « 1e-5) on xgb_3format. CUDA/wgpu build-only (no device).
 
 ### Pending Todos
 
@@ -244,5 +249,5 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-06-11T00:28:22.579Z
-Stopped at: Completed 08-02-PLAN.md
+Stopped at: Completed 08-05-PLAN.md (all Phase 08 plans executed; awaiting phase verification)
 Resume file: None
