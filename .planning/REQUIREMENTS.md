@@ -104,6 +104,17 @@ Requirements for the initial release. Each maps to a roadmap phase. All are hypo
 - [x] **ERR-01**: Library crates expose typed `thiserror` errors at their API boundaries
 - [x] **ERR-02**: Binaries and tests use `anyhow` for error context
 
+## v1.1 Requirements
+
+Milestone v1.1 — Parallel Scalar Inference. Row-parallelize the single-threaded scalar GTIL fallback (LightGBM `kLE`, categorical, non-`kLT`, and all sparse models) without regressing the 1e-5 contract. The cubecl numerical `kLT` path already parallelizes (~8/16 cores) and is out of scope.
+
+### Parallel Inference
+
+- [ ] **PAR-01**: Scalar dense predict (`treelite_gtil::predict`) runs row-parallel across all available cores, with output identical to the current serial path within 1e-5 and serial per-row `tree_id` summation preserved (GTIL-08)
+- [ ] **PAR-02**: Scalar sparse predict (`predict_sparse`, and the `predict_cpu_sparse` fallback) runs row-parallel under the same equivalence guarantee
+- [ ] **PAR-03**: `Model` is soundly shareable across threads for read-only prediction — documented `unsafe impl Sync`/`Send` justified by predict being read-only over the model (mirrors upstream OpenMP); the `_assert_not_send` invariant is superseded by the new shareability contract
+- [ ] **PAR-04**: `Config.nthread` is honored end-to-end (`≤0` = all cores; `N` = bounded pool), wiring the Python `nthread=` kwarg that is currently recorded-but-unused on the scalar path
+
 ## v2 Requirements
 
 Deferred to a future release. Tracked but not in the current roadmap.
