@@ -268,9 +268,16 @@ pub fn predict_f64<'py>(
 /// (both produce `(num_row, num_target_or_1, max_num_class)`).
 #[pyfunction]
 #[pyo3(signature = (model, num_row, *, pred_margin = false))]
-pub fn predict_output_shape(model: &Model, num_row: u64, pred_margin: bool) -> Vec<u64> {
+pub fn predict_output_shape(model: &Model, num_row: u64, pred_margin: bool) -> PyResult2<Vec<u64>> {
+    // `predict_output_shape` is on the hot predict path (the Python `predict`
+    // shim calls it on every call to compute the flat→N-D reshape target). It
+    // must therefore share the predict path's panic message-parity (WR-01): a
+    // panic in `output_shape` on a degenerate model would otherwise surface as a
+    // bare pyo3 `PanicException`, which a caller doing `except TreeliteError`
+    // (the D-06 contract) cannot catch. `guard_assert` remaps any trapped panic
+    // to the single `TreeliteError` (D-07).
     let cfg = make_config(-1, pred_margin);
-    output_shape(&model.inner, num_row, &cfg).dims
+    guard_assert(|| Ok(output_shape(&model.inner, num_row, &cfg).dims))
 }
 
 /// Register the gtil predict entry points + output-shape helper into the `gtil`
