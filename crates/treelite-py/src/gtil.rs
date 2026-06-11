@@ -235,6 +235,11 @@ fn dispatch_backend<F: treelite_cubecl::PredictCpuElem>(
 /// compute backends; omitting it (or passing `"cpu"`) keeps the call
 /// upstream-identical. An un-built or device-absent backend raises `TreeliteError`,
 /// never a silent CPU fallback (D-08).
+///
+/// `nthread` defaults to `-1` here (the NumPy/scikit-learn "all cores"
+/// convention). This is BEHAVIOR-IDENTICAL to the Rust `Config::default()`
+/// sentinel of `0` — both are `<= 0` and route to the global pool (IN-02); only
+/// the displayed default value differs between the two interfaces.
 #[pyfunction]
 #[pyo3(signature = (model, data, *, nthread = -1, pred_margin = false, backend = "cpu"))]
 pub fn predict_f32<'py>(
@@ -271,6 +276,9 @@ pub fn predict_f32<'py>(
 ///
 /// Additive `backend="cpu"` kwarg (D-05); un-built / device-absent backend raises
 /// `TreeliteError`, never a silent CPU fallback (D-08).
+///
+/// `nthread` defaults to `-1` (NumPy/scikit-learn "all cores" convention),
+/// behavior-identical to the Rust `Config::default()` sentinel of `0` (IN-02).
 #[pyfunction]
 #[pyo3(signature = (model, data, *, nthread = -1, pred_margin = false, backend = "cpu"))]
 pub fn predict_f64<'py>(

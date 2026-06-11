@@ -68,6 +68,15 @@ pub struct Config {
     /// Requested worker-thread count for the row-parallel scalar engine.
     /// `<= 0` means "use all cores" (global pool); `N > 0` bounds a scoped pool
     /// to exactly `N` workers (PAR-04).
+    ///
+    /// IN-02: this Rust default is `0` (see [`Config::default`], mirroring
+    /// upstream `gtil.h:51` `int nthread{0}`), whereas the Python `predict`
+    /// binding defaults to `-1`. The two values are BEHAVIOR-IDENTICAL: both
+    /// satisfy `nthread <= 0` and route to the global "use all cores" pool. The
+    /// difference is purely the sentinel chosen at each edge (`0` matches
+    /// upstream; `-1` matches the NumPy/scikit-learn convention familiar to
+    /// Python callers). No code path distinguishes `0` from any other
+    /// non-positive value.
     pub nthread: i32,
 }
 
