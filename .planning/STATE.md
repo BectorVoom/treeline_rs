@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 09-01-PLAN.md (Wave-0 scaffolding)
-last_updated: "2026-06-11T02:40:00Z"
-last_activity: 2026-06-11 -- Phase 09 Plan 01 complete (Wave-0 scaffolding)
+stopped_at: Completed 09-02-PLAN.md (MEM-02 SmallVec/CompactString migration)
+last_updated: "2026-06-11T02:57:00Z"
+last_activity: 2026-06-11 -- Phase 09 Plan 02 complete (MEM-02 field migration)
 progress:
   total_phases: 9
   completed_phases: 8
   total_plans: 49
-  completed_plans: 46
-  percent: 91
+  completed_plans: 47
+  percent: 92
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 09 (memory-efficiency-hardening) — EXECUTING
-Plan: 2 of 4
-Status: Executing Phase 09 (Plan 01 complete)
-Last activity: 2026-06-11 -- Phase 09 Plan 01 complete (Wave-0 scaffolding)
+Plan: 3 of 4
+Status: Executing Phase 09 (Plans 01–02 complete)
+Last activity: 2026-06-11 -- Phase 09 Plan 02 complete (MEM-02 field migration)
 
 Progress: [██████████] Phase 06 complete (7/7 plans) — milestone 6/9 phases
 
@@ -104,6 +104,7 @@ Progress: [██████████] Phase 06 complete (7/7 plans) — mil
 | Phase 08 P04 | ~12min | 2 tasks | 6 files |
 | Phase 08 P05 | ~18min | 3 tasks | 7 files |
 | Phase 09 P01 | 3min | 3 tasks | 4 files |
+| Phase 09 P02 | 13min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -231,6 +232,8 @@ Recent decisions affecting current work:
 - [09-01]: 5 Phase-9 crates pinned in [workspace.dependencies] at RESEARCH-audited versions (smallvec 1.15.1 const_new+union, compact_str 0.9.1, tikv-jemallocator/tikv-jemalloc-ctl 0.7.0, mimalloc 0.1.52); NO serde feature (fields cross no serde boundary, A4); smallvec on 1.x not 2.0-alpha (FND-02); all confirmed via cargo add --dry-run.
 - [09-01]: treelite-harness gained non-default mutually-exclusive jemalloc/mimalloc features + 3 optional allocator deps; memory_report bin has 3 cfg-gated #[global_allocator] arms + both-on compile_error (D-07); allocator deps confined to harness (D-08) — treelite-py verified allocator-free via cargo tree grep.
 - [09-01]: size_of::<Model>() budget set to 512 (current 248B; max(248,512)) as the Wave-0 Pitfall-2 guard the Plan-02 SmallVec/CompactString swap must not break; !Send invariant documented as a commented requires_send::<Model>() (no trybuild dep). HARD INVARIANTS held: golden_v5 byte-identical, workspace + pytest (39 pass/1 skip) green within 1e-5.
+- [09-02]: MEM-02 closed — 7 Model + BuilderMetadata metadata fields migrated to SmallVec<[i32;1]>/SmallVec<[i32;2]>/SmallVec<[f64;1]>/CompactString (D-04). Inline N chosen for the DOMINANT shape; size_of::<Model>() stays 248B (BYTE-IDENTICAL to the Vec/String layout — zero struct-size cost, no Pitfall-2 reduction). serializer EMIT path UNCHANGED (deref-transparent); read-back assigns carry .into(); gtil shape.rs + treelite-py ZERO diff.
+- [09-02]: serialize/json.rs DumpAsJSON (NOT in PATTERNS file list) required derefing migrated fields to &[T]/&str at the json!()/Value::from sites — smallvec carries NO serde feature (A4), so the slice/str path keeps identical JSON without adding a feature (Rule-3 blocking fix). histgb.rs+mixin.rs also carry BuilderMetadata literals beyond the listed bulk.rs (8 extra literals). HARD INVARIANTS held: golden_v5.bin AND golden_v5_3format.bin byte-identical, workspace 0 failures, pytest 39/1, Model !Send, treelite-py allocator-free.
 
 ### Pending Todos
 
@@ -253,6 +256,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-11T02:40:00Z
-Stopped at: Completed 09-01-PLAN.md (Wave-0 scaffolding)
+Last session: 2026-06-11T02:57:00Z
+Stopped at: Completed 09-02-PLAN.md (MEM-02 SmallVec/CompactString migration)
 Resume file: None
