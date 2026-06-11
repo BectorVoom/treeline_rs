@@ -46,13 +46,13 @@ where
     let mut m = Model::new(wrap(ModelPreset::new(trees)));
     m.num_feature = 1;
     m.num_target = 1;
-    m.num_class = vec![k];
-    m.leaf_vector_shape = vec![1, k];
-    m.target_id = vec![-1; num_tree];
-    m.class_id = vec![-1; num_tree];
-    m.postprocessor = "identity".to_string();
+    m.num_class = vec![k].into();
+    m.leaf_vector_shape = vec![1, k].into();
+    m.target_id = vec![-1; num_tree].into();
+    m.class_id = vec![-1; num_tree].into();
+    m.postprocessor = "identity".to_string().into();
     m.sigmoid_alpha = 1.0;
-    m.base_scores = vec![0.0; k as usize];
+    m.base_scores = vec![0.0; k as usize].into();
     m
 }
 
