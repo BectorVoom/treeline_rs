@@ -4,13 +4,13 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 08-02-PLAN.md
-last_updated: "2026-06-11T00:18:37.676Z"
+last_updated: "2026-06-11T00:28:34.487Z"
 last_activity: 2026-06-10 -- Completed 08-02 (load → predict A/B 1e-5 GREEN)
 progress:
   total_phases: 9
   completed_phases: 7
   total_plans: 45
-  completed_plans: 43
+  completed_plans: 44
   percent: 78
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 08 (pyo3-python-binding) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-06-10 -- Completed 08-02 (load → predict A/B 1e-5 GREEN)
 
@@ -100,6 +100,7 @@ Progress: [██████████] Phase 06 complete (7/7 plans) — mil
 | Phase 08 P01 | 7min | 2 tasks | 15 files |
 | Phase 08 P02 | ~15min | 2 tasks | 15 files |
 | Phase 08 P03 | ~8min | 1 tasks | 5 files |
+| Phase 08 P04 | ~12min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -218,6 +219,8 @@ Recent decisions affecting current work:
 - [08-02]: predict_f32/_f64 take untyped &Bound<PyAny> and extract the typed PyReadonlyArray2 in-body so a wrong dtype raises TreeliteError (D-06), not pyo3's bare TypeError; still zero-copy, never casts (D-03). GIL released via py.detach over a SendModelRef Ungil shim + whole-struct closure rebind (defeats edition-2024 disjoint capture of the bare !Send &Model, T-08-06).
 - [08-02]: gtil.predict shim dispatches on the DATA dtype, not model.input_type — GTIL input element type is an axis independent of the model preset (an f32 model accepts an f64 input matrix; harness InputT-as-accumulator). Live A/B GREEN: XGB-JSON + LightGBM-categorical via gtil.predict within 1e-5, f32+f64, shape == upstream (PY-01/PY-02/MEM-04).
 - [08-02]: Fixed 08-01 conftest REPO_ROOT off-by-one (parents[3]->[4]; file is four levels deep) so FIXTURES resolves to the repo root, not crates/.
+- [Phase ?]: [08-04]: sklearn.import_model ports importer.py Python-side (isinstance dispatch); estimator object never crosses FFI — only numpy arrays do, borrowed zero-copy into the Phase-4 treelite_sklearn array loaders (PY-04 GREEN, 10 live A/B cells within 1e-5).
+- [Phase ?]: [08-04]: src/sklearn.rs ArrayOfArrays<'py,T> holds PyReadonlyArray1 guards + &[T] slices in one struct (slice lifetime extended to 'py via transmute; backing buffer co-located); wrong dtype rejected by typed extract (T-08-10), SklError->TreeliteError (D-06). HistGB packed nodes copied into owned Box<[u8]>.
 
 ### Pending Todos
 
@@ -240,6 +243,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-11T00:18:33.245Z
+Last session: 2026-06-11T00:28:22.579Z
 Stopped at: Completed 08-02-PLAN.md
 Resume file: None

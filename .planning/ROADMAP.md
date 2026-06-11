@@ -296,7 +296,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2)*
 
-- [ ] 08-04-PLAN.md — sklearn.import_model: array-loader pyfunctions + estimator→arrays shim (port importer.py) → live A/B 1e-5 (PY-04) (Wave 3)
+- [x] 08-04-PLAN.md — sklearn.import_model: array-loader pyfunctions + estimator→arrays shim (port importer.py) → live A/B 1e-5 (PY-04) (Wave 3)
 
 **Wave 4** *(blocked on Wave 3 — completes the phase)*
 
@@ -332,5 +332,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 5. Full Scalar GTIL & Equivalence Harness | 7/7 | Complete    | 2026-06-10 |
 | 6. cubecl GTIL Kernels (CPU Backend) | 7/7 | Complete    | 2026-06-10 |
 | 7. GPU Backend & Equivalence Report | 4/4 | Complete    | 2026-06-10 |
-| 8. PyO3 Python Binding | 3/5 | In Progress|  |
+| 8. PyO3 Python Binding | 4/5 | In Progress|  |
 | 9. Memory-Efficiency Hardening | 0/TBD | Not started | - |
