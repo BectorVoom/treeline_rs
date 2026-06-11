@@ -13,7 +13,7 @@ guarded so ``import treelite_rs`` keeps working as later plans fill it in.
 """
 
 from . import _treelite_rs  # the compiled abi3 cdylib (maturin module-name)
-from . import frontend  # pure-Python path→bytes loader shim
+from . import frontend, gtil  # pure-Python shims over the compiled entry points
 
 __version__ = "0.1.0"
 
@@ -21,16 +21,7 @@ __version__ = "0.1.0"
 TreeliteError = _treelite_rs.TreeliteError
 Model = _treelite_rs.Model
 
-__all__ = ["_treelite_rs", "frontend", "Model", "TreeliteError"]
-
-# The `gtil` predict shim lands in 08-02 Task 2 (needs the compiled predict_f32/
-# _f64 entry points). Guarded so Task-1 `import treelite_rs` succeeds before it.
-try:
-    from . import gtil  # noqa: F401
-
-    __all__.append("gtil")
-except ImportError:
-    pass
+__all__ = ["_treelite_rs", "frontend", "gtil", "Model", "TreeliteError"]
 
 # Re-export the compiled `sklearn` submodule when present (empty until 08-04).
 # Guarded so the package imports cleanly before that slice lands.

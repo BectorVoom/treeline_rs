@@ -30,6 +30,16 @@ create_exception!(_treelite_rs, TreeliteError, PyException);
 /// (see module docs). It always wraps a `TreeliteError` (D-06: one exception).
 pub struct TreelitePyErr(pyo3::PyErr);
 
+impl TreelitePyErr {
+    /// Wrap an already-built `pyo3::PyErr` (e.g. a `TreeliteError::new_err(...)`
+    /// constructed at a call site for a non-crate-error condition such as a numpy
+    /// contiguity failure).
+    #[inline]
+    pub fn from_pyerr(e: pyo3::PyErr) -> Self {
+        TreelitePyErr(e)
+    }
+}
+
 impl From<TreelitePyErr> for pyo3::PyErr {
     #[inline]
     fn from(e: TreelitePyErr) -> pyo3::PyErr {

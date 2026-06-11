@@ -16,7 +16,6 @@ import pytest
 from conftest import FIXTURES
 
 
-@pytest.mark.skip(reason="MISSING — zero-copy predict borrow implemented in 08-03")
 def test_predict_input_is_zero_copy(treelite_rs, rng):
     model = treelite_rs.frontend.load_xgboost_json_str(
         (FIXTURES / "xgb_3format.json").read_text()
@@ -30,7 +29,6 @@ def test_predict_input_is_zero_copy(treelite_rs, rng):
     assert ptr_before == ptr_after
 
 
-@pytest.mark.skip(reason="MISSING — non-contiguous input rejection implemented in 08-03")
 def test_predict_noncontiguous_raises(treelite_rs, rng):
     model = treelite_rs.frontend.load_xgboost_json_str(
         (FIXTURES / "xgb_3format.json").read_text()
@@ -44,7 +42,6 @@ def test_predict_noncontiguous_raises(treelite_rs, rng):
         treelite_rs.gtil.predict_f32(model, noncontig)
 
 
-@pytest.mark.skip(reason="MISSING — wrong-dtype input rejection implemented in 08-03")
 def test_predict_wrong_dtype_raises(treelite_rs, rng):
     model = treelite_rs.frontend.load_xgboost_json_str(
         (FIXTURES / "xgb_3format.json").read_text()

@@ -15,6 +15,7 @@ use pyo3::prelude::*;
 
 mod error;
 mod frontend;
+mod gtil;
 mod model;
 
 pub use error::TreeliteError;
@@ -33,8 +34,9 @@ fn _treelite_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     frontend::register(&frontend)?;
     m.add_submodule(&frontend)?;
 
-    // Empty `gtil` submodule (predict_f32/_f64 + output_shape land in 08-02 Task 2).
+    // `gtil` submodule: zero-copy dense predict_f32/_f64 + output-shape helper.
     let gtil = PyModule::new(m.py(), "gtil")?;
+    gtil::register(&gtil)?;
     m.add_submodule(&gtil)?;
 
     // Empty `sklearn` submodule (estimator loaders land in 08-04).
