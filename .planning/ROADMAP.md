@@ -4,6 +4,8 @@
 
 treelite-rs is a strict numerical port of Treelite 4.7.0 (C++) to a Rust Cargo workspace, where the single non-negotiable invariant is that predictions match upstream within **1e-5**. The journey is structured as vertical MVP slices laid along the dependency spine the research mandated: enums → core model → builder/serialize → loaders → scalar GTIL + equivalence harness → cubecl CPU kernels → GPU backend → PyO3 → memory hardening. Phase 1 stands up the *thinnest possible end-to-end pipeline* (workspace + enums + minimal core + a minimal XGBoost-JSON load + a scalar identity/sigmoid predict + an equivalence harness asserting 1e-5 against a committed golden) so the core value is proven and de-risked on day one. Every subsequent phase **widens one layer of that proven spine** — more formats, the full GTIL surface, full serialization, then GPU acceleration, then the Python binding — and each widening phase ends in a runnable, equivalence-tested state. The dependency DAG of the upstream C++ leaves no room to reorder: a slice cannot use a crate that does not yet exist.
 
+**Milestone v1.1 (Parallel Scalar Inference)** extends the v1.0 spine with a single phase (Phase 10): row-parallelize the one-core scalar GTIL fallback — the whole-model path for LightGBM (`kLE`), categorical, every non-`kLT`, and all sparse models — without regressing the 1e-5 contract. The cubecl numerical `kLT` path already saturates ~8/16 cores and is explicitly out of scope.
+
 ## Phases
 
 **Phase Numbering:**
@@ -22,6 +24,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 7: GPU Backend & Equivalence Report** - Runtime-selectable GPU backend (CUDA/wgpu/ROCm) with a documented per-model-class deviation report (completed 2026-06-10)
 - [x] **Phase 8: PyO3 Python Binding** - load/predict/serialize/dump from Python with zero-copy numpy I/O and abi3 wheel (completed 2026-06-11)
 - [x] **Phase 9: Memory-Efficiency Hardening** - bytemuck zero-copy recast, smallvec/compact_str, custom global allocator (completed 2026-06-11)
+- [ ] **Phase 10: Parallel Scalar Inference** - Row-parallelize scalar dense + sparse GTIL across all cores via a sound shareable `Model` and honored `Config.nthread`, output identical to the serial path within 1e-5
 
 ## Phase Details
 
@@ -335,10 +338,26 @@ Plans:
 - v5 serializer still emits byte-identical golden_v5.bin / golden_v5_3format.bin
 - full equivalence harness green within 1e-5; cargo test --workspace + pytest pass (D-11)
 
+### Phase 10: Parallel Scalar Inference
+
+**Goal**: Row-parallelize the single-threaded scalar GTIL fallback engine (`treelite_gtil::predict` dense and `predict_sparse`/`predict_cpu_sparse`) across all available CPU cores — the whole-model path for LightGBM (`kLE`), categorical, every non-`kLT`, and all sparse models — so those models stop running on one core, while producing output identical to the current serial path within 1e-5.
+**Mode:** mvp
+**Depends on**: Phase 9
+**Requirements**: PAR-01, PAR-02, PAR-03, PAR-04
+**Success Criteria** (what must be TRUE):
+
+  1. The scalar dense `predict` and sparse `predict_sparse` (incl. the `predict_cpu_sparse` fallback) distribute their rows across all available cores, and a multi-row run measurably uses more than one core (the prototype measured 3.0–4.6×); the equivalence harness — both presets, both input dtypes, dense and sparse — still passes within 1e-5 with output identical to the pre-parallel serial path.
+  2. Per-row tree summation stays serial in `tree_id` order (GTIL-08 preserved): only rows are parallelized, never the tree axis, so there is no reduction-order divergence.
+  3. `Model` is soundly shareable across threads for read-only prediction via a documented `unsafe impl Sync`/`Send` justified by predict being read-only over the model (mirroring upstream OpenMP); the prior `_assert_not_send` invariant is superseded by, and replaced with, a test asserting the new shareability contract.
+  4. `Config.nthread` is honored end-to-end on the scalar path — `≤0` uses all cores, `N` bounds the worker pool — and the Python `nthread=` kwarg (currently recorded-but-unused on the scalar path) drives it through to predict.
+  5. The v5 serializer still emits byte-identical golden_v5.bin / golden_v5_3format.bin (this milestone does not touch serialization), and `cargo test --workspace` + pytest stay green.
+
+**Plans**: TBD
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -351,3 +370,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 7. GPU Backend & Equivalence Report | 4/4 | Complete    | 2026-06-10 |
 | 8. PyO3 Python Binding | 5/5 | Complete    | 2026-06-11 |
 | 9. Memory-Efficiency Hardening | 4/4 | Complete    | 2026-06-11 |
+| 10. Parallel Scalar Inference | 0/TBD | Not started | - |

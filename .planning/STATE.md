@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Parallel Scalar Inference
-status: planning
-last_updated: "2026-06-11T03:56:00.594Z"
+status: roadmapped
+last_updated: "2026-06-11T04:10:00.000Z"
 last_activity: 2026-06-11
 progress:
-  total_phases: 0
+  total_phases: 1
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,17 +17,17 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-09)
+See: .planning/PROJECT.md (updated 2026-06-11)
 
 **Core value:** Predictions match upstream Treelite within 1e-5.
-**Current focus:** Phase 09 — memory-efficiency-hardening
+**Current focus:** Phase 10 — Parallel Scalar Inference (row-parallelize the 1-core scalar GTIL fallback)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Phase 10 — Parallel Scalar Inference (roadmapped, not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-11 — Milestone v1.1 started
+Status: Roadmap created; awaiting `/gsd-plan-phase 10`
+Last activity: 2026-06-11 — Milestone v1.1 roadmapped (Phase 10, PAR-01..04)
 
 ## Performance Metrics
 
@@ -50,6 +50,7 @@ Last activity: 2026-06-11 — Milestone v1.1 started
 | 07 | 4 | - | - |
 | 08 | 5 | - | - |
 | 09 | 4 | - | - |
+| 10 | TBD | - | - |
 
 **Recent Trend:**
 
@@ -113,6 +114,10 @@ Last activity: 2026-06-11 — Milestone v1.1 started
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
+- [v1.1 Roadmap]: Milestone v1.1 (Parallel Scalar Inference) fits a SINGLE phase (Phase 10) — PAR-01..04 are tightly coupled (same scalar GTIL engine, same 1e-5/GTIL-08 invariants; PAR-01/02/04 are unsound without PAR-03's `Sync`/`Send`). Not split into artificial dense/sparse phases.
+- [v1.1 Scope]: Target is ONLY the single-threaded scalar fallback (`predict`/`predict_sparse`) — the whole-model path for LightGBM `kLE`, categorical, non-`kLT`, and all sparse. Measured 99% CPU (1 core); row-parallel prototype hit 3.0–4.6×. The cubecl numerical `kLT` path (~783% CPU, ~8 cores) is OUT OF SCOPE.
+- [v1.1 Invariants]: Phase 10 must preserve (a) parallel output identical to serial within 1e-5; (b) per-row tree summation serial in `tree_id` order (GTIL-08 — only rows parallelize); (c) byte-identical v5 serialization (untouched this milestone).
+- [v1.1 Design pivot]: `Model` is currently `!Sync`/`!Send` (raw `*const T` foreign-buffer pointers; `_assert_not_send` pins this). PAR-03 introduces a SOUND `unsafe impl Sync`/`Send` justified by read-only-during-predict; rayon would be the first parallelism dependency (CLAUDE.md pins all deps to latest published versions).
 - [Roadmap]: Vertical MVP slices laid along the upstream dependency DAG — Phase 1 is the thinnest load→predict→verify spine; later phases widen one layer each, ending runnable + 1e-5-tested.
 - [Roadmap]: HistGradientBoosting confirmed in v1 scope (Phase 4) — the most complex sklearn loader path.
 - [Roadmap]: CPU cubecl backend validated to 1e-5 (Phase 6) before any GPU backend is attempted (Phase 7).
@@ -243,10 +248,9 @@ None yet.
 
 ### Blockers/Concerns
 
-- [Phase 3] ~~serde_json rejects NaN/Inf by default; XGBoost JSON uses them~~ — RESOLVED in 03-02 via the string-safe replace_nonfinite pre-lexer + de_f32 sentinel adapter (D-02).
-- [Phase 5/6] cubecl control-flow constraints (`continue` unsupported, helpers must be `#[cube]`) and CPU-backend op gaps — spike a minimal kernel before the full port.
-- [Phase 5] Golden-vector reproducibility — store actual input matrices + a toolchain/libm/framework manifest, not just seeds.
-- [Phase 5] **CR-01 / WR-01 / WR-06 ALL CLOSED in 05-07 (engine fix was 05-06).** CR-01 is now MEASURED: a committed large-margin f64 sigmoid fixture (16 f64 cells, worst |delta| 2.9e-6) passes the 1e-5 gate against the 05-06 `sigmoid_f64` engine. WR-01 closed: sparse goldens carry the real frozen CSR triple (data/indices/indptr); the runner loads it verbatim via `frozen_csr`, never re-deriving from NaN-presence (`build_csr` survives only for the D-04 parity probe). WR-06 closed: the large_margin f32-vs-f64 RUST output divergence (5.5e-8) is asserted — a silent f32→f64 pre-cast collapses it and fails (mutation-verified). NOTE (05-07 finding): upstream `treelite.gtil.predict` returns bit-identical output across input dtype for `<f32,f32>` models (tree-sum accumulated in f64; postprocessor follows leaf type), so WR-06 asserts the Rust-path divergence, not golden-vs-golden — see 05-07-SUMMARY deviation 1. WR-02/WR-03/WR-04/WR-05 were CLOSED in 05-06. All five 05-REVIEW gap items are now resolved across 05-06 + 05-07. (Phase 05 verification itself is the orchestrator's job — not yet phase-complete.)
+- [Phase 10] PAR-03 `unsafe impl Sync/Send` for `Model` MUST be justified by read-only-during-predict only — the `TreeBuf::Borrowed { *const T }` foreign-buffer pointers are the reason it is currently `!Sync`/`!Send`. The soundness argument is: predict takes `&Model` (shared, no mutation), the borrowed buffer outlives predict, and no interior mutability is reachable on the predict path. The `_assert_not_send` test must be replaced (not just deleted) with a positive shareability assertion. Note: `treelite-py` keeps `#[pyclass(unsendable)]` independently (GIL-bound), so the core `Send`/`Sync` change need not loosen the Python class.
+- [Phase 10] rayon would be the FIRST parallelism dependency — pin to latest published (CLAUDE.md / FND-02). Per-row work must NOT touch the tree axis order (GTIL-08): parallelize the OUTER row loop only; each row's tree-sum stays serial in `tree_id`. Equivalence harness (both presets, both input dtypes, dense + sparse) is the gate that the parallel output == serial output within 1e-5.
+- [Phase 10] `Config.nthread` is already parsed/recorded but unused on the scalar path (PAR-04); wire it through to bound the rayon pool (`≤0` = all cores). The Python `nthread=` kwarg already exists end-to-end but is a no-op on scalar predict — close that gap.
 
 ## Deferred Items
 
@@ -255,9 +259,10 @@ Items acknowledged and carried forward from previous milestone close:
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
 | Loader fidelity | DEF-02-01: XGBoost loader→serialize byte-fidelity gap | FULLY CLOSED in 03-04 — JSON (03-02) + UBJSON (03-03) + legacy (03-04) all serialize to golden_v5_3format.bin byte-for-byte; cross-format single-golden assertion is fatal and green | 02-03 |
+| Perf (v1.1 scope) | cubecl CPU grid tuning of the numerical kLT path | Out of scope for v1.1 — already ~8/16 cores; uncertain incremental win. v1.1 targets the 1-core scalar fallback only | Milestone v1.1 open |
 
 ## Session Continuity
 
-Last session: 2026-06-11T03:14:27Z
-Stopped at: Completed 09-04-PLAN.md (MEM-03 allocator RSS report + docs/MEMORY_REPORT.md); Phase 9 pending orchestrator verification
+Last session: 2026-06-11T04:10:00Z
+Stopped at: Roadmapped milestone v1.1 — Phase 10 (Parallel Scalar Inference) created, PAR-01..04 mapped (Planned). Phase 9 still pending orchestrator verification / milestone reconcile.
 Resume file: None

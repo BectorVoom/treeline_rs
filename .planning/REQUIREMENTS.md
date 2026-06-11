@@ -139,6 +139,7 @@ Explicitly excluded. Documented to prevent scope creep.
 | Bit-exact GPU reproducibility | GPU float reduction ordering differs; 1e-5 tolerance absorbs it. Determinism guaranteed only on the CPU backend |
 | Live C++ Treelite build in CI | Golden vectors are generated once and frozen as fixtures; CI does not compile C++ |
 | Full cubecl coverage beyond the inference hot path | Loaders/builder/serialization stay plain Rust to keep 1e-5 risk bounded |
+| cubecl CPU grid tuning of the numerical `kLT` path (v1.1) | That path already uses ~8/16 cores; pushing `CubeCount`/`CubeDim` to full saturation is an uncertain incremental win. v1.1 parallelism targets the 1-core scalar fallback only |
 
 ## Traceability
 
@@ -201,15 +202,19 @@ Which phases cover which requirements.
 | MEM-01 | Phase 9 | Complete |
 | MEM-02 | Phase 9 | Complete |
 | MEM-03 | Phase 9 | Complete |
+| PAR-01 | Phase 10 | Planned |
+| PAR-02 | Phase 10 | Planned |
+| PAR-03 | Phase 10 | Planned |
+| PAR-04 | Phase 10 | Planned |
 
 **Coverage:**
 
-- v1 requirements: 45 total
-- Mapped to phases: 45 ✓
+- v1 requirements: 45 total — Mapped: 45 ✓
+- v1.1 requirements: 4 total (PAR-01..04) — Mapped to Phase 10: 4 ✓
 - Unmapped: 0
 
 **Note:** Phase 1 (the end-to-end MVP spine) additionally exercises a *minimal subset* of XGB-01 (single XGBoost-JSON model), GTIL-01 (scalar dense predict), and EQV-01/EQV-02 (harness skeleton + one golden) to prove the load→predict→verify pipeline. The full requirements are owned and completed in their dedicated phases (XGB in Phase 3, GTIL/EQV in Phase 5) to keep each requirement mapped to exactly one owning phase.
 
 ---
 *Requirements defined: 2026-06-09*
-*Last updated: 2026-06-10 — Phase 2 complete (5/5); BLD-01 exercised end-to-end via the rewired XGBoost-JSON loader (02-05)*
+*Last updated: 2026-06-11 — v1.1 (Parallel Scalar Inference) roadmapped: PAR-01..04 mapped to Phase 10 (Planned).*
