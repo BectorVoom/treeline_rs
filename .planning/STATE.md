@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: All 08 plans executed
-stopped_at: Phase 9 context gathered
-last_updated: "2026-06-11T02:32:10.745Z"
-last_activity: 2026-06-11 -- Phase 09 planning complete
+status: executing
+stopped_at: Completed 09-01-PLAN.md (Wave-0 scaffolding)
+last_updated: "2026-06-11T02:40:00Z"
+last_activity: 2026-06-11 -- Phase 09 Plan 01 complete (Wave-0 scaffolding)
 progress:
   total_phases: 9
   completed_phases: 8
-  total_plans: 45
-  completed_plans: 45
-  percent: 89
+  total_plans: 49
+  completed_plans: 46
+  percent: 91
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-09)
 
 **Core value:** Predictions match upstream Treelite within 1e-5.
-**Current focus:** Phase 08 — pyo3-python-binding
+**Current focus:** Phase 09 — memory-efficiency-hardening
 
 ## Current Position
 
-Phase: 9
-Plan: Not started
-Status: All 08 plans executed
-Last activity: 2026-06-11 -- Phase 09 planning complete
+Phase: 09 (memory-efficiency-hardening) — EXECUTING
+Plan: 2 of 4
+Status: Executing Phase 09 (Plan 01 complete)
+Last activity: 2026-06-11 -- Phase 09 Plan 01 complete (Wave-0 scaffolding)
 
 Progress: [██████████] Phase 06 complete (7/7 plans) — milestone 6/9 phases
 
@@ -103,6 +103,7 @@ Progress: [██████████] Phase 06 complete (7/7 plans) — mil
 | Phase 08 P03 | ~8min | 1 tasks | 5 files |
 | Phase 08 P04 | ~12min | 2 tasks | 6 files |
 | Phase 08 P05 | ~18min | 3 tasks | 7 files |
+| Phase 09 P01 | 3min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -227,6 +228,9 @@ Recent decisions affecting current work:
 - [08-05]: additive backend="cpu" kwarg on gtil.predict*/predict_f32/_f64 (D-05, no-kwarg stays upstream-identical); dispatch_backend matches cpu=>predict_cpu (D-02 scalar fallback the ONLY fallback), #[cfg]-gated rocm/cuda/wgpu=>predict::<R,F>, other=>typed BUILT_BACKENDS error. DeviceUnavailable->TreeliteError, NEVER a silent CPU fallback (D-08/T-08-12/T-08-13). BUILT_BACKENDS is an 8-way #[cfg]-match const (concat! cannot host #[cfg] on args).
 - [08-05]: treelite-py gains an OPTIONAL cubecl dep gated into rocm/cuda/wgpu features (dep:cubecl + cubecl/<backend>) so the dispatch arms name cubecl::{hip,cuda,wgpu}::*Runtime — mirrors the harness *_case() shape; default cpu wheel never pulls cubecl.
 - [08-05]: HARDWARE GATE SATISFIED on-device (AMD/ROCm box, root uv venv): maturin develop --features rocm built the abi3+HIP cdylib (abi3+native HIP coexist, RESEARCH A2), imported, and predict(backend='rocm') matched cpu at max|delta|=0.0 (bitwise-exact « 1e-5) on xgb_3format. CUDA/wgpu build-only (no device).
+- [09-01]: 5 Phase-9 crates pinned in [workspace.dependencies] at RESEARCH-audited versions (smallvec 1.15.1 const_new+union, compact_str 0.9.1, tikv-jemallocator/tikv-jemalloc-ctl 0.7.0, mimalloc 0.1.52); NO serde feature (fields cross no serde boundary, A4); smallvec on 1.x not 2.0-alpha (FND-02); all confirmed via cargo add --dry-run.
+- [09-01]: treelite-harness gained non-default mutually-exclusive jemalloc/mimalloc features + 3 optional allocator deps; memory_report bin has 3 cfg-gated #[global_allocator] arms + both-on compile_error (D-07); allocator deps confined to harness (D-08) — treelite-py verified allocator-free via cargo tree grep.
+- [09-01]: size_of::<Model>() budget set to 512 (current 248B; max(248,512)) as the Wave-0 Pitfall-2 guard the Plan-02 SmallVec/CompactString swap must not break; !Send invariant documented as a commented requires_send::<Model>() (no trybuild dep). HARD INVARIANTS held: golden_v5 byte-identical, workspace + pytest (39 pass/1 skip) green within 1e-5.
 
 ### Pending Todos
 
@@ -249,6 +253,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-11T02:03:39.867Z
-Stopped at: Phase 9 context gathered
-Resume file: .planning/phases/09-memory-efficiency-hardening/09-CONTEXT.md
+Last session: 2026-06-11T02:40:00Z
+Stopped at: Completed 09-01-PLAN.md (Wave-0 scaffolding)
+Resume file: None

@@ -319,7 +319,7 @@ Plans:
 **Plans**: 4 plans
 **Wave 1**
 
-- [ ] 09-01-PLAN.md — Wave 0 scaffolding: pin 5 deps, harness jemalloc/mimalloc features, memory_report bin skeleton, model_invariants (!Send + size_of) test
+- [x] 09-01-PLAN.md — Wave 0 scaffolding: pin 5 deps, harness jemalloc/mimalloc features, memory_report bin skeleton, model_invariants (!Send + size_of) test
 - [ ] 09-02-PLAN.md — MEM-02: migrate Model + builder::Metadata fields to SmallVec/CompactString across loaders/serializer/concat; golden byte-identical + 1e-5 green
 
 **Wave 2** *(blocked on Wave 1 completion)*
@@ -350,4 +350,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. cubecl GTIL Kernels (CPU Backend) | 7/7 | Complete    | 2026-06-10 |
 | 7. GPU Backend & Equivalence Report | 4/4 | Complete    | 2026-06-10 |
 | 8. PyO3 Python Binding | 5/5 | Complete    | 2026-06-11 |
-| 9. Memory-Efficiency Hardening | 0/4 | Not started | - |
+| 9. Memory-Efficiency Hardening | 1/4 | In progress | - |
