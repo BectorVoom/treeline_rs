@@ -51,3 +51,20 @@ def test_panic_remap_surfaces_as_treelite_error_not_abort(treelite_rs):
     # survives a forced Rust-side failure.
     with pytest.raises(treelite_rs.TreeliteError):
         treelite_rs.frontend.load_xgboost_json_str("{}")
+
+
+def test_unwired_predict_kinds_raise_treelite_error(treelite_rs, rng):
+    """IN-04: predict_leaf / predict_per_tree are intentional upstream-signature
+    parity stubs (D-01) — the LeafId / ScorePerTree kinds land in a later slice.
+    Lock the documented contract: they raise a typed TreeliteError ("not yet
+    wired"), never a bare NotImplementedError or a silent wrong result."""
+    model = treelite_rs.frontend.load_xgboost_json_str(
+        (FIXTURES / "xgb_3format.json").read_text()
+    )
+    data = np.ascontiguousarray(
+        rng.standard_normal((4, model.num_feature)), dtype=np.float32
+    )
+    with pytest.raises(treelite_rs.TreeliteError):
+        treelite_rs.gtil.predict_leaf(model, data)
+    with pytest.raises(treelite_rs.TreeliteError):
+        treelite_rs.gtil.predict_per_tree(model, data)
