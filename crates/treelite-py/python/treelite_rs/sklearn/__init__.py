@@ -168,6 +168,15 @@ def _extract_forest(sklearn_model, *, is_gb: bool, is_iforest: bool):
     )
 
 
+# Minimum sklearn version whose HistGradientBoosting private layout
+# (``_predictors`` → per-``TreePredictor`` ``.nodes`` / ``.raw_left_cat_bitsets``,
+# and ``_baseline_prediction``) matches what this importer reads. The extraction
+# loop below reaches into these private attributes; on an older / unexpected
+# sklearn the layout may differ, which would otherwise raise a bare
+# ``AttributeError`` instead of the single ``TreeliteError`` (D-06, WR-05).
+_HISTGB_MIN_SKLEARN = "1.0.0"
+
+
 def _import_hist_gradient_boosting(sklearn_model):
     """Load HistGradientBoosting{Regressor,Classifier} (importer.py:355 port)."""
     from packaging.version import parse as parse_version
@@ -175,6 +184,26 @@ def _import_hist_gradient_boosting(sklearn_model):
     import sklearn as _sklearn
     from sklearn.ensemble import HistGradientBoostingClassifier as _HistC
     from sklearn.ensemble import HistGradientBoostingRegressor as _HistR
+
+    # WR-05: guard the private-attribute access against an unsupported sklearn
+    # version / private layout BEFORE reaching into ``_predictors`` etc., so any
+    # incompatibility surfaces as one actionable ``TreeliteError`` (D-06) rather
+    # than a bare ``AttributeError`` silently dependent on the installed ABI.
+    if parse_version(_sklearn.__version__) < parse_version(_HISTGB_MIN_SKLEARN):
+        raise _treelite_rs.TreeliteError(
+            f"HistGradientBoosting import requires scikit-learn >= "
+            f"{_HISTGB_MIN_SKLEARN}; found {_sklearn.__version__}. The importer "
+            f"reads private estimator internals (_predictors / nodes / "
+            f"_baseline_prediction) whose layout is not supported on this version."
+        )
+    for _attr in ("_predictors", "_baseline_prediction"):
+        if not hasattr(sklearn_model, _attr):
+            raise _treelite_rs.TreeliteError(
+                f"HistGradientBoosting import: fitted estimator is missing the "
+                f"private attribute '{_attr}' expected by this importer "
+                f"(scikit-learn {_sklearn.__version__}); the private layout is "
+                f"incompatible. Re-fit with a supported scikit-learn version."
+            )
 
     # features_map (feat_remapper): identity arange when no categorical
     # preprocessor, else the embedded-OrdinalEncoder remap (importer.py:371-410).
