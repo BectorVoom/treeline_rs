@@ -324,7 +324,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 09-03-PLAN.md — MEM-01: route le_bytes_of through bytemuck::cast_slice (Pod bound, LE-documented); read path untouched; golden + 1e-5 green
+- [x] 09-03-PLAN.md — MEM-01: route le_bytes_of through bytemuck::cast_slice (Pod bound, LE-documented); read path untouched; golden + 1e-5 green
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -350,4 +350,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. cubecl GTIL Kernels (CPU Backend) | 7/7 | Complete    | 2026-06-10 |
 | 7. GPU Backend & Equivalence Report | 4/4 | Complete    | 2026-06-10 |
 | 8. PyO3 Python Binding | 5/5 | Complete    | 2026-06-11 |
-| 9. Memory-Efficiency Hardening | 2/4 | In progress | - |
+| 9. Memory-Efficiency Hardening | 3/4 | In Progress|  |

@@ -94,7 +94,7 @@ Requirements for the initial release. Each maps to a roadmap phase. All are hypo
 
 ### Memory Efficiency
 
-- [ ] **MEM-01**: SoA columns use `bytemuck` `Pod` zero-copy recasting where layout allows
+- [x] **MEM-01**: SoA columns use `bytemuck` `Pod` zero-copy recasting where layout allows
 - [x] **MEM-02**: `smallvec` and `compact_str` are used for small collections and metadata strings
 - [ ] **MEM-03**: A custom global allocator (jemalloc) is wired into benchmarks/binaries
 - [x] **MEM-04**: Borrowed buffers from the Python buffer protocol are consumed zero-copy
@@ -187,7 +187,7 @@ Which phases cover which requirements.
 | PY-05 | Phase 8 | Complete |
 | PY-06 | Phase 8 | Complete |
 | MEM-04 | Phase 8 | Complete |
-| MEM-01 | Phase 9 | Pending |
+| MEM-01 | Phase 9 | Complete |
 | MEM-02 | Phase 9 | Complete |
 | MEM-03 | Phase 9 | Pending |
 

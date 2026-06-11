@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 09-02-PLAN.md (MEM-02 SmallVec/CompactString migration)
-last_updated: "2026-06-11T02:57:00Z"
+last_updated: "2026-06-11T03:05:34.460Z"
 last_activity: 2026-06-11 -- Phase 09 Plan 02 complete (MEM-02 field migration)
 progress:
   total_phases: 9
   completed_phases: 8
   total_plans: 49
-  completed_plans: 47
-  percent: 92
+  completed_plans: 48
+  percent: 89
 ---
 
 # Project State
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 ## Current Position
 
 Phase: 09 (memory-efficiency-hardening) — EXECUTING
-Plan: 3 of 4
-Status: Executing Phase 09 (Plans 01–02 complete)
+Plan: 4 of 4
+Status: Ready to execute
 Last activity: 2026-06-11 -- Phase 09 Plan 02 complete (MEM-02 field migration)
 
 Progress: [██████████] Phase 06 complete (7/7 plans) — milestone 6/9 phases
@@ -105,6 +105,7 @@ Progress: [██████████] Phase 06 complete (7/7 plans) — mil
 | Phase 08 P05 | ~18min | 3 tasks | 7 files |
 | Phase 09 P01 | 3min | 3 tasks | 4 files |
 | Phase 09 P02 | 13min | 3 tasks | 14 files |
+| Phase 09 P03 | 2min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -234,6 +235,7 @@ Recent decisions affecting current work:
 - [09-01]: size_of::<Model>() budget set to 512 (current 248B; max(248,512)) as the Wave-0 Pitfall-2 guard the Plan-02 SmallVec/CompactString swap must not break; !Send invariant documented as a commented requires_send::<Model>() (no trybuild dep). HARD INVARIANTS held: golden_v5 byte-identical, workspace + pytest (39 pass/1 skip) green within 1e-5.
 - [09-02]: MEM-02 closed — 7 Model + BuilderMetadata metadata fields migrated to SmallVec<[i32;1]>/SmallVec<[i32;2]>/SmallVec<[f64;1]>/CompactString (D-04). Inline N chosen for the DOMINANT shape; size_of::<Model>() stays 248B (BYTE-IDENTICAL to the Vec/String layout — zero struct-size cost, no Pitfall-2 reduction). serializer EMIT path UNCHANGED (deref-transparent); read-back assigns carry .into(); gtil shape.rs + treelite-py ZERO diff.
 - [09-02]: serialize/json.rs DumpAsJSON (NOT in PATTERNS file list) required derefing migrated fields to &[T]/&str at the json!()/Value::from sites — smallvec carries NO serde feature (A4), so the slice/str path keeps identical JSON without adding a feature (Rule-3 blocking fix). histgb.rs+mixin.rs also carry BuilderMetadata literals beyond the listed bulk.rs (8 extra literals). HARD INVARIANTS held: golden_v5.bin AND golden_v5_3format.bin byte-identical, workspace 0 failures, pytest 39/1, Model !Send, treelite-py allocator-free.
+- [Phase ?]: [09-03]: MEM-01 closed — le_bytes_of routed through bytemuck::cast_slice (bound Copy -> bytemuck::Pod), the exact tree_buf.rs as_bytes seam; one unsafe from_raw_parts removed. serialize_tree<T> bound tightened to Copy + Pod (Rule 3; only f32/f64 instantiate, both Pod). EMIT direction only — scalar_le/enum as-u8/bool_bytes and the untrusted deserialize read path (binary.rs Reader::array, 0 cast_slice) untouched (T-09-D/T-09-10). HARD INVARIANTS held: golden_v5.bin AND golden_v5_3format.bin byte-identical, workspace 0 failures, pytest 39/1, model_invariants 248B/!Send, all within 1e-5.
 
 ### Pending Todos
 
@@ -256,6 +258,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-11T02:57:00Z
+Last session: 2026-06-11T03:05:10.037Z
 Stopped at: Completed 09-02-PLAN.md (MEM-02 SmallVec/CompactString migration)
 Resume file: None
