@@ -78,10 +78,21 @@ def load_xgboost_model(
         data = path.read_bytes()
         detected = detect_xgboost_format_bytes(data)
         if detected == "json":
-            return load_xgboost_json_str(data.decode("utf-8"))
+            # A detected-JSON file with invalid UTF-8 bytes must surface as the
+            # single ``TreeliteError`` (D-06), not a bare ``UnicodeDecodeError``
+            # (WR-04).
+            try:
+                text = data.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise _treelite_rs.TreeliteError(
+                    f"XGBoost JSON model is not valid UTF-8: {exc}"
+                ) from exc
+            return load_xgboost_json_str(text)
         if detected == "ubjson":
             return load_xgboost_ubjson_bytes(data)
-        raise ValueError(
+        # Undetected format: surface as ``TreeliteError`` so callers branch on
+        # the single binding exception (D-06, WR-04) rather than ``ValueError``.
+        raise _treelite_rs.TreeliteError(
             "Could not detect whether the given XGBoost model is JSON or UBJSON. "
             "Please explicitly set format_choice='json' or format_choice='ubjson'"
         )
