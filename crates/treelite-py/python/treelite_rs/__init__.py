@@ -8,8 +8,9 @@ and the ``Model`` pyclass at the top level, and exposes the pure-Python
 ``frontend`` / ``gtil`` shims (which port the upstream API shape over the compiled
 str/bytes/zero-copy entry points — D-01 layout).
 
-The compiled ``sklearn`` submodule stays empty until 08-04; its re-export is
-guarded so ``import treelite_rs`` keeps working as later plans fill it in.
+Plan 08-04 adds the pure-Python ``sklearn`` package: ``sklearn.import_model``
+extracts a fitted estimator's tree arrays Python-side and dispatches to the
+compiled ``_treelite_rs.sklearn.load_*`` array loaders (PY-04).
 """
 
 import pathlib
@@ -17,6 +18,7 @@ from typing import List, Union
 
 from . import _treelite_rs  # the compiled abi3 cdylib (maturin module-name)
 from . import frontend, gtil  # pure-Python shims over the compiled entry points
+from . import sklearn  # pure-Python estimator-import shim (PY-04, port of importer.py)
 
 __version__ = "0.1.0"
 
@@ -61,17 +63,10 @@ __all__ = [
     "_treelite_rs",
     "frontend",
     "gtil",
+    "sklearn",
     "Model",
     "TreeliteError",
     "serialize",
     "deserialize",
     "concatenate",
 ]
-
-# Re-export the compiled `sklearn` submodule when present (empty until 08-04).
-# Guarded so the package imports cleanly before that slice lands.
-_sklearn = getattr(_treelite_rs, "sklearn", None)
-if _sklearn is not None:
-    globals()["sklearn"] = _sklearn
-    __all__.append("sklearn")
-del _sklearn
