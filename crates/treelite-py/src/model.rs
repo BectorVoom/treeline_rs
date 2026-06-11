@@ -88,13 +88,30 @@ impl Model {
     /// recoverable via [`Model::deserialize_bytes`] (`treelite.Model.serialize_bytes`).
     ///
     /// Rides the BINARY serializer (`treelite_core::serialize_to_buffer`, RESEARCH
-    /// Pattern 6 / A4 — not the typed field-accessor layout). Takes `&mut self` because the core
-    /// serializer stages the v5 bookkeeping fields on the model in place. The
-    /// `Vec<u8>` is copied out into a `PyBytes` (a small one-time copy at the
-    /// boundary is acceptable per Pattern 6).
-    fn serialize_bytes<'py>(&mut self, py: Python<'py>) -> Bound<'py, PyBytes> {
-        let buf = treelite_core::serialize_to_buffer(&mut self.inner);
-        PyBytes::new(py, &buf)
+    /// Pattern 6 / A4 — not the typed field-accessor layout). The core serializer
+    /// stages the v5 bookkeeping fields on the model in place, so an EXCLUSIVE
+    /// pyclass borrow is required. We acquire it with `try_borrow_mut` rather than
+    /// a `&mut self` receiver (WR-02): a `&mut self` receiver makes pyo3 acquire
+    /// the exclusive borrow in generated glue, and a conflicting live borrow (e.g.
+    /// an in-flight predict that borrowed `&model` across the GIL-released region
+    /// on another thread) would surface as a raw pyo3 `PanicException`, violating
+    /// the D-06 "one exception type" contract. `try_borrow_mut` returns a
+    /// `Result`, letting us map the conflict to the single `TreeliteError` a
+    /// caller can `except`. The `Vec<u8>` is copied out into a `PyBytes` (a small
+    /// one-time copy at the boundary is acceptable per Pattern 6).
+    fn serialize_bytes<'py>(
+        slf: &Bound<'py, Self>,
+        py: Python<'py>,
+    ) -> PyResult2<Bound<'py, PyBytes>> {
+        use crate::error::TreeliteError;
+        let mut this = slf.try_borrow_mut().map_err(|_| {
+            TreelitePyErr::from_pyerr(TreeliteError::new_err(
+                "model is concurrently borrowed; serialize_bytes needs exclusive \
+                 access (no other in-flight predict/serialize on this model)",
+            ))
+        })?;
+        let buf = treelite_core::serialize_to_buffer(&mut this.inner);
+        Ok(PyBytes::new(py, &buf))
     }
 
     /// Deserialize (recover) a model from a byte sequence produced by
@@ -118,11 +135,21 @@ impl Model {
     /// compact output. The core `dump_as_json` returns a `serde_json::Value`
     /// (A3) which we render with `to_string_pretty` / `to_string`; equivalence to
     /// upstream is asserted at the PARSED-value level, never by byte-comparing the
-    /// serialized text (Phase-2 D-04 discipline). Takes `&mut self` because the
-    /// core dumper stages variant-derived type tags on the model in place.
+    /// serialized text (Phase-2 D-04 discipline). The core dumper stages
+    /// variant-derived type tags on the model in place, so an EXCLUSIVE pyclass
+    /// borrow is required; we acquire it with `try_borrow_mut` (WR-02) so a
+    /// conflicting live borrow surfaces as the single `TreeliteError` rather than
+    /// a raw pyo3 `PanicException` (the D-06 contract).
     #[pyo3(signature = (*, pretty_print = true))]
-    fn dump_as_json(&mut self, pretty_print: bool) -> PyResult2<String> {
-        let value = treelite_core::dump_as_json(&mut self.inner);
+    fn dump_as_json(slf: &Bound<'_, Self>, pretty_print: bool) -> PyResult2<String> {
+        use crate::error::TreeliteError;
+        let mut this = slf.try_borrow_mut().map_err(|_| {
+            TreelitePyErr::from_pyerr(TreeliteError::new_err(
+                "model is concurrently borrowed; dump_as_json needs exclusive \
+                 access (no other in-flight predict/serialize on this model)",
+            ))
+        })?;
+        let value = treelite_core::dump_as_json(&mut this.inner);
         let s = if pretty_print {
             serde_json::to_string_pretty(&value)
         } else {
