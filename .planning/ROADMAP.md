@@ -317,10 +317,23 @@ Plans:
   3. A custom global allocator (jemalloc) is wired into benchmarks/binaries and validated to import/run on Linux (and not enabled in a way that breaks the abi3 wheel).
 
 **Plans**: 4 plans
+**Wave 1**
+
 - [ ] 09-01-PLAN.md — Wave 0 scaffolding: pin 5 deps, harness jemalloc/mimalloc features, memory_report bin skeleton, model_invariants (!Send + size_of) test
 - [ ] 09-02-PLAN.md — MEM-02: migrate Model + builder::Metadata fields to SmallVec/CompactString across loaders/serializer/concat; golden byte-identical + 1e-5 green
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 09-03-PLAN.md — MEM-01: route le_bytes_of through bytemuck::cast_slice (Pod bound, LE-documented); read path untouched; golden + 1e-5 green
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 09-04-PLAN.md — MEM-03: wire jemalloc/mimalloc as #[global_allocator] in memory_report bin, RSS sampling, committed docs/MEMORY_REPORT.md; wheel stays allocator-free
+
+**Cross-cutting constraints:**
+
+- v5 serializer still emits byte-identical golden_v5.bin / golden_v5_3format.bin
+- full equivalence harness green within 1e-5; cargo test --workspace + pytest pass (D-11)
 
 ## Progress
 
