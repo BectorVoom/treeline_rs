@@ -75,10 +75,17 @@ pub fn descend<F: Float, T: Float>(
     // `!tree.is_leaf(nid)` loop guard. No early-exit/loop-skip keyword — every
     // iteration assigns `nid` exactly once.
     while cleft[(base + nid) as usize] != -1i32 {
-        let fi = split_index[(base + nid) as usize];
+        // Hoist the per-iteration node index once: `idx == (base + nid) as usize`
+        // for the current `nid`. Pure CSE — every removed in-body
+        // `(base + nid) as usize` indexing site reads the exact same element in
+        // the exact same order, so routing/numerics are byte-identical. The loop
+        // guard above still recomputes the index for the NEXT iteration's
+        // `!is_leaf` test (after `nid` is reassigned at the loop bottom).
+        let idx = (base + nid) as usize;
+        let fi = split_index[idx];
         let fv = input[(row_off + fi as u32) as usize];
         // Default route is RIGHT; if-statements (never an if-expr value) flip it.
-        let mut next: i32 = cright[(base + nid) as usize];
+        let mut next: i32 = cright[idx];
         // NaN test via self-inequality (`fv != fv`): NaN is the only value not
         // equal to itself. Verbatim equivalent of `evaluate_tree`'s
         // `fvalue.is_nan_val()`; avoids the `Float`-trait NaN associated fn whose
@@ -90,8 +97,8 @@ pub fn descend<F: Float, T: Float>(
         if fv != fv {
             // Missing value → default child (predict.cc:158-159). default_left is
             // the u32 0/1 column (Pitfall 4): 1 ⇒ left, else the right default.
-            if default_left[(base + nid) as usize] == 1u32 {
-                next = cleft[(base + nid) as usize];
+            if default_left[idx] == 1u32 {
+                next = cleft[idx];
             }
         } else {
             // kLT: fvalue < threshold ? left : right. Promote BOTH operands to
@@ -101,8 +108,8 @@ pub fn descend<F: Float, T: Float>(
             // it is the identity. This never narrows an f64 threshold to f32 (the
             // CR-02 bug), so an f64 threshold falling between two adjacent f32
             // values routes to the SAME child as the scalar twin.
-            if f64::cast_from(fv) < f64::cast_from(threshold[(base + nid) as usize]) {
-                next = cleft[(base + nid) as usize];
+            if f64::cast_from(fv) < f64::cast_from(threshold[idx]) {
+                next = cleft[idx];
             }
         }
         nid = next as u32;
