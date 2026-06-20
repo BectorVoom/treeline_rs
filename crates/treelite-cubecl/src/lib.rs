@@ -458,6 +458,12 @@ fn run_default_raw<R: Runtime, F: PredictCpuElem, T: Float + CubeElement + bytem
     )?;
     let num_tree = preset.trees.len();
     let cells_per_row = num_target * max_num_class;
+    // Comptime flag: the typical XGBoost binary/regression output shape has a
+    // single output cell per row (num_target == 1 && max_num_class == 1). The
+    // kernel collapses its three per-cell loops to straight-line n==1 code on this
+    // arm; CubeCL JIT-prunes the dead general arm. Plain comptime bool (not
+    // ScalarArg), per the manual's `#[comptime] use_plane: bool` convention.
+    let single_cell = cells_per_row == 1;
 
     // Offsets + routing/averaging/base columns as their own device handles.
     let h_node_off = forest.node_off(client);
@@ -501,6 +507,7 @@ fn run_default_raw<R: Runtime, F: PredictCpuElem, T: Float + CubeElement + bytem
         num_target as u32,
         max_num_class as u32,
         num_feature as u32,
+        single_cell,
     );
 
     let bytes = client.read_one_unchecked(h_out);

@@ -75,6 +75,7 @@ pub fn predict_default_raw<F: Float, T: Float>(
     num_target: u32,
     max_num_class: u32,
     num_feature: u32,
+    #[comptime] single_cell: bool,
 ) {
     let row = ABSOLUTE_POS as u32;
     if row < num_row {
@@ -83,10 +84,18 @@ pub fn predict_default_raw<F: Float, T: Float>(
         let row_off = row * num_feature;
 
         // 1. Zero this row's output cells (std::fill_n InputT{}).
-        let mut z: u32 = 0;
-        while z < cells_per_row {
-            output[(row_base + z) as usize] = F::new(0.0);
-            z += 1;
+        // Comptime single-cell specialization (cells_per_row == 1): collapse the
+        // per-cell loop to the single n==1 write. CubeCL prunes the dead arm at
+        // JIT time (manual: comptime_specialization.md) — same F::new(0.0) write,
+        // byte-identical to one iteration of the general loop.
+        if single_cell {
+            output[row_base as usize] = F::new(0.0);
+        } else {
+            let mut z: u32 = 0;
+            while z < cells_per_row {
+                output[(row_base + z) as usize] = F::new(0.0);
+                z += 1;
+            }
         }
 
         // 2. Serial tree accumulation in tree_id order (GTIL-08 — no reorder).
@@ -168,40 +177,56 @@ pub fn predict_default_raw<F: Float, T: Float>(
         // 3. RF averaging: divide each cell by its precomputed factor
         //    (predict.cc:259-293). When average_tree_output is false the host
         //    fills average_factor with 1.0, so this is a divide by 1 (no-op).
-        let mut t: u32 = 0;
-        while t < num_target {
-            let nc = num_class[t as usize] as u32;
-            let mut c: u32 = 0;
-            while c < nc {
-                let li = t * max_num_class + c;
-                let factor = average_factor[li as usize];
-                if factor != 0.0 {
-                    let cell = row_base + li;
-                    // output[cell] /= factor — in the output element width F
-                    // (float /= float / double /= double). factor rides as f64;
-                    // cast to F at the divide (matches O::div_by_count).
-                    output[cell as usize] /= F::cast_from(factor);
-                }
-                c += 1;
+        // Single-cell specialization: the only cell is (t=0, c=0) ⇒ li=0,
+        // cell=row_base; identical divide arithmetic for n==1.
+        if single_cell {
+            let factor = average_factor[0];
+            if factor != 0.0 {
+                output[row_base as usize] /= F::cast_from(factor);
             }
-            t += 1;
+        } else {
+            let mut t: u32 = 0;
+            while t < num_target {
+                let nc = num_class[t as usize] as u32;
+                let mut c: u32 = 0;
+                while c < nc {
+                    let li = t * max_num_class + c;
+                    let factor = average_factor[li as usize];
+                    if factor != 0.0 {
+                        let cell = row_base + li;
+                        // output[cell] /= factor — in the output element width F
+                        // (float /= float / double /= double). factor rides as f64;
+                        // cast to F at the divide (matches O::div_by_count).
+                        output[cell as usize] /= F::cast_from(factor);
+                    }
+                    c += 1;
+                }
+                t += 1;
+            }
         }
 
         // 4. f64 2D base-score add per (target, class) cell (predict.cc:294-304).
         //    InputT_view += double_view: promote F->f64, add, narrow back to F
         //    (matches O::add_base_score).
-        let mut t2: u32 = 0;
-        while t2 < num_target {
-            let nc = num_class[t2 as usize] as u32;
-            let mut c: u32 = 0;
-            while c < nc {
-                let li = t2 * max_num_class + c;
-                let cell = row_base + li;
-                let acc = f64::cast_from(output[cell as usize]) + base_scores[li as usize];
-                output[cell as usize] = F::cast_from(acc);
-                c += 1;
+        // Single-cell specialization: li=0, cell=row_base; same f64 promote-add-
+        // narrow arithmetic for n==1.
+        if single_cell {
+            let acc = f64::cast_from(output[row_base as usize]) + base_scores[0];
+            output[row_base as usize] = F::cast_from(acc);
+        } else {
+            let mut t2: u32 = 0;
+            while t2 < num_target {
+                let nc = num_class[t2 as usize] as u32;
+                let mut c: u32 = 0;
+                while c < nc {
+                    let li = t2 * max_num_class + c;
+                    let cell = row_base + li;
+                    let acc = f64::cast_from(output[cell as usize]) + base_scores[li as usize];
+                    output[cell as usize] = F::cast_from(acc);
+                    c += 1;
+                }
+                t2 += 1;
             }
-            t2 += 1;
         }
     }
 }
