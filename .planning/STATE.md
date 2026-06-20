@@ -259,6 +259,12 @@ None yet.
 - [Phase 10] rayon would be the FIRST parallelism dependency — pin to latest published (CLAUDE.md / FND-02). Per-row work must NOT touch the tree axis order (GTIL-08): parallelize the OUTER row loop only; each row's tree-sum stays serial in `tree_id`. Equivalence harness (both presets, both input dtypes, dense + sparse) is the gate that the parallel output == serial output within 1e-5.
 - [Phase 10] `Config.nthread` is already parsed/recorded but unused on the scalar path (PAR-04); wire it through to bound the rayon pool (`≤0` = all cores). The Python `nthread=` kwarg already exists end-to-end but is a no-op on scalar predict — close that gap.
 
+## Quick Tasks Completed
+
+| ID | Task | Date | Commits | Result |
+|----|------|------|---------|--------|
+| 260620-dpy | Optimise cubecl GTIL kernels per CubeCL manual (descend node-index CSE + `#[comptime]` single-cell specialization of `predict_default_raw`) | 2026-06-20 | `804184f`, `c42b8d9` | All 34 cubecl tests + golden matrix pass; max \|delta\| 2.9e-6 < 1e-5 |
+
 ## Deferred Items
 
 Items acknowledged and carried forward from previous milestone close:
