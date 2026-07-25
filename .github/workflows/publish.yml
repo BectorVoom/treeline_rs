@@ -27,30 +27,22 @@ jobs:
           - runner: ubuntu-22.04
             target: x86_64
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist --manifest-path crates/treelite-py/Cargo.toml -F rocm,wgpu
+          args: --release --out dist --manifest-path crates/treelite-py/Cargo.toml
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-          manylinux: off
-      - name: Build free-threaded wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.platform.target }}
-          args: --release --out dist --manifest-path crates/treelite-py/Cargo.toml -F rocm,wgpu -i python3.14t
-          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-          manylinux: off
+          manylinux: auto
       - name: Upload wheels
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: wheels-linux-${{ matrix.platform.target }}
           path: dist
-
 
   windows:
     runs-on: ${{ matrix.platform.runner }}
@@ -61,29 +53,19 @@ jobs:
             target: x64
             python_arch: x64
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.10"
           architecture: ${{ matrix.platform.python_arch }}
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist --manifest-path crates/treelite-py/Cargo.toml -F wgpu
-          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.14t"
-          architecture: ${{ matrix.platform.python_arch }}
-      - name: Build free-threaded wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.platform.target }}
-          args: --release --out dist --manifest-path crates/treelite-py/Cargo.toml -F wgpu -i python3.14t
+          args: --release --out dist --manifest-path crates/treelite-py/Cargo.toml
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
       - name: Upload wheels
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: wheels-windows-${{ matrix.platform.target }}
           path: dist
@@ -96,27 +78,18 @@ jobs:
           - runner: macos-latest
             target: aarch64
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
-          args: --release --out dist --manifest-path crates/treelite-py/Cargo.toml -F wgpu
-          sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.14t"
-      - name: Build free-threaded wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.platform.target }}
-          args: --release --out dist --manifest-path crates/treelite-py/Cargo.toml -F wgpu -i python3.14t
+          args: --release --out dist --manifest-path crates/treelite-py/Cargo.toml
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
       - name: Upload wheels
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: wheels-macos-${{ matrix.platform.target }}
           path: dist
@@ -124,14 +97,14 @@ jobs:
   sdist:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
           command: sdist
           args: --out dist --manifest-path crates/treelite-py/Cargo.toml
       - name: Upload sdist
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: wheels-sdist
           path: dist
@@ -142,23 +115,17 @@ jobs:
     if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
     needs: [linux, windows, macos, sdist]
     permissions:
-      # Use to sign the release artifacts
       id-token: write
-      # Used to upload release artifacts
       contents: write
-      # Used to generate artifact attestation
       attestations: write
     steps:
-      - uses: actions/download-artifact@v7
-      - name: Generate artifact attestation
-        uses: actions/attest@v4
-        with:
-          subject-path: 'wheels-*/*'
+      - uses: actions/download-artifact@v4
       - name: Install uv
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v5
       - name: Publish to PyPI
         if: ${{ startsWith(github.ref, 'refs/tags/') }}
         run: uv publish 'wheels-*/*'
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+
