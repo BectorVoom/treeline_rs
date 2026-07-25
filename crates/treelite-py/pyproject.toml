@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "treelite_rs"
-version = "0.1.0"
+version = "0.1.1"
 description = "PyO3 binding for treelite-rs: a from-scratch Rust rewrite of Treelite."
 readme = "README.md"
 requires-python = ">=3.10"
